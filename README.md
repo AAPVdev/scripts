@@ -1,3 +1,2 @@
-# Loadstrings
-  
+  # Loadstrings
   ## By @AAPVdev
