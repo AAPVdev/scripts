@@ -2,7 +2,7 @@ if getgenv().IsProcessActive and type(getgenv().LimbExtenderGlobalData.LimbExten
     getgenv().LimbExtenderGlobalData.LimbExtenderTerminateOldProcess("FullKill")
 end
 
-local defaultSettings = {
+local Settings = {
     TOGGLE = "K",
     TARGET_LIMB = "Head",
     LIMB_SIZE = 5,
@@ -20,12 +20,10 @@ local defaultSettings = {
     HIGHLIGHT_OUTLINE_TRANSPARENCY = 0,
 }
 
-getgenv().LimbExtenderSettings = setmetatable(getgenv().LimbExtenderSettings or {}, {__index = defaultSettings})
 getgenv().LimbExtenderGlobalData = getgenv().LimbExtenderGlobalData or {}
 getgenv().LimbExtenderGlobalData.Sense = getgenv().LimbExtenderGlobalData.Sense or loadstring(game:HttpGet('https://sirius.menu/sense'))()
 getgenv().LimbExtenderGlobalData.LimbsFolder = getgenv().LimbExtenderGlobalData.LimbsFolder or Instance.new("Folder")
 
-local Settings = getgenv().LimbExtenderSettings
 local PlayersService = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = PlayersService.LocalPlayer
@@ -273,3 +271,5 @@ getgenv().LimbExtenderGlobalData.LimbExtenderTerminateOldProcess = endProcess
 for _, part in LimbsFolder:GetChildren() do
     LocalTransparencyModifier(part)
 end
+
+return Settings
