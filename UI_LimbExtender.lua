@@ -59,6 +59,7 @@ local function createToggle(params)
         Flag = params.flag,
         Callback = function(Value)
             le[params.flag] = Value
+            getgenv().LimbExtenderGlobalData.InputBeganConnection:Disconnect()
         end,
     })
 end
@@ -132,6 +133,7 @@ Limb_Extender:CreateSlider({
     Flag = "LimbSize",
     Callback = function(Value)
         le.LIMB_SIZE = Value
+        getgenv().LimbExtenderGlobalData.InputBeganConnection:Disconnect()
     end,
 })
 
