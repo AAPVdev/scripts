@@ -1,6 +1,6 @@
 local Players = game:GetService("Players")
 
-local he = loadstring(game:HttpGet('https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/HeadExtender.lua'))()
+local le = loadstring(game:HttpGet('https://raw.githubusercontent.com/AAPVdev/scripts/refs/leads/main/HeadExtender.lua'))()
 
 local Messages = {
     "fucking shit up",
@@ -58,7 +58,7 @@ local function createToggle(params)
         CurrentValue = params.value,
         Flag = params.flag,
         Callback = function(Value)
-            he[params.flag] = Value
+            le[params.flag] = Value
         end,
     })
 end
@@ -71,10 +71,10 @@ local ModifyLimbs = Limb_Extender:CreateToggle({
     Callback = function(Value)
         getgenv().LimbExtenderGlobalData.IsProcessActive = Value
         if Value then
-            he.startProcess()
+            le.startProcess()
              getgenv().LimbExtenderGlobalData.InputBeganConnection:Disconnect()
         else
-            he.endProcess()
+            le.endProcess()
         end
     end,
 })
@@ -131,7 +131,7 @@ Limb_Extender:CreateSlider({
     CurrentValue = 10,
     Flag = "LimbSize",
     Callback = function(Value)
-        he.LIMB_SIZE = Value
+        le.LIMB_SIZE = Value
     end,
 })
 
