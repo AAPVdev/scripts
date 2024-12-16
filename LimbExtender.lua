@@ -218,6 +218,10 @@ function rawSettings.endProcess(specialProcess)
 
     getPlayers(onPlayerRemoved)
 
+    for _, limb in pairs(LimbsFolder:GetChildren()) do
+        limb:Destroy()
+    end
+    
     if Sense._hasLoaded then
         Sense.Unload()
     end
