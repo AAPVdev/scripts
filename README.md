@@ -1,4 +1,3 @@
-```markdown
 # 📜 Loadstrings  
 
 Easily use the following loadstrings to access the scripts:
@@ -23,4 +22,3 @@ loadstring(game:HttpGet('https://raw.githubusercontent.com/AAPVdev/scripts/refs/
 1. Copy the desired loadstring.  
 2. Paste it into your Roblox Executor.  
 3. Run the script and enjoy!
-```
