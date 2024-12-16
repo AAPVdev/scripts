@@ -231,7 +231,7 @@ function rawSettings.endProcess(specialProcess)
 end
 
 function rawSettings.startProcess()
-    endProcess()
+    rawSettings.endProcess()
     getgenv().LimbExtenderGlobalData.LastLimbName = rawSettings.TARGET_LIMB
     getgenv().LimbExtenderGlobalData.LimbsFolderChildAdded = LimbsFolder.ChildAdded:Connect(LocalTransparencyModifier)
     getgenv().LimbExtenderGlobalData.InputBeganConnection = UserInputService.InputBegan:Connect(handleKeyInput)
@@ -262,9 +262,9 @@ function handleKeyInput(input, isProcessed)
     if isProcessed or input.KeyCode ~= Enum.KeyCode[rawSettings.TOGGLE] then return end
     getgenv().LimbExtenderGlobalData.IsProcessActive = not getgenv().LimbExtenderGlobalData.IsProcessActive
     if getgenv().LimbExtenderGlobalData.IsProcessActive then
-        startProcess()
+        rawSettings.startProcess()
     else
-        endProcess("DetectInput")
+         rawSettings.endProcess("DetectInput")
     end
 end
 
@@ -273,12 +273,12 @@ if getgenv().LimbExtenderGlobalData.IsProcessActive == nil then
 end
 
 if getgenv().LimbExtenderGlobalData.IsProcessActive then
-    startProcess()
+    rawSettings.startProcess()
 else
-    endProcess("DetectInput")
+     rawSettings.endProcess("DetectInput")
 end
 
-getgenv().LimbExtenderGlobalData.LimbExtenderTerminateOldProcess = endProcess
+getgenv().LimbExtenderGlobalData.LimbExtenderTerminateOldProcess =  rawSettings.endProcess
 
 for _, part in LimbsFolder:GetChildren() do
     LocalTransparencyModifier(part)
