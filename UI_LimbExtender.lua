@@ -73,7 +73,10 @@ local ModifyLimbs = Limb_Extender:CreateToggle({
         getgenv().LimbExtenderGlobalData.IsProcessActive = Value
         if Value then
             le.startProcess()
-             getgenv().LimbExtenderGlobalData.InputBeganConnection:Disconnect()
+             if getgenv().LimbExtenderGlobalData.InputBeganConnection then
+                getgenv().LimbExtenderGlobalData.InputBeganConnection:Disconnect()
+                getgenv().LimbExtenderGlobalData.InputBeganConnection = nil
+            end
         else
             le.endProcess()
         end
@@ -133,7 +136,10 @@ Limb_Extender:CreateSlider({
     Flag = "LimbSize",
     Callback = function(Value)
         le.LIMB_SIZE = Value
-        getgenv().LimbExtenderGlobalData.InputBeganConnection:Disconnect()
+        if getgenv().LimbExtenderGlobalData.InputBeganConnection then
+            getgenv().LimbExtenderGlobalData.InputBeganConnection:Disconnect()
+            getgenv().LimbExtenderGlobalData.InputBeganConnection = nil
+        end
     end,
 })
 
@@ -148,5 +154,9 @@ Limb_Extender:CreateKeybind({
     end,
 })
 
-getgenv().LimbExtenderGlobalData.InputBeganConnection:Disconnect()
+if getgenv().LimbExtenderGlobalData.InputBeganConnection then
+    getgenv().LimbExtenderGlobalData.InputBeganConnection:Disconnect()
+     getgenv().LimbExtenderGlobalData.InputBeganConnection = nil
+end
+
 Rayfield:LoadConfiguration()
