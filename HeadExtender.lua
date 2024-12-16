@@ -2,7 +2,7 @@ if getgenv().IsProcessActive and type(getgenv().LimbExtenderGlobalData.LimbExten
     getgenv().LimbExtenderGlobalData.LimbExtenderTerminateOldProcess("FullKill")
 end
 
-local Settings = {
+local rawSettings = {
     TOGGLE = "K",
     TARGET_LIMB = "Head",
     LIMB_SIZE = 5,
@@ -34,6 +34,12 @@ Sense.teamSettings.enemy.enabled = true
 Sense.teamSettings.enemy.box = true
 Sense.teamSettings.enemy.healthText = true
 
+local function getPlayers(func)
+    for _, player in pairs(PlayersService:GetPlayers()) do
+        func(player)
+    end
+end
+
 local function saveOriginalLimbProperties(limb)
     if not getgenv().LimbExtenderGlobalData[limb] then
         getgenv().LimbExtenderGlobalData[limb] = {Size = limb.Size, Transparency = limb.Transparency, CanCollide = limb.CanCollide, Massless = limb.Massless}
@@ -41,7 +47,7 @@ local function saveOriginalLimbProperties(limb)
 end
 
 local function restoreLimbProperties(character)
-    local limb = character:FindFirstChild(Settings.TARGET_LIMB)
+    local limb = character:FindFirstChild(rawSettings.TARGET_LIMB)
     local storedProperties = getgenv().LimbExtenderGlobalData[limb]
 
 
@@ -52,7 +58,7 @@ local function restoreLimbProperties(character)
         if visualizer then visualizer:Destroy() end
     end
 
-    if getgenv().LimbExtenderGlobalData.LastLimbName and getgenv().LimbExtenderGlobalData.LastLimbName ~= Settings.TARGET_LIMB then
+    if getgenv().LimbExtenderGlobalData.LastLimbName and getgenv().LimbExtenderGlobalData.LastLimbName ~= rawSettings.TARGET_LIMB then
         local lastLimb = character:FindFirstChild(getgenv().LimbExtenderGlobalData.LastLimbName)
         if lastLimb then
             local lastStoredProperties = getgenv().LimbExtenderGlobalData[lastLimb]
@@ -69,19 +75,19 @@ end
 local function applyLimbHighlight(limb)
     local highlightInstance = limb:FindFirstChild("LimbHighlight") or Instance.new("Highlight", limb)
     highlightInstance.Name = "LimbHighlight"
-    highlightInstance.DepthMode = Settings.DEPTH_MODE == 1 and Enum.HighlightDepthMode.AlwaysOnTop or Enum.HighlightDepthMode.Occluded
-    highlightInstance.FillColor = Settings.HIGHLIGHT_FILL_COLOR
-    highlightInstance.FillTransparency = Settings.HIGHLIGHT_FILL_TRANSPARENCY
-    highlightInstance.OutlineColor = Settings.HIGHLIGHT_OUTLINE_COLOR
-    highlightInstance.OutlineTransparency = Settings.HIGHLIGHT_OUTLINE_TRANSPARENCY
+    highlightInstance.DepthMode = rawSettings.DEPTH_MODE == 1 and Enum.HighlightDepthMode.AlwaysOnTop or Enum.HighlightDepthMode.Occluded
+    highlightInstance.FillColor = rawSettings.HIGHLIGHT_FILL_COLOR
+    highlightInstance.FillTransparency = rawSettings.HIGHLIGHT_FILL_TRANSPARENCY
+    highlightInstance.OutlineColor = rawSettings.HIGHLIGHT_OUTLINE_COLOR
+    highlightInstance.OutlineTransparency = rawSettings.HIGHLIGHT_OUTLINE_TRANSPARENCY
 end
 
 local function createVisualizer(limb)
     if limb.Parent then 
         local visualizer = LimbsFolder:FindFirstChild(limb.Parent.Name) or Instance.new("Part")
-        visualizer.Size = Vector3.new(Settings.LIMB_SIZE, Settings.LIMB_SIZE, Settings.LIMB_SIZE)
-        visualizer.Transparency = Settings.LIMB_TRANSPARENCY
-        visualizer.CanCollide = Settings.LIMB_CAN_COLLIDE
+        visualizer.Size = Vector3.new(rawSettings.LIMB_SIZE, rawSettings.LIMB_SIZE, rawSettings.LIMB_SIZE)
+        visualizer.Transparency = rawSettings.LIMB_TRANSPARENCY
+        visualizer.CanCollide = rawSettings.LIMB_CAN_COLLIDE
         visualizer.Anchored, visualizer.Massless = false, true
         visualizer.Name, visualizer.Color = limb.Parent.Name, limb.Color
         visualizer.CFrame = limb.CFrame
@@ -91,17 +97,17 @@ local function createVisualizer(limb)
         weld.Part0, weld.Part1 = limb, visualizer
         weld.Parent = visualizer
 
-        if Settings.USE_HIGHLIGHT then
+        if rawSettings.USE_HIGHLIGHT then
             applyLimbHighlight(visualizer)
         end
     end
 end
 
 local function modifyTargetLimb(character)
-    local limb = character:WaitForChild(Settings.TARGET_LIMB, 1)
+    local limb = character:WaitForChild(rawSettings.TARGET_LIMB, 1)
     if limb then
         saveOriginalLimbProperties(limb)
-        limb.Transparency, limb.CanCollide, limb.Size, limb.Massless = 1, false, Vector3.new(Settings.LIMB_SIZE, Settings.LIMB_SIZE, Settings.LIMB_SIZE), true
+        limb.Transparency, limb.CanCollide, limb.Size, limb.Massless = 1, false, Vector3.new(rawSettings.LIMB_SIZE, rawSettings.LIMB_SIZE, rawSettings.LIMB_SIZE), true
         createVisualizer(limb)
     end
 end
@@ -110,19 +116,19 @@ local function processCharacterLimb(character)
     task.spawn(function()
         local alive = false
         local waited = 0
-        while not character:FindFirstChild("Humanoid") and character:FindFirstChild(Settings.TARGET_LIMB) and waited <= 10 do 
+        while not character:FindFirstChild("Humanoid") and character:FindFirstChild(rawSettings.TARGET_LIMB) and waited <= 10 do 
             task.wait(0.1) 
             waited += 0.1 
         end
         if waited <= 10 then alive = true end
 
         if alive then
-            if (Settings.TEAM_CHECK and (LocalPlayer.Team == nil or PlayersService:GetPlayerFromCharacter(character).Team ~= LocalPlayer.Team)) or not Settings.TEAM_CHECK then
+            if (rawSettings.TEAM_CHECK and (LocalPlayer.Team == nil or PlayersService:GetPlayerFromCharacter(character).Team ~= LocalPlayer.Team)) or not rawSettings.TEAM_CHECK then
                 modifyTargetLimb(character)
             end
 
             local humanoid = character:WaitForChild("Humanoid")
-            local connection = Settings.RESTORE_ORIGINAL_LIMB_ON_DEATH and humanoid.HealthChanged or humanoid.Died
+            local connection = rawSettings.RESTORE_ORIGINAL_LIMB_ON_DEATH and humanoid.HealthChanged or humanoid.Died
             getgenv().LimbExtenderGlobalData[character.Name .. " OnDeath"] = connection:Connect(function(health)
                 if health and health <= 0 then restoreLimbProperties(character) end
             end)
@@ -137,30 +143,6 @@ local function onPlayerRemoved(player)
             connection:Disconnect()
         end
         getgenv().LimbExtenderGlobalData[player] = nil
-    end
-end
-
-local function endProcess(specialProcess)
-    for name, connection in pairs(getgenv().LimbExtenderGlobalData) do
-        if typeof(connection) == "RBXScriptConnection" and name ~= "FolderProtection" then
-            connection:Disconnect()
-            getgenv().LimbExtenderGlobalData[name] = nil
-        end
-    end
-
-    for _, player in pairs(PlayersService:GetPlayers()) do
-        onPlayerRemoved(player)
-    end
-
-    if Sense._hasLoaded then
-        Sense.Unload()
-    end
-
-    if specialProcess == "DetectInput" then 
-        getgenv().LimbExtenderGlobalData.InputBeganConnection = UserInputService.InputBegan:Connect(handleKeyInput)
-    elseif specialProcess == "FullKill" then
-        getgenv().LimbExtenderGlobalData = {}
-        script:Destroy()
     end
 end
 
@@ -180,9 +162,7 @@ local function playerHandler(player)
             LimbsFolder.Parent = character
             getgenv().LimbExtenderGlobalData[player]["TeamChanged"] = player:GetPropertyChangedSignal("Team"):Connect(function()
                 task.spawn(function()
-                    for _, Player in pairs(PlayersService:GetPlayers()) do
-                        playerHandler(Player)
-                    end
+                    getPlayers(playerHandler)
                 end)
             end)
         else
@@ -190,7 +170,7 @@ local function playerHandler(player)
                 playerHandler(player)
             end)
 
-            if Settings.FORCEFIELD_CHECK then
+            if rawSettings.FORCEFIELD_CHECK then
                 getgenv().LimbExtenderGlobalData[player]["ForceFieldAdded"] = character.ChildAdded:Connect(function(child)
                     if child:IsA("ForceField") then restoreLimbProperties(character) end
                 end)
@@ -221,55 +201,85 @@ end
 
 local function FolderProtection(child, parent)
     if not parent and child:IsA("Folder") then
-        warn("LimbFolder was deleted! Recreating. --Avis LimbExtender")
+        warn("LimbFolder was deleted! Recreating...")
         getgenv().LimbExtenderGlobalData.LimbsFolder = Instance.new("Folder")
         LimbsFolder = getgenv().LimbExtenderGlobalData.LimbsFolder
         startProcess()
     end
 end
 
-function startProcess()
-    endProcess()
-    getgenv().LimbExtenderGlobalData.LastLimbName = Settings.TARGET_LIMB
+local LimbExtender = setmetatable({}, {
+    __index = rawSettings,
+    __newindex = function(_, key, value)
+        if rawSettings[key] ~= value then
+            rawSettings[key] = value
+            rawSettings.startProcess()
+        end
+    end
+})
+
+function rawSettings.endProcess(specialProcess)
+    for name, connection in pairs(getgenv().LimbExtenderGlobalData) do
+        if typeof(connection) == "RBXScriptConnection" and name ~= "FolderProtection" then
+            connection:Disconnect()
+            getgenv().LimbExtenderGlobalData[name] = nil
+        end
+    end
+
+    getPlayers(onPlayerRemoved)
+
+    if Sense._hasLoaded then
+        Sense.Unload()
+    end
+
+    if specialProcess == "DetectInput" then 
+        getgenv().LimbExtenderGlobalData.InputBeganConnection = UserInputService.InputBegan:Connect(handleKeyInput)
+    elseif specialProcess == "FullKill" then
+        getgenv().LimbExtenderGlobalData = {}
+        script:Destroy()
+    end
+end
+
+function rawSettings.startProcess()
+    rawSettings.endProcess()
+    getgenv().LimbExtenderGlobalData.LastLimbName = rawSettings.TARGET_LIMB
     getgenv().LimbExtenderGlobalData.LimbsFolderChildAdded = LimbsFolder.ChildAdded:Connect(LocalTransparencyModifier)
     getgenv().LimbExtenderGlobalData.InputBeganConnection = UserInputService.InputBegan:Connect(handleKeyInput)
     getgenv().LimbExtenderGlobalData.PlayerAddedConnection = PlayersService.PlayerAdded:Connect(playerHandler)
     getgenv().LimbExtenderGlobalData.PlayerRemovingConnection = PlayersService.PlayerRemoving:Connect(onPlayerRemoved)
     getgenv().LimbExtenderGlobalData.FolderProtection = LimbsFolder.AncestryChanged:Connect(FolderProtection)
 
-    if Settings.ESP and not Sense._hasLoaded then
+    if rawSettings.ESP and not Sense._hasLoaded then
         Sense.Load()
     end
 
-    for _, player in pairs(PlayersService:GetPlayers()) do
-        playerHandler(player)
-    end
+    getPlayers(playerHandler)
 end
 
 function handleKeyInput(input, isProcessed)
-    if isProcessed or input.KeyCode ~= Enum.KeyCode[Settings.TOGGLE] then return end
+    if isProcessed or input.KeyCode ~= Enum.KeyCode[rawSettings.TOGGLE] then return end
     getgenv().LimbExtenderGlobalData.IsProcessActive = not getgenv().LimbExtenderGlobalData.IsProcessActive
     if getgenv().LimbExtenderGlobalData.IsProcessActive then
-        startProcess()
+        rawSettings.startProcess()
     else
-        endProcess("DetectInput")
+        rawSettings.endProcess("DetectInput")
     end
 end
 
 if getgenv().LimbExtenderGlobalData.IsProcessActive == nil then
-    getgenv().LimbExtenderGlobalData.IsProcessActive = true
+    getgenv().LimbExtenderGlobalData.IsProcessActive = false
 end
 
 if getgenv().LimbExtenderGlobalData.IsProcessActive then
-    startProcess()
+    rawSettings.startProcess()
 else
-    endProcess("DetectInput")
+    rawSettings.endProcess("DetectInput")
 end
 
-getgenv().LimbExtenderGlobalData.LimbExtenderTerminateOldProcess = endProcess
+getgenv().LimbExtenderGlobalData.LimbExtenderTerminateOldProcess = rawSettings.endProcess
 
 for _, part in LimbsFolder:GetChildren() do
     LocalTransparencyModifier(part)
 end
 
-return Settings
+return LimbExtender
