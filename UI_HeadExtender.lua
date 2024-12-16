@@ -146,4 +146,5 @@ Limb_Extender:CreateKeybind({
     end,
 })
 
+getgenv().LimbExtenderGlobalData.InputBeganConnection:Disconnect()
 Rayfield:LoadConfiguration()
