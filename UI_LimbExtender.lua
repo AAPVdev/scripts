@@ -59,7 +59,10 @@ local function createToggle(params)
         Flag = params.flag,
         Callback = function(Value)
             le[params.flag] = Value
-            getgenv().LimbExtenderGlobalData.InputBeganConnection:Disconnect()
+            if getgenv().LimbExtenderGlobalData.InputBeganConnection then
+                getgenv().LimbExtenderGlobalData.InputBeganConnection:Disconnect()
+                getgenv().LimbExtenderGlobalData.InputBeganConnection = nil
+            end
         end,
     })
 end
