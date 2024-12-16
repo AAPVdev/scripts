@@ -204,7 +204,7 @@ local function FolderProtection(child, parent)
         warn("LimbFolder was deleted! Recreating...")
         getgenv().LimbExtenderGlobalData.LimbsFolder = Instance.new("Folder")
         LimbsFolder = getgenv().LimbExtenderGlobalData.LimbsFolder
-        startProcess()
+        rawSettings.startProcess()
     end
 end
 
