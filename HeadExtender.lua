@@ -230,7 +230,7 @@ local function endProcess(specialProcess)
     end
 end
 
-local function startProcess()
+function rawSettings.startProcess()
     endProcess()
     getgenv().LimbExtenderGlobalData.LastLimbName = rawSettings.TARGET_LIMB
     getgenv().LimbExtenderGlobalData.LimbsFolderChildAdded = LimbsFolder.ChildAdded:Connect(LocalTransparencyModifier)
@@ -252,7 +252,7 @@ local LimbExtender = setmetatable({}, {
         if rawSettings[key] ~= value then
             rawSettings[key] = value
             if getgenv().LimbExtenderGlobalData.IsProcessActive then
-                startProcess()
+                rawSettings.startProcess()
             end
         end
     end
