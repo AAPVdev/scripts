@@ -2,8 +2,6 @@ local Players = game:GetService("Players")
 
 local he = loadstring(game:HttpGet('https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/HeadExtender.lua'))()
 
-getgenv().LimbExtenderGlobalData.InputBeganConnection:Disconnect()
-
 local Messages = {
     "fucking shit up",
     "i love you ❤",
@@ -74,6 +72,7 @@ local ModifyLimbs = Limb_Extender:CreateToggle({
         getgenv().LimbExtenderGlobalData.IsProcessActive = Value
         if Value then
             he.startProcess()
+             getgenv().LimbExtenderGlobalData.InputBeganConnection:Disconnect()
         else
             he.endProcess()
         end
