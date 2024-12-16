@@ -208,17 +208,7 @@ local function FolderProtection(child, parent)
     end
 end
 
-local LimbExtender = setmetatable({}, {
-    __index = rawSettings,
-    __newindex = function(_, key, value)
-        if rawSettings[key] ~= value then
-            rawSettings[key] = value
-            rawSettings.startProcess()
-        end
-    end
-})
-
-function rawSettings.endProcess(specialProcess)
+local function endProcess(specialProcess)
     for name, connection in pairs(getgenv().LimbExtenderGlobalData) do
         if typeof(connection) == "RBXScriptConnection" and name ~= "FolderProtection" then
             connection:Disconnect()
@@ -240,8 +230,8 @@ function rawSettings.endProcess(specialProcess)
     end
 end
 
-function rawSettings.startProcess()
-    rawSettings.endProcess()
+local function startProcess()
+    endProcess()
     getgenv().LimbExtenderGlobalData.LastLimbName = rawSettings.TARGET_LIMB
     getgenv().LimbExtenderGlobalData.LimbsFolderChildAdded = LimbsFolder.ChildAdded:Connect(LocalTransparencyModifier)
     getgenv().LimbExtenderGlobalData.InputBeganConnection = UserInputService.InputBegan:Connect(handleKeyInput)
@@ -256,13 +246,25 @@ function rawSettings.startProcess()
     getPlayers(playerHandler)
 end
 
+local LimbExtender = setmetatable({}, {
+    __index = rawSettings,
+    __newindex = function(_, key, value)
+        if rawSettings[key] ~= value then
+            rawSettings[key] = value
+            if getgenv().LimbExtenderGlobalData.IsProcessActive then
+                startProcess()
+            end
+        end
+    end
+})
+
 function handleKeyInput(input, isProcessed)
     if isProcessed or input.KeyCode ~= Enum.KeyCode[rawSettings.TOGGLE] then return end
     getgenv().LimbExtenderGlobalData.IsProcessActive = not getgenv().LimbExtenderGlobalData.IsProcessActive
     if getgenv().LimbExtenderGlobalData.IsProcessActive then
-        rawSettings.startProcess()
+        startProcess()
     else
-        rawSettings.endProcess("DetectInput")
+        endProcess("DetectInput")
     end
 end
 
@@ -271,12 +273,12 @@ if getgenv().LimbExtenderGlobalData.IsProcessActive == nil then
 end
 
 if getgenv().LimbExtenderGlobalData.IsProcessActive then
-    rawSettings.startProcess()
+    startProcess()
 else
-    rawSettings.endProcess("DetectInput")
+    endProcess("DetectInput")
 end
 
-getgenv().LimbExtenderGlobalData.LimbExtenderTerminateOldProcess = rawSettings.endProcess
+getgenv().LimbExtenderGlobalData.LimbExtenderTerminateOldProcess = endProcess
 
 for _, part in LimbsFolder:GetChildren() do
     LocalTransparencyModifier(part)
