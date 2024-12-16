@@ -208,7 +208,7 @@ local function FolderProtection(child, parent)
     end
 end
 
-local function endProcess(specialProcess)
+function rawSettings.endProcess(specialProcess)
     for name, connection in pairs(getgenv().LimbExtenderGlobalData) do
         if typeof(connection) == "RBXScriptConnection" and name ~= "FolderProtection" then
             connection:Disconnect()
