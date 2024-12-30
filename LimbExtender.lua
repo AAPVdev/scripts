@@ -53,13 +53,15 @@ local function main()
 		local limb = character:FindFirstChild(rawSettings.TARGET_LIMB)
 		local storedProperties = getgenv().LimbExtenderGlobalData[limb]
 
-
+		if not limb then return end
+		
 		if storedProperties then
 			limb.Size, limb.Transparency, limb.CanCollide, limb.Massless = storedProperties.Size, storedProperties.Transparency, storedProperties.CanCollide, storedProperties.Massless
 			getgenv().LimbExtenderGlobalData[limb] = nil
 		end
 
 		local highlight = limb:FindFirstChildWhichIsA("Highlight")
+		
 		if highlight then
 			highlight.Enabled = false
 		end
