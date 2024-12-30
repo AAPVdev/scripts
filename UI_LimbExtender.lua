@@ -28,7 +28,7 @@ local Window = Rayfield:CreateWindow({
 
     Theme = "DarkBlue",
 
-    DisableRayfieldPrompts = true
+    DisableRayfieldPrompts = true,
         
     ConfigurationSaving = {
         Enabled = true,
