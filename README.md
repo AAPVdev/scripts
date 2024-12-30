@@ -1,7 +1,7 @@
 # 📜 Scripts  
 
 ## 🔹 Limb Extender (NO UI)  
-Extend limbs without any graphical interface.  
+Extend limbs without any graphical interface. More editable than the UI version.
 ```lua
 local LimbExtender = loadstring(game:HttpGet('https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua'))()
 
