@@ -28,6 +28,8 @@ local Window = Rayfield:CreateWindow({
 
     Theme = "DarkBlue",
 
+    DisableRayfieldPrompts = true
+        
     ConfigurationSaving = {
         Enabled = true,
         FolderName = "LimbExtenderConfigs",
