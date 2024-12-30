@@ -1,6 +1,7 @@
 local Players = game:GetService("Players")
 
 local le = loadstring(game:HttpGet('https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua'))()
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Messages = {
     "fucking shit up",
@@ -18,7 +19,6 @@ local Messages = {
 
 local ChosenMessage = Messages[math.random(1, #Messages)]
 
-local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 local Window = Rayfield:CreateWindow({
     Name = "AAPVdev's Limb Extender",
     Icon = "scroll-text",
