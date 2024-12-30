@@ -5,21 +5,27 @@ Extend limbs without any graphical interface.
 ```lua
 local LimbExtender = loadstring(game:HttpGet('https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua'))()
 
-LimbExtender.TOGGLE = "K",
-LimbExtender.TARGET_LIMB = "Head",
-LimbExtender.LIMB_SIZE = 5,
-LimbExtender.LIMB_TRANSPARENCY = 0.9,
-LimbExtender.LIMB_CAN_COLLIDE = false,
-LimbExtender.TEAM_CHECK = false,
-LimbExtender.FORCEFIELD_CHECK = true,
-LimbExtender.RESTORE_ORIGINAL_LIMB_ON_DEATH = false,
-LimbExtender.ESP = false,
-LimbExtender.USE_HIGHLIGHT = true,
-LimbExtender.DEPTH_MODE = 2,
-LimbExtender.HIGHLIGHT_FILL_COLOR = Color3.fromRGB(0, 255, 0),
-LimbExtender.HIGHLIGHT_FILL_TRANSPARENCY = 0.5,
-LimbExtender.HIGHLIGHT_OUTLINE_COLOR = Color3.fromRGB(255, 255, 255),
-LimbExtender.HIGHLIGHT_OUTLINE_TRANSPARENCY = 0,
+local settings = {
+    TOGGLE = "K",
+    TARGET_LIMB = "Head",
+    LIMB_SIZE = 5,
+    LIMB_TRANSPARENCY = 0.9,
+    LIMB_CAN_COLLIDE = false,
+    TEAM_CHECK = false,
+    FORCEFIELD_CHECK = true,
+    RESTORE_ORIGINAL_LIMB_ON_DEATH = false,
+    ESP = false,
+    USE_HIGHLIGHT = true,
+    DEPTH_MODE = 2,
+    HIGHLIGHT_FILL_COLOR = Color3.fromRGB(0, 255, 0),
+    HIGHLIGHT_FILL_TRANSPARENCY = 0.5,
+    HIGHLIGHT_OUTLINE_COLOR = Color3.fromRGB(255, 255, 255),
+    HIGHLIGHT_OUTLINE_TRANSPARENCY = 0,
+}
+
+for key, value in pairs(settings) do
+    LimbExtender[key] = value
+end
 
 ```
 
