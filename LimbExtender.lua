@@ -22,6 +22,18 @@ local function main()
         HIGHLIGHT_OUTLINE_COLOR = Color3.fromRGB(255, 255, 255),
         HIGHLIGHT_OUTLINE_TRANSPARENCY = 0,
     }
+
+    LimbExtender = setmetatable({}, {
+        __index = rawSettings,
+        __newindex = function(_, key, value)
+            if rawSettings[key] ~= value then
+                rawSettings[key] = value
+                if getgenv().LimbExtenderGlobalData.IsProcessActive then
+                    rawSettings.startProcess()
+                end
+            end
+        end
+    })
     
     getgenv().LimbExtenderGlobalData = getgenv().LimbExtenderGlobalData or {}
     getgenv().LimbExtenderGlobalData.Sense = getgenv().LimbExtenderGlobalData.Sense or loadstring(game:HttpGet('https://sirius.menu/sense'))()
@@ -252,18 +264,6 @@ local function main()
     
         getPlayers(playerHandler)
     end
-    
-    LimbExtender = setmetatable({}, {
-        __index = rawSettings,
-        __newindex = function(_, key, value)
-            if rawSettings[key] ~= value then
-                rawSettings[key] = value
-                if getgenv().LimbExtenderGlobalData.IsProcessActive then
-                    rawSettings.startProcess()
-                end
-            end
-        end
-    })
     
     function handleKeyInput(input, isProcessed)
         if isProcessed or input.KeyCode ~= Enum.KeyCode[rawSettings.TOGGLE] then return end
