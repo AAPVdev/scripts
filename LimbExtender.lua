@@ -1,3 +1,5 @@
+local LimbExtender
+
 local function main()
     if getgenv().IsProcessActive and type(getgenv().LimbExtenderGlobalData.LimbExtenderTerminateOldProcess) == "function" then
         getgenv().LimbExtenderGlobalData.LimbExtenderTerminateOldProcess("FullKill")
@@ -251,7 +253,7 @@ local function main()
         getPlayers(playerHandler)
     end
     
-    local LimbExtender = setmetatable({}, {
+    LimbExtender = setmetatable({}, {
         __index = rawSettings,
         __newindex = function(_, key, value)
             if rawSettings[key] ~= value then
@@ -288,9 +290,9 @@ local function main()
     for _, part in LimbsFolder:GetChildren() do
         LocalTransparencyModifier(part)
     end
-    
-    return LimbExtender
 end
 
 local co = coroutine.create(main)
 coroutine.resume(co)
+
+return LimbExtender
