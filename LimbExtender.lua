@@ -106,7 +106,6 @@ local function main()
 
 	local function processCharacterLimb(character)
 		task.spawn(function()
-			local alive = false
 			local waited = 0
 			while not character:FindFirstChild("Humanoid") and character:FindFirstChild(rawSettings.TARGET_LIMB) and waited <= 1 do 
 				task.wait(0.1) 
