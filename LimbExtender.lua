@@ -8,7 +8,7 @@ local function main()
 	local rawSettings = {
 		TOGGLE = "K",
 		TARGET_LIMB = "Head",
-		LIMB_SIZE = 5,
+		LIMB_SIZE = 50,
 		LIMB_TRANSPARENCY = 0.9,
 		LIMB_CAN_COLLIDE = false,
 		TEAM_CHECK = false,
@@ -97,6 +97,9 @@ local function main()
 			limb.CanCollide = rawSettings.LIMB_CAN_COLLIDE
 			limb.Size = Vector3.new(rawSettings.LIMB_SIZE, rawSettings.LIMB_SIZE, rawSettings.LIMB_SIZE)
 			limb.Massless = true
+            limb:GetPropertyChangedSignal("Size"):Once(function()
+                modifyTargetLimb(character)
+            end)
 			applyLimbHighlight(limb)
 		end
 	end
