@@ -97,8 +97,8 @@ local function main()
 			limb.CanCollide = rawSettings.LIMB_CAN_COLLIDE
 			limb.Size = Vector3.new(rawSettings.LIMB_SIZE, rawSettings.LIMB_SIZE, rawSettings.LIMB_SIZE)
 			limb.Massless = true
+			applyLimbHighlight(limb)
 		end
-		applyLimbHighlight(limb)
 	end
 
 	local function processCharacterLimb(character)
@@ -109,19 +109,17 @@ local function main()
 				task.wait(0.1) 
 				waited += 0.1 
 			end
-			if waited < 1 then alive = true end
+			if waited >= 1 then return end
 
-			if alive then
-				if (rawSettings.TEAM_CHECK and (LocalPlayer.Team == nil or PlayersService:GetPlayerFromCharacter(character).Team ~= LocalPlayer.Team)) or not rawSettings.TEAM_CHECK then
-					modifyTargetLimb(character)
-				end
-
-				local humanoid = character:WaitForChild("Humanoid")
-				local connection = rawSettings.RESTORE_ORIGINAL_LIMB_ON_DEATH and humanoid.HealthChanged or humanoid.Died
-				getgenv().LimbExtenderGlobalData[character.Name .. " OnDeath"] = connection:Connect(function(health)
-					if health and health <= 0 then restoreLimbProperties(character) end
-				end)
+			if (rawSettings.TEAM_CHECK and (LocalPlayer.Team == nil or PlayersService:GetPlayerFromCharacter(character).Team ~= LocalPlayer.Team)) or not rawSettings.TEAM_CHECK then
+				modifyTargetLimb(character)
 			end
+
+			local humanoid = character:WaitForChild("Humanoid")
+			local connection = rawSettings.RESTORE_ORIGINAL_LIMB_ON_DEATH and humanoid.HealthChanged or humanoid.Died
+			getgenv().LimbExtenderGlobalData[character.Name .. " OnDeath"] = connection:Connect(function(health)
+				if health and health <= 0 then restoreLimbProperties(character) end
+			end)
 		end)
 	end
 
