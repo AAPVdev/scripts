@@ -4,6 +4,7 @@ This script is not intended to be executed directly as raw source code.
 To ensure proper functionality and avoid potential issues, please execute the script via a loadstring function.
 Running the script in this manner helps maintain compatibility and ensures that dependencies and environmental setups are correctly handled.
 ]]
+
 local LimbExtender = nil
 
 local function main()
@@ -14,7 +15,7 @@ local function main()
 	local rawSettings = {
 		TOGGLE = "K",
 		TARGET_LIMB = "Head",
-		LIMB_SIZE = 50,
+		LIMB_SIZE = 10,
 		LIMB_TRANSPARENCY = 0.9,
 		LIMB_CAN_COLLIDE = false,
 		TEAM_CHECK = false,
