@@ -155,11 +155,10 @@ local function main()
 	local function playerHandler(player)
 		onPlayerRemoved(player)
 		getgenv().LimbExtenderGlobalData[player.Name] = {}
+		getgenv().LimbExtenderGlobalData[player.Name]["TeamChanged"] = player:GetPropertyChangedSignal("Team"):Connect(function()
+			playerHandler(player)
+		end)
 		getgenv().LimbExtenderGlobalData[player.Name]["CharacterAdded"] = player.CharacterAdded:Connect(function(character)
-			getgenv().LimbExtenderGlobalData[player.Name]["TeamChanged"] = player:GetPropertyChangedSignal("Team"):Connect(function()
-				playerHandler(player)
-			end)
-
 			if rawSettings.FORCEFIELD_CHECK then
 				getgenv().LimbExtenderGlobalData[player.Name]["ForceFieldAdded"] = character.ChildAdded:Connect(function(child)
 						if child:IsA("ForceField") then restoreLimbProperties(character) end
@@ -167,12 +166,9 @@ local function main()
 				getgenv().LimbExtenderGlobalData[player.Name]["ForceFieldRemoved"] = character.ChildRemoved:Connect(function(child)
 					if child:IsA("ForceField") then processCharacterLimb(character) end
 				end)
-				restoreLimbProperties(character)
-				processCharacterLimb(character)
-			else
-				restoreLimbProperties(character)
-				processCharacterLimb(character)
 			end
+			restoreLimbProperties(character)
+			processCharacterLimb(character)
 		end)
 
 		getgenv().LimbExtenderGlobalData[player.Name]["CharacterRemoving"] = player.CharacterRemoving:Connect(function(character)
@@ -231,7 +227,9 @@ local function main()
 		
 		getgenv().LimbExtenderGlobalData[LocalPlayer]["TeamChanged"] = LocalPlayer:GetPropertyChangedSignal("Team"):Connect(function()
 			task.spawn(function()
-				getPlayers(playerHandler)
+				if getgenv().LimbExtenderGlobalData.IsProcessActive then
+					rawSettings.startProcess()
+				end
 			end)
 		end)
 
