@@ -1,3 +1,9 @@
+--[[
+Important Notice:
+This script is not intended to be executed directly as raw source code.
+To ensure proper functionality and avoid potential issues, please execute the script via a loadstring function.
+Running the script in this manner helps maintain compatibility and ensures that dependencies and environmental setups are correctly handled.
+]]
 local LimbExtender = nil
 
 local function main()
@@ -73,6 +79,12 @@ local function main()
 				if lastStoredProperties then
 					lastLimb.Size, lastLimb.Transparency, lastLimb.CanCollide, lastLimb.Massless = lastStoredProperties.Size, lastStoredProperties.Transparency, lastStoredProperties.CanCollide, lastStoredProperties.Massless
 					getgenv().LimbExtenderGlobalData[lastLimb] = nil
+
+					local highlight = lastLimb:FindFirstChildWhichIsA("Highlight")
+		
+					if highlight then
+						highlight.Enabled = false
+					end
 				end
 			end
 		end
@@ -111,7 +123,7 @@ local function main()
 	local function processCharacterLimb(character)
 		task.spawn(function()
 			local waited = 0
-			while not character:FindFirstChild("Humanoid") and character:FindFirstChild(rawSettings.TARGET_LIMB) and waited <= 1 do 
+			while not character:FindFirstChild("Humanoid") and character:FindFirstChild(rawSettings.TARGET_LIMB) and waited < 1 do 
 				task.wait(0.1) 
 				waited += 0.1 
 			end
