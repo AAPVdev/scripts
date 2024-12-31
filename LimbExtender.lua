@@ -99,7 +99,7 @@ local function main()
 			limb.Size = newSize
 			limb.Massless = true
 			applyLimbHighlight(limb)
-			getgenv().LimbExtenderGlobalData[player.Name]["SizeChanged"] = limb:GetPropertyChangedSignal("Size"):Once(function()
+			getgenv().LimbExtenderGlobalData[character.Name]["SizeChanged"] = limb:GetPropertyChangedSignal("Size"):Once(function()
 				if limb.Size ~= newSize then
 					restoreLimbProperties(character)
                 			modifyTargetLimb(character)
@@ -123,20 +123,20 @@ local function main()
 
 			local humanoid = character:WaitForChild("Humanoid")
 			local connection = rawSettings.RESTORE_ORIGINAL_LIMB_ON_DEATH and humanoid.HealthChanged or humanoid.Died
-			getgenv().LimbExtenderGlobalData[player.Name]["OnDeath"] = connection:Connect(function(health)
+			getgenv().LimbExtenderGlobalData[character.Name]["OnDeath"] = connection:Connect(function(health)
 				if health and health <= 0 then restoreLimbProperties(character) end
 			end)
 		end)
 	end
 
 	local function onPlayerRemoved(player)
-		if player.Character then restoreLimbProperties(player.Character) end
 		if getgenv().LimbExtenderGlobalData[player.Name] then
 			for _, connection in pairs(getgenv().LimbExtenderGlobalData[player.Name]) do 
 				connection:Disconnect()
 			end
 			getgenv().LimbExtenderGlobalData[player.Name] = nil
 		end
+		if player.Character then restoreLimbProperties(player.Character) end
 	end
 
 	local function playerHandler(player)
