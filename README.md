@@ -3,8 +3,6 @@
 ## 🔹 Limb Extender (NO UI)  
 Extend limbs without a graphical interface. Offers more customizable core settings compared to the UI version.
 ```lua
-local LimbExtender = loadstring(game:HttpGet('https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua'))()
-
 local settings = {
     TOGGLE = "K",
     TARGET_LIMB = "Head",
@@ -23,6 +21,7 @@ local settings = {
     HIGHLIGHT_OUTLINE_TRANSPARENCY = 0,
 }
 
+local LimbExtender = loadstring(game:HttpGet('https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua'))()
 for key, value in pairs(settings) do
     LimbExtender[key] = value
 end
