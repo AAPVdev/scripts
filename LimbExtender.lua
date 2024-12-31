@@ -93,18 +93,17 @@ local function main()
 		local limb = character:WaitForChild(rawSettings.TARGET_LIMB, 1)
 		local newSize = Vector3.new(rawSettings.LIMB_SIZE, rawSettings.LIMB_SIZE, rawSettings.LIMB_SIZE)
 		if limb then
-			limb:GetPropertyChangedSignal("Size"):Once(function()
-				if limb.Size ~= newSize then
-                			modifyTargetLimb(character)
-				end
-            		end)
-			
 			saveOriginalLimbProperties(limb)
 			limb.Transparency = rawSettings.LIMB_TRANSPARENCY
 			limb.CanCollide = rawSettings.LIMB_CAN_COLLIDE
 			limb.Size = newSize
 			limb.Massless = true
 			applyLimbHighlight(limb)
+			limb:GetPropertyChangedSignal("Size"):Once(function()
+				if limb.Size ~= newSize then
+                			modifyTargetLimb(character)
+				end
+            		end)
 		end
 	end
 
