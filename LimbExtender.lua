@@ -57,6 +57,23 @@ local function main()
 	end
 
 	local function restoreLimbProperties(character)
+		if getgenv().LimbExtenderGlobalData.LastLimbName ~= rawSettings.TARGET_LIMB then
+			local lastLimb = character:FindFirstChild(getgenv().LimbExtenderGlobalData.LastLimbName)
+			if lastLimb then
+				local lastStoredProperties = getgenv().LimbExtenderGlobalData[lastLimb]
+				if lastStoredProperties then
+					lastLimb.Size, lastLimb.Transparency, lastLimb.CanCollide, lastLimb.Massless = lastStoredProperties.Size, lastStoredProperties.Transparency, lastStoredProperties.CanCollide, lastStoredProperties.Massless
+					getgenv().LimbExtenderGlobalData[lastLimb] = nil
+
+					local highlight = lastLimb:FindFirstChildWhichIsA("Highlight")
+		
+					if highlight then
+						highlight.Enabled = false
+					end
+				end
+			end
+		end
+		
 		local limb = character:FindFirstChild(rawSettings.TARGET_LIMB)
 		local storedProperties = getgenv().LimbExtenderGlobalData[limb]
 
@@ -78,23 +95,6 @@ local function main()
 		
 		if highlight then
 			highlight.Enabled = false
-		end
-
-		if getgenv().LimbExtenderGlobalData.LastLimbName and getgenv().LimbExtenderGlobalData.LastLimbName ~= rawSettings.TARGET_LIMB then
-			local lastLimb = character:FindFirstChild(getgenv().LimbExtenderGlobalData.LastLimbName)
-			if lastLimb then
-				local lastStoredProperties = getgenv().LimbExtenderGlobalData[lastLimb]
-				if lastStoredProperties then
-					lastLimb.Size, lastLimb.Transparency, lastLimb.CanCollide, lastLimb.Massless = lastStoredProperties.Size, lastStoredProperties.Transparency, lastStoredProperties.CanCollide, lastStoredProperties.Massless
-					getgenv().LimbExtenderGlobalData[lastLimb] = nil
-
-					local highlight = lastLimb:FindFirstChildWhichIsA("Highlight")
-		
-					if highlight then
-						highlight.Enabled = false
-					end
-				end
-			end
 		end
 	end
 
