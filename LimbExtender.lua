@@ -119,10 +119,9 @@ local function main()
 			limb.Size = newSize
 			limb.Massless = true
 			applyLimbHighlight(limb)
-			getgenv().LimbExtenderGlobalData[character.Name]["SizeChanged"] = limb:GetPropertyChangedSignal("Size"):Once(function()
+			getgenv().LimbExtenderGlobalData[character.Name]["SizeChanged"] = limb:GetPropertyChangedSignal("Size"):Connect(function()
 				if limb.Size ~= newSize then
-					restoreLimbProperties(character)
-                			modifyTargetLimb(character)
+                			limb.Size = newSize
 				end
             		end)
 		end
