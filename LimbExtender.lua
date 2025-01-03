@@ -61,6 +61,11 @@ local function main()
 		local storedProperties = getgenv().LimbExtenderGlobalData[limb]
 
 		if not limb then return end
+
+		if getgenv().LimbExtenderGlobalData[character.Name]["SizeChanged"] then
+			getgenv().LimbExtenderGlobalData[character.Name]["SizeChanged"]:Disconnect()
+			getgenv().LimbExtenderGlobalData[character.Name]["SizeChanged"] = nil
+		end
 		
 		if storedProperties then
 			limb.Size, limb.Transparency, limb.CanCollide, limb.Massless = storedProperties.Size, storedProperties.Transparency, storedProperties.CanCollide, storedProperties.Massless
