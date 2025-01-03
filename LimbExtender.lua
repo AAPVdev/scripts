@@ -61,10 +61,12 @@ local function main()
 		local storedProperties = getgenv().LimbExtenderGlobalData[limb]
 
 		if not limb then return end
-
-		if getgenv().LimbExtenderGlobalData[character.Name] and getgenv().LimbExtenderGlobalData[character.Name]["SizeChanged"] then
-			getgenv().LimbExtenderGlobalData[character.Name]["SizeChanged"]:Disconnect()
-			getgenv().LimbExtenderGlobalData[character.Name]["SizeChanged"] = nil
+		
+		if getgenv().LimbExtenderGlobalData[character.Name] then
+			if getgenv().LimbExtenderGlobalData[character.Name]["SizeChanged"] then
+				getgenv().LimbExtenderGlobalData[character.Name]["SizeChanged"]:Disconnect()
+				getgenv().LimbExtenderGlobalData[character.Name]["SizeChanged"] = nil
+			end
 		end
 		
 		if storedProperties then
