@@ -79,16 +79,16 @@ local function main()
 
 		if not limb then return end
 		
-		if getgenv().LimbExtenderGlobalData[character.Name] then
-			if getgenv().LimbExtenderGlobalData[character.Name]["SizeChanged"] then
-				getgenv().LimbExtenderGlobalData[character.Name]["SizeChanged"]:Disconnect()
-				getgenv().LimbExtenderGlobalData[character.Name]["SizeChanged"] = nil
-			end
-		end
-		
 		if storedProperties then
 			limb.Size, limb.Transparency, limb.CanCollide, limb.Massless = storedProperties.Size, storedProperties.Transparency, storedProperties.CanCollide, storedProperties.Massless
 			getgenv().LimbExtenderGlobalData[limb] = nil
+
+			if getgenv().LimbExtenderGlobalData[character.Name] then
+				if getgenv().LimbExtenderGlobalData[character.Name]["SizeChanged"] then
+					getgenv().LimbExtenderGlobalData[character.Name]["SizeChanged"]:Disconnect()
+					getgenv().LimbExtenderGlobalData[character.Name]["SizeChanged"] = nil
+				end
+			end
 		end
 
 		local highlight = limb:FindFirstChildWhichIsA("Highlight")
