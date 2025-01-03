@@ -62,7 +62,7 @@ local function main()
 
 		if not limb then return end
 
-		if getgenv().LimbExtenderGlobalData[character.Name]["SizeChanged"] then
+		if getgenv().LimbExtenderGlobalData[character.Name] and getgenv().LimbExtenderGlobalData[character.Name]["SizeChanged"] then
 			getgenv().LimbExtenderGlobalData[character.Name]["SizeChanged"]:Disconnect()
 			getgenv().LimbExtenderGlobalData[character.Name]["SizeChanged"] = nil
 		end
