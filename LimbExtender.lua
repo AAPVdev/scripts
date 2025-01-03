@@ -57,7 +57,7 @@ local function main()
 	end
 
 	local function restoreLimbProperties(character)
-		if getgenv().LimbExtenderGlobalData.LastLimbName ~= rawSettings.TARGET_LIMB then
+		if  getgenv().LimbExtenderGlobalData.LastLimbName and getgenv().LimbExtenderGlobalData.LastLimbName ~= rawSettings.TARGET_LIMB then
 			local lastLimb = character:FindFirstChild(getgenv().LimbExtenderGlobalData.LastLimbName)
 			if lastLimb then
 				local lastStoredProperties = getgenv().LimbExtenderGlobalData[lastLimb]
