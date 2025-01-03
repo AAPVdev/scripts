@@ -57,6 +57,13 @@ local function main()
 	end
 
 	local function restoreLimbProperties(character)
+		if getgenv().LimbExtenderGlobalData[character.Name] then
+			if getgenv().LimbExtenderGlobalData[character.Name]["SizeChanged"] then
+				getgenv().LimbExtenderGlobalData[character.Name]["SizeChanged"]:Disconnect()
+				getgenv().LimbExtenderGlobalData[character.Name]["SizeChanged"] = nil
+			end
+		end
+		
 		if  getgenv().LimbExtenderGlobalData.LastLimbName and getgenv().LimbExtenderGlobalData.LastLimbName ~= rawSettings.TARGET_LIMB then
 			local lastLimb = character:FindFirstChild(getgenv().LimbExtenderGlobalData.LastLimbName)
 			if lastLimb then
@@ -82,13 +89,6 @@ local function main()
 		if storedProperties then
 			limb.Size, limb.Transparency, limb.CanCollide, limb.Massless = storedProperties.Size, storedProperties.Transparency, storedProperties.CanCollide, storedProperties.Massless
 			getgenv().LimbExtenderGlobalData[limb] = nil
-
-			if getgenv().LimbExtenderGlobalData[character.Name] then
-				if getgenv().LimbExtenderGlobalData[character.Name]["SizeChanged"] then
-					getgenv().LimbExtenderGlobalData[character.Name]["SizeChanged"]:Disconnect()
-					getgenv().LimbExtenderGlobalData[character.Name]["SizeChanged"] = nil
-				end
-			end
 		end
 
 		local highlight = limb:FindFirstChildWhichIsA("Highlight")
