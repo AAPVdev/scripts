@@ -94,7 +94,7 @@ local function main()
 		local highlight = limb:FindFirstChildWhichIsA("Highlight")
 		
 		if highlight then
-			highlight.Enabled = false
+			highlight:Destroy()
 		end
 	end
 
