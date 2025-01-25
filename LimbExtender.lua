@@ -75,7 +75,7 @@ local function main()
 					local highlight = lastLimb:FindFirstChildWhichIsA("Highlight")
 		
 					if highlight then
-						highlight.Enabled = false
+						highlight:Destroy()
 					end
 				end
 			end
@@ -119,11 +119,11 @@ local function main()
 			limb.Size = newSize
 			limb.Massless = true
 			applyLimbHighlight(limb)
-			getgenv().LimbExtenderGlobalData[character.Name]["SizeChanged"] = limb.Changed:Connect(function()
+			getgenv().LimbExtenderGlobalData[character.Name]["SizeChanged"] = limb:GetPropertyChangedSignal("Size"):Connect(function()
 				if limb.Size ~= newSize then
-                			limb.Size = newSize
+                	limb.Size = newSize
 				end
-            		end)
+            end)
 		end
 	end
 
