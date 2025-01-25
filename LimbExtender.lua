@@ -106,7 +106,7 @@ local function main()
 		highlightInstance.FillTransparency = rawSettings.HIGHLIGHT_FILL_TRANSPARENCY
 		highlightInstance.OutlineColor = rawSettings.HIGHLIGHT_OUTLINE_COLOR
 		highlightInstance.OutlineTransparency = rawSettings.HIGHLIGHT_OUTLINE_TRANSPARENCY
-		highlightInstance.Enabled = true
+		highlightInstance.Enabled = rawSettings.USE_HIGHLIGHT
 	end
 
 	local function modifyTargetLimb(character)
@@ -119,7 +119,7 @@ local function main()
 			limb.Size = newSize
 			limb.Massless = true
 			applyLimbHighlight(limb)
-			getgenv().LimbExtenderGlobalData[character.Name]["SizeChanged"] = limb:GetPropertyChangedSignal("Size"):Connect(function()
+			getgenv().LimbExtenderGlobalData[character.Name]["SizeChanged"] = limb.Changed:Connect(function()
 				if limb.Size ~= newSize then
                 			limb.Size = newSize
 				end
