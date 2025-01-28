@@ -31,8 +31,6 @@ local function main()
 	}
 
 	getgenv().LimbExtenderGlobalData = getgenv().LimbExtenderGlobalData or {}
-	getgenv().LimbExtenderGlobalData.Sense = getgenv().LimbExtenderGlobalData.Sense or loadstring(game:HttpGet('https://sirius.menu/sense'))()
-
 	local PlayersService = game:GetService("Players")
 	local UserInputService = game:GetService("UserInputService")
 	local LocalPlayer = PlayersService.LocalPlayer
