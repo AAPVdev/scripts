@@ -34,11 +34,6 @@ local function main()
 	local PlayersService = game:GetService("Players")
 	local UserInputService = game:GetService("UserInputService")
 	local LocalPlayer = PlayersService.LocalPlayer
-	local Sense = getgenv().LimbExtenderGlobalData.Sense
-
-	Sense.teamSettings.enemy.enabled = true
-	Sense.teamSettings.enemy.box = true
-	Sense.teamSettings.enemy.healthText = true
 
 	local function getPlayers(func)
 		for _, player in pairs(PlayersService:GetPlayers()) do
@@ -204,10 +199,6 @@ local function main()
 
 		getPlayers(onPlayerRemoved)
 
-		if Sense._hasLoaded then
-			Sense.Unload()
-		end
-
 		if specialProcess == "DetectInput" then 
 			getgenv().LimbExtenderGlobalData.InputBeganConnection = UserInputService.InputBegan:Connect(handleKeyInput)
 		elseif specialProcess == "FullKill" then
@@ -223,9 +214,6 @@ local function main()
 		getgenv().LimbExtenderGlobalData.PlayerAddedConnection = PlayersService.PlayerAdded:Connect(playerHandler)
 		getgenv().LimbExtenderGlobalData.PlayerRemovingConnection = PlayersService.PlayerRemoving:Connect(onPlayerRemoved)
 
-		if rawSettings.ESP and not Sense._hasLoaded then
-			Sense.Load()
-		end
 		
 		getgenv().LimbExtenderGlobalData[LocalPlayer] = {}
 		
