@@ -2,13 +2,13 @@ local limbExtender = nil
 
 local players = game:GetService("Players")
 local contextActionService = require(script.ContextActionUtility)
-local TweenService = game:GetService("TweenService")
+local tweenService = game:GetService("TweenService")
 
 local localPlayer = players.LocalPlayer
 
 local function run()
-	if _G.limbExtenderData and _G.limbExtenderData.running then
-		_G.limbExtenderData.terminateOldProcess("FullKill")
+	if getgenv().limbExtenderData and getgenv().limbExtenderData.running then
+		getgenv().limbExtenderData.terminateOldProcess("FullKill")
 	end
 
 	local rawSettings = {
@@ -29,10 +29,10 @@ local function run()
 		HIGHLIGHT_OUTLINE_TRANSPARENCY = 0,
 	}
 
-	_G.limbExtenderData = _G.limbExtenderData or {}
+	getgenv().limbExtenderData = getgenv().limbExtenderData or {}
 
 
-	local limbExtenderData = _G.limbExtenderData
+	local limbExtenderData = getgenv().limbExtenderData
 
 	limbExtenderData.running = limbExtenderData.running or false
 	limbExtenderData.playerTable = {}
@@ -110,7 +110,7 @@ local function run()
 	end
 
 	local function terminate(specialProcess)
-		for key, connection in pairs(_G.limbExtenderData) do
+		for key, connection in pairs(getgenv().limbExtenderData) do
 			if typeof(connection) == "RBXScriptConnection" then
 				connection:Disconnect()
 				limbExtenderData[key] = nil
@@ -275,7 +275,7 @@ local function run()
 		task.wait(2)
 
 		local function animate(target, tweenInfo, properties)
-			TweenService:Create(target, tweenInfo, properties):Play()
+			tweenService:Create(target, tweenInfo, properties):Play()
 		end
 
 		animate(Background, TweenInfo.new(1, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.new(0.499, 0, 0.499, 0)})
@@ -307,7 +307,7 @@ local function run()
 			rawSettings.initiate()
 		end
 
-		_G.limbExtenderData.terminateOldProcess = terminate
+		getgenv().limbExtenderData.terminateOldProcess = terminate
 	end)
 end
 
