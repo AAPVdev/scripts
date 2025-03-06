@@ -124,13 +124,10 @@ local function BindButton(actionName, functionToBind)
 	local slot
 	local data = Buttons[actionName]
 	if data then
-		print("is Data")
 		if data.Connections then
-			print("is Connections")
 			DisconnectButton(actionName)
 		end
 		if data.Slot then
-			print("is Slot")
 			slot = data.Slot
 		else
 			slot = GetNextSlot()
@@ -261,7 +258,6 @@ function ContextActionUtility:SetPressedColor(actionName, color)
 	if not data then return end
 	local button = data.Button
 	if not button then return end
-	print("Setting Pressed Color")
 	button.BorderColor3 = color
 end
 
