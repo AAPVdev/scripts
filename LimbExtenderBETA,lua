@@ -1,7 +1,7 @@
 local limbExtender = nil
 
 local players = game:GetService("Players")
-local contextActionService = require(script.ContextActionUtility)
+local contextActionUtility = loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/ContextActionUtility.lua"))()
 local tweenService = game:GetService("TweenService")
 
 local localPlayer = players.LocalPlayer
