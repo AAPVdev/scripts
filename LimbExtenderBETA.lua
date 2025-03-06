@@ -290,19 +290,17 @@ local function run()
 		task.wait(1)
 		AAPVdev:Destroy()
 
-		if rawSettings.MOBILE_BUTTON then
-			contextActionUtility:BindAction(
-				"LimbExtenderToggle",
-				function(_, inputState)
-					if inputState == Enum.UserInputState.Begin then
-						toggleState()
-					end
-				end,
-				true,
-				Enum.KeyCode[rawSettings.TOGGLE]
-			)
-			contextActionUtility:SetTitle("LimbExtenderToggle", "On")
-		end
+		contextActionUtility:BindAction(
+			"LimbExtenderToggle",
+			function(_, inputState)
+				if inputState == Enum.UserInputState.Begin then
+					toggleState()
+				end
+			end,
+			rawSettings.MOBILE_BUTTON,
+			Enum.KeyCode[rawSettings.TOGGLE]
+		)
+		contextActionUtility:SetTitle("LimbExtenderToggle", "On")
 
 		if limbExtenderData.running then
 			rawSettings.initiate()
