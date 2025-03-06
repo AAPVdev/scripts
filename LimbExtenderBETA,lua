@@ -1,20 +1,21 @@
 local limbExtender = nil
 
 local players = game:GetService("Players")
-local contextActionService = game:GetService("ContextActionService")
+local contextActionService = require(script.ContextActionUtility)
 local TweenService = game:GetService("TweenService")
 
 local localPlayer = players.LocalPlayer
 
 local function run()
-	if getgenv().limbExtenderData and getgenv().limbExtenderData.running then
-		getgenv().limbExtenderData.terminateOldProcess("FullKill")
+	if _G.limbExtenderData and _G.limbExtenderData.running then
+		_G.limbExtenderData.terminateOldProcess("FullKill")
 	end
 
 	local rawSettings = {
 		TOGGLE = "K",
 		TARGET_LIMB = "Head",
 		LIMB_SIZE = 5,
+		MOBILE_BUTTON = true,
 		LIMB_TRANSPARENCY = 0.9,
 		LIMB_CAN_COLLIDE = false,
 		TEAM_CHECK = true,
@@ -28,10 +29,10 @@ local function run()
 		HIGHLIGHT_OUTLINE_TRANSPARENCY = 0,
 	}
 
-	getgenv().limbExtenderData = getgenv().limbExtenderData or {}
+	_G.limbExtenderData = _G.limbExtenderData or {}
 
 
-	local limbExtenderData = getgenv().limbExtenderData
+	local limbExtenderData = _G.limbExtenderData
 
 	limbExtenderData.running = limbExtenderData.running or false
 	limbExtenderData.playerTable = {}
@@ -109,7 +110,7 @@ local function run()
 	end
 
 	local function terminate(specialProcess)
-		for key, connection in pairs(getgenv().limbExtenderData) do
+		for key, connection in pairs(_G.limbExtenderData) do
 			if typeof(connection) == "RBXScriptConnection" then
 				connection:Disconnect()
 				limbExtenderData[key] = nil
@@ -129,7 +130,9 @@ local function run()
 		if specialProcess == "FullKill" then
 			contextActionService:UnbindAction("LimbExtenderToggle")
 		end
-		contextActionService:SetTitle("LimbExtenderToggle", "On")
+		if rawSettings.MOBILE_BUTTON then
+			contextActionService:SetTitle("LimbExtenderToggle", "On")
+		end
 	end
 
 	local function toggleState()
@@ -179,7 +182,6 @@ local function run()
 			playerTable[player.Name]["characterAdded"] = player.CharacterAdded:Connect(characterAdded)
 
 			characterAdded(player.Character)
-			contextActionService:SetTitle("LimbExtenderToggle", "Off")
 		end
 
 		for _, player in ipairs(players:GetPlayers()) do
@@ -191,6 +193,10 @@ local function run()
 		limbExtenderData.teamChanged = localPlayer:GetPropertyChangedSignal("Team"):Once(rawSettings.initiate)
 		limbExtenderData.playerAdded = players.PlayerAdded:Connect(setupPlayers)
 		limbExtenderData.playerRemoving = players.PlayerRemoving:Connect(removePlayerData)
+		
+		if rawSettings.MOBILE_BUTTON then
+			contextActionService:SetTitle("LimbExtenderToggle", "Off")
+		end
 	end
 
 	limbExtender = setmetatable({}, {
@@ -282,24 +288,26 @@ local function run()
 		animate(Background, TweenInfo.new(1, Enum.EasingStyle.Back, Enum.EasingDirection.In), {Size = UDim2.new(0, 0, 0, 0)})
 		task.wait(1)
 		AAPVdev:Destroy()
-
-		contextActionService:BindAction(
-			"LimbExtenderToggle",
-			function(_, inputState)
-				if inputState == Enum.UserInputState.Begin then
-					toggleState()
-				end
-			end,
-			true,
-			Enum.KeyCode[rawSettings.TOGGLE]
-		)
-		contextActionService:SetTitle("LimbExtenderToggle", "On")
+		
+		if rawSettings.MOBILE_BUTTON then
+			contextActionService:BindAction(
+				"LimbExtenderToggle",
+				function(_, inputState)
+					if inputState == Enum.UserInputState.Begin then
+						toggleState()
+					end
+				end,
+				true,
+				Enum.KeyCode[rawSettings.TOGGLE]
+			)
+			contextActionService:SetTitle("LimbExtenderToggle", "On")
+		end
 
 		if limbExtenderData.running then
 			rawSettings.initiate()
 		end
 
-		getgenv().limbExtenderData.terminateOldProcess = terminate
+		_G.limbExtenderData.terminateOldProcess = terminate
 	end)
 end
 
