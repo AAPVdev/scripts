@@ -42,8 +42,6 @@ local function run()
 	local limbs = limbExtenderData.limbs
 	local contextActionUtility = limbExtenderData.CAU
 
-	local newSize = Vector3.new(rawSettings.LIMB_SIZE, rawSettings.LIMB_SIZE, rawSettings.LIMB_SIZE)
-
 	local function restoreLimbProperties(limb)
 		local limbProperties = limbs[limb]
 		local highlightInstance = limb:FindFirstChild("LimbHighlight")
@@ -80,8 +78,7 @@ local function run()
 	local function modifyLimbProperties(limb)
 		task.spawn(function()
 			saveLimbProperties(limb)
-
-			limb.Size = newSize
+			limb.Size = Vector3.new(rawSettings.LIMB_SIZE, rawSettings.LIMB_SIZE, rawSettings.LIMB_SIZE)
 			limb.Transparency = rawSettings.LIMB_TRANSPARENCY
 			limb.CanCollide = rawSettings.LIMB_CAN_COLLIDE
 			limb.Massless = true
