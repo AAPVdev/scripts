@@ -300,7 +300,9 @@ local function run()
 			rawSettings.MOBILE_BUTTON,
 			Enum.KeyCode[rawSettings.TOGGLE]
 		)
-		contextActionUtility:SetTitle("LimbExtenderToggle", "On")
+		if rawSettings.MOBILE_BUTTON then
+			contextActionUtility:SetTitle("LimbExtenderToggle", "On")
+		end
 
 		if limbExtenderData.running then
 			rawSettings.initiate()
