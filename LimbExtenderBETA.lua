@@ -202,9 +202,6 @@ local function run()
 		__newindex = function(_, key, value)
 			if rawSettings[key] ~= value then
 				rawSettings[key] = value
-				if limbExtenderData.running then
-					rawSettings.initiate()
-				end
 			end
 		end
 	})
