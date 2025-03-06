@@ -43,8 +43,8 @@ local function run()
 	local contextActionUtility = limbExtenderData.CAU
 
 	local function getPlayers(func)
-		for _, player in pairs(PlayersService:GetPlayers()) do
-			if player ~= LocalPlayer then
+		for _, player in pairs(players:GetPlayers()) do
+			if player ~= localPlayer then
 				func(player)
 			end
 		end
