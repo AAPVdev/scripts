@@ -42,6 +42,14 @@ local function run()
 	local limbs = limbExtenderData.limbs
 	local contextActionUtility = limbExtenderData.CAU
 
+	local function getPlayers(func)
+		for _, player in pairs(PlayersService:GetPlayers()) do
+			if player ~= LocalPlayer then
+				func(player)
+			end
+		end
+	end
+
 	local function restoreLimbProperties(limb)
 		local limbProperties = limbs[limb]
 		local highlightInstance = limb:FindFirstChild("LimbHighlight")
@@ -115,11 +123,7 @@ local function run()
 			end
 		end
 
-		for _, player in ipairs(players:GetPlayers()) do
-			if player ~= localPlayer then
-				removePlayerData(player)	
-			end
-		end
+		getPlayers(removePlayerData)
 
 		for limb, _ in pairs(limbExtenderData.limbs) do
 			restoreLimbProperties(limb)
@@ -147,7 +151,7 @@ local function run()
 		if not limbExtenderData.running then return end
 		terminate()
 
-		local function setupPlayers(player)
+		local function setupPlayer(player)
 			local function characterAdded(character)
 				if character then
 					local targetLimb = character:WaitForChild(rawSettings.TARGET_LIMB, 1)
@@ -183,14 +187,10 @@ local function run()
 			characterAdded(player.Character)
 		end
 
-		for _, player in ipairs(players:GetPlayers()) do
-			if game:GetService("RunService"):IsStudio() or player ~= localPlayer then
-				setupPlayers(player)
-			end
-		end
+		getPlayers(setupPlayer)
 
 		limbExtenderData.teamChanged = localPlayer:GetPropertyChangedSignal("Team"):Once(rawSettings.initiate)
-		limbExtenderData.playerAdded = players.PlayerAdded:Connect(setupPlayers)
+		limbExtenderData.playerAdded = players.PlayerAdded:Connect(setupPlayer)
 		limbExtenderData.playerRemoving = players.PlayerRemoving:Connect(removePlayerData)
 
 		if rawSettings.MOBILE_BUTTON then
