@@ -175,7 +175,7 @@ local function run()
 
 						playerData["teamChanged"] = player:GetPropertyChangedSignal("Team"):Once(function()
 							removePlayerData(player)
-							setupPlayers(player)
+							setupPlayer(player)
 						end)
 					end
 				end
