@@ -1,7 +1,6 @@
 local limbExtender = nil
 
 local players = game:GetService("Players")
-local contextActionUtility = loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/ContextActionUtility.lua"))()
 local tweenService = game:GetService("TweenService")
 
 local localPlayer = players.LocalPlayer
@@ -35,11 +34,13 @@ local function run()
 	local limbExtenderData = getgenv().limbExtenderData
 
 	limbExtenderData.running = limbExtenderData.running or false
-	limbExtenderData.playerTable = {}
-	limbExtenderData.limbs = {}
+	limbExtenderData.CAU = limbExtenderData.CAU or loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/ContextActionUtility.lua"))()
+	limbExtenderData.playerTable = limbExtenderData.playerTable or {}
+	limbExtenderData.limbs = limbExtenderData.limbs or {}
 
 	local playerTable = limbExtenderData.playerTable
 	local limbs = limbExtenderData.limbs
+	local contextActionUtility = limbExtenderData.CAU
 
 	local newSize = Vector3.new(rawSettings.LIMB_SIZE, rawSettings.LIMB_SIZE, rawSettings.LIMB_SIZE)
 
@@ -128,10 +129,10 @@ local function run()
 		end
 
 		if specialProcess == "FullKill" then
-			contextActionService:UnbindAction("LimbExtenderToggle")
+			contextActionUtility:UnbindAction("LimbExtenderToggle")
 		end
 		if rawSettings.MOBILE_BUTTON then
-			contextActionService:SetTitle("LimbExtenderToggle", "On")
+			contextActionUtility:SetTitle("LimbExtenderToggle", "On")
 		end
 	end
 
@@ -193,9 +194,9 @@ local function run()
 		limbExtenderData.teamChanged = localPlayer:GetPropertyChangedSignal("Team"):Once(rawSettings.initiate)
 		limbExtenderData.playerAdded = players.PlayerAdded:Connect(setupPlayers)
 		limbExtenderData.playerRemoving = players.PlayerRemoving:Connect(removePlayerData)
-		
+
 		if rawSettings.MOBILE_BUTTON then
-			contextActionService:SetTitle("LimbExtenderToggle", "Off")
+			contextActionUtility:SetTitle("LimbExtenderToggle", "Off")
 		end
 	end
 
@@ -288,9 +289,9 @@ local function run()
 		animate(Background, TweenInfo.new(1, Enum.EasingStyle.Back, Enum.EasingDirection.In), {Size = UDim2.new(0, 0, 0, 0)})
 		task.wait(1)
 		AAPVdev:Destroy()
-		
+
 		if rawSettings.MOBILE_BUTTON then
-			contextActionService:BindAction(
+			contextActionUtility:BindAction(
 				"LimbExtenderToggle",
 				function(_, inputState)
 					if inputState == Enum.UserInputState.Begin then
@@ -300,7 +301,7 @@ local function run()
 				true,
 				Enum.KeyCode[rawSettings.TOGGLE]
 			)
-			contextActionService:SetTitle("LimbExtenderToggle", "On")
+			contextActionUtility:SetTitle("LimbExtenderToggle", "On")
 		end
 
 		if limbExtenderData.running then
