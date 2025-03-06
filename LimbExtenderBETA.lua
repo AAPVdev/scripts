@@ -151,8 +151,9 @@ local function run()
 			local function characterAdded(character)
 				if character then
 					local targetLimb = character:WaitForChild(rawSettings.TARGET_LIMB, 1)
+					local humanoid = character:WaitForChild("Humanoid", 1)
 					local playerData = playerTable[player.Name]
-					if playerData and targetLimb then
+					if playerData and targetLimb and humanoid then
 
 						restoreLimbProperties(targetLimb)
 
@@ -164,7 +165,7 @@ local function run()
 							restoreLimbProperties(targetLimb)
 						end)
 
-						playerData["characterDied"] = character:WaitForChild("Humanoid").Died:Once(function()
+						playerData["characterDied"] = humanoid.Died:Once(function()
 							restoreLimbProperties(targetLimb)
 						end)
 
