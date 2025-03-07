@@ -33,7 +33,7 @@ local function run()
 	local limbExtenderData = _G.limbExtenderData
 
 	limbExtenderData.running = limbExtenderData.running or false
-	limbExtenderData.CAU = limbExtenderData.CAU or game:GetService("ContextActionService")
+	limbExtenderData.CAU = limbExtenderData.CAU or loadstring(game:HttpGet('https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/ContextActionUtility.lua'))()
 	limbExtenderData.playerTable = limbExtenderData.playerTable or {}
 	limbExtenderData.limbs = limbExtenderData.limbs or {}
 
@@ -207,7 +207,7 @@ local function run()
 			end
 		end
 	})
-	
+
 	loadingScreen(2)
 	loadingScreen = nil
 
@@ -319,17 +319,16 @@ function loadingScreen(state)
 		end
 		contentProvider:PreloadAsync(assetsArray)
 		assetsArray = nil
-		
+
 		limbExtenderData.loadingScreen = loadingScreenAssets
 	end
 	local loadingScreenAssets = limbExtenderData.loadingScreen
-	
+
 	if state == 1 then
-		print("test")
 		animate(loadingScreenAssets.Background, TweenInfo.new(1, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.new(0.499, 0, 0.499, 0)})
 		animate(loadingScreenAssets.Gradient, TweenInfo.new(1.5), {Offset = Vector2.new(0, -1)})
-		run()
 		task.wait(2)
+		run()
 	elseif state == 2 then
 		animate(loadingScreenAssets.Developer, TweenInfo.new(0.5), {Position = UDim2.new(0.25, 0,1, 0)})
 		animate(loadingScreenAssets.Logo, TweenInfo.new(0.5), {Position = UDim2.new(0.333, 0,-0.660, 0)})
