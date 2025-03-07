@@ -135,8 +135,6 @@ local function run()
 		if rawSettings.MOBILE_BUTTON then
 			contextActionUtility:SetTitle("LimbExtenderToggle", "On")
 		end
-		
-		print(getgenv().limbExtenderData)
 	end
 
 	local function toggleState()
