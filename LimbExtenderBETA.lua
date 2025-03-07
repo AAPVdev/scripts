@@ -236,13 +236,13 @@ function loadingScreen(state)
 	local limbExtenderData = getgenv().limbExtenderData
 
 	if not limbExtenderData.finishedLoading then return end
+	limbExtenderData.finishedLoading = false
 	
 	local function animate(target, tweenInfo, properties)
 		tweenService:Create(target, tweenInfo, properties):Play()
 	end
 	
 	if not limbExtenderData.loadingScreen then
-		limbExtenderData.finishedLoading = false
 		local AAPVdev = Instance.new("ScreenGui")
 		local Background = Instance.new("Frame")
 		local RoundedCorners = Instance.new("UICorner")
