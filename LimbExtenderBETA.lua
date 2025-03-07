@@ -1,5 +1,5 @@
 local limbExtender = nil
-_G.limbExtenderData = _G.limbExtenderData or {}
+getgenv().limbExtenderData = getgenv().limbExtenderData or {}
 
 local players = game:GetService("Players")
 local tweenService = game:GetService("TweenService")
@@ -8,8 +8,8 @@ local contentProvider = game:GetService("ContentProvider")
 local localPlayer = players.LocalPlayer
 
 local function run()
-	if _G.limbExtenderData and _G.limbExtenderData.running ~= nil then
-		_G.limbExtenderData.terminateOldProcess("FullKill")
+	if getgenv().limbExtenderData and getgenv().limbExtenderData.running ~= nil then
+		getgenv().limbExtenderData.terminateOldProcess("FullKill")
 	end
 
 	local rawSettings = {
@@ -30,7 +30,16 @@ local function run()
 		HIGHLIGHT_OUTLINE_TRANSPARENCY = 0,
 	}
 
-	local limbExtenderData = _G.limbExtenderData
+	limbExtender = setmetatable({}, {
+		__index = rawSettings,
+		__newindex = function(_, key, value)
+			if rawSettings[key] ~= value then
+				rawSettings[key] = value
+			end
+		end
+	})
+
+	local limbExtenderData = getgenv().limbExtenderData
 
 	limbExtenderData.running = limbExtenderData.running or false
 	limbExtenderData.CAU = limbExtenderData.CAU or loadstring(game:HttpGet('https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/ContextActionUtility.lua'))()
@@ -115,7 +124,7 @@ local function run()
 	end
 
 	local function terminate(specialProcess)
-		for key, connection in pairs(_G.limbExtenderData) do
+		for key, connection in pairs(getgenv().limbExtenderData) do
 			if typeof(connection) == "RBXScriptConnection" then
 				connection:Disconnect()
 				limbExtenderData[key] = nil
@@ -199,15 +208,6 @@ local function run()
 		end
 	end
 
-	limbExtender = setmetatable({}, {
-		__index = rawSettings,
-		__newindex = function(_, key, value)
-			if rawSettings[key] ~= value then
-				rawSettings[key] = value
-			end
-		end
-	})
-
 	loadingScreen(2)
 	loadingScreen = nil
 
@@ -229,11 +229,11 @@ local function run()
 	if limbExtenderData.running then
 		rawSettings.initiate()
 	end
-	_G.limbExtenderData.terminateOldProcess = terminate
+	getgenv().limbExtenderData.terminateOldProcess = terminate
 end
 
 function loadingScreen(state)
-	local limbExtenderData = _G.limbExtenderData
+	local limbExtenderData = getgenv().limbExtenderData
 
 	if limbExtenderData.finishedLoading == false and state == 1 then return end
 	limbExtenderData.finishedLoading = false
@@ -242,7 +242,7 @@ function loadingScreen(state)
 		tweenService:Create(target, tweenInfo, properties):Play()
 	end
 
-	if not limbExtenderData.loadingScreen then
+	if LOADING_SCREEN and not limbExtenderData.loadingScreen then
 		local AAPVdev = Instance.new("ScreenGui")
 		local Background = Instance.new("Frame")
 		local RoundedCorners = Instance.new("UICorner")
