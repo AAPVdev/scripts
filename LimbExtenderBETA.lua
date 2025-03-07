@@ -242,7 +242,7 @@ function loadingScreen(state)
 		tweenService:Create(target, tweenInfo, properties):Play()
 	end
 
-	if LOADING_SCREEN and not limbExtenderData.loadingScreen then
+	if not limbExtenderData.loadingScreen then
 		local AAPVdev = Instance.new("ScreenGui")
 		local Background = Instance.new("Frame")
 		local RoundedCorners = Instance.new("UICorner")
