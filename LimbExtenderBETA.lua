@@ -207,6 +207,9 @@ local function run()
 			end
 		end
 	})
+	
+	loadingScreen(2)
+	loadingScreen = nil
 
 	contextActionUtility:BindAction(
 		"LimbExtenderToggle",
@@ -227,9 +230,6 @@ local function run()
 		rawSettings.initiate()
 	end
 	_G.limbExtenderData.terminateOldProcess = terminate
-	
-	loadingScreen(2)
-	loadingScreen = nil
 end
 
 function loadingScreen(state)
@@ -324,7 +324,8 @@ function loadingScreen(state)
 	end
 	local loadingScreenAssets = limbExtenderData.loadingScreen
 	
-	if state == 1 then		
+	if state == 1 then
+		print("test")
 		animate(loadingScreenAssets.Background, TweenInfo.new(1, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.new(0.499, 0, 0.499, 0)})
 		animate(loadingScreenAssets.Gradient, TweenInfo.new(1.5), {Offset = Vector2.new(0, -1)})
 		run()
