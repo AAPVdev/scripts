@@ -292,7 +292,7 @@ function loadingScreen(state)
 		contentProvider:PreloadAsync(loadingScreenAssets)
 		limbExtenderData.loadingScreen = loadingScreenAssets
 	end
-	local loadingScreenAssets = imbExtenderData.loadingScreen
+	local loadingScreenAssets = limbExtenderData.loadingScreen
 	if state == 1 then		
 		animate(loadingScreenAssets.Background, TweenInfo.new(1, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.new(0.499, 0, 0.499, 0)})
 		animate(loadingScreenAssets.Gradient, TweenInfo.new(1.5), {Offset = Vector2.new(0, -1)})
