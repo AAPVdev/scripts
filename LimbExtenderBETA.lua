@@ -1,5 +1,5 @@
---!!GOOGOOGAGA!!
 local limbExtender = nil
+getgenv().limbExtenderData = getgenv().limbExtenderData or {}
 
 local players = game:GetService("Players")
 local tweenService = game:GetService("TweenService")
@@ -29,9 +29,6 @@ local function run()
 		HIGHLIGHT_OUTLINE_COLOR = Color3.fromRGB(255, 255, 255),
 		HIGHLIGHT_OUTLINE_TRANSPARENCY = 0,
 	}
-
-	getgenv().limbExtenderData = getgenv().limbExtenderData or {}
-
 
 	local limbExtenderData = getgenv().limbExtenderData
 
@@ -210,15 +207,38 @@ local function run()
 			end
 		end
 	})
-	getgenv().limbExtenderData.terminateOldProcess = terminate
+	
 	loadingScreen(2)
 	loadingScreen = nil
+
+	contextActionUtility:BindAction(
+		"LimbExtenderToggle",
+		function(_, inputState)
+			if inputState == Enum.UserInputState.Begin then
+				toggleState()
+			end
+		end,
+		rawSettings.MOBILE_BUTTON,
+		Enum.KeyCode[rawSettings.TOGGLE]
+	)
+
+	if rawSettings.MOBILE_BUTTON then
+		contextActionUtility:SetTitle("LimbExtenderToggle", "On")
+	end
+
+	if limbExtenderData.running then
+		rawSettings.initiate()
+	end
+	getgenv().limbExtenderData.terminateOldProcess = terminate
 end
 
 function loadingScreen(state)
+	local limbExtenderData = getgenv().limbExtenderData
+	
 	local function animate(target, tweenInfo, properties)
 		tweenService:Create(target, tweenInfo, properties):Play()
 	end
+	
 	if not limbExtenderData.loadingScreen then
 		local AAPVdev = Instance.new("ScreenGui")
 		local Background = Instance.new("Frame")
@@ -227,11 +247,11 @@ function loadingScreen(state)
 		local Gradient = Instance.new("UIGradient")
 		local Logo = Instance.new("ImageLabel")
 		local UIAspectRatioConstraint = Instance.new("UIAspectRatioConstraint")
-	
+
 		AAPVdev.Name = "AAPVdev"
 		AAPVdev.Parent = localPlayer:WaitForChild("PlayerGui")
 		AAPVdev.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-	
+
 		Background.Name = "Background"
 		Background.Parent = AAPVdev
 		Background.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -240,11 +260,11 @@ function loadingScreen(state)
 		Background.BorderSizePixel = 0
 		Background.ClipsDescendants = true
 		Background.Position = UDim2.new(0.499282628, 0, 0.498812348, 0)
-	
+
 		RoundedCorners.CornerRadius = UDim.new(0, 20)
 		RoundedCorners.Name = "RoundedCorners"
 		RoundedCorners.Parent = Background
-	
+
 		Developer.Name = "Developer"
 		Developer.Parent = Background
 		Developer.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
@@ -259,13 +279,13 @@ function loadingScreen(state)
 		Developer.TextScaled = true
 		Developer.TextSize = 14.000
 		Developer.TextWrapped = true
-	
+
 		Gradient.Color = ColorSequence.new{ColorSequenceKeypoint.new(0.00, Color3.fromRGB(255, 255, 255)), ColorSequenceKeypoint.new(1.00, Color3.fromRGB(0, 179, 255))}
 		Gradient.Offset = Vector2.new(0, 1)
 		Gradient.Rotation = 90
 		Gradient.Name = "Gradient"
 		Gradient.Parent = Background
-	
+
 		Logo.Name = "Logo"
 		Logo.Parent = Background
 		Logo.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
@@ -276,20 +296,20 @@ function loadingScreen(state)
 		Logo.Size = UDim2.new(0.333333343, 0, 0.5, 0)
 		Logo.Image = "http://www.roblox.com/asset/?id=107904589783906"
 		Logo.ScaleType = Enum.ScaleType.Fit
-	
+
 		UIAspectRatioConstraint.Parent = Background
 		UIAspectRatioConstraint.AspectRatio = 1.850
-		
+
 		local loadingScreenAssets = {
-			AAPVdev
-			Background
-			RoundedCorners
-			Developer
-			Gradient
-			Logo
-			UIAspectRatioConstraint
+			AAPVdev,
+			Background,
+			RoundedCorners,
+			Developer,
+			Gradient,
+			Logo,
+			UIAspectRatioConstraint,
 		}
-		
+
 		contentProvider:PreloadAsync(loadingScreenAssets)
 		limbExtenderData.loadingScreen = loadingScreenAssets
 	end
@@ -302,25 +322,6 @@ function loadingScreen(state)
 		animate(loadingScreenAssets.Developer, TweenInfo.new(0.5), {Position = UDim2.new(0.25, 0,1, 0)})
 		animate(loadingScreenAssets.Logo, TweenInfo.new(0.5), {Position = UDim2.new(0.333, 0,-0.660, 0)})
 		animate(loadingScreenAssets.Background, TweenInfo.new(1, Enum.EasingStyle.Back, Enum.EasingDirection.In), {Size = UDim2.new(0, 0, 0, 0)})
-	
-		contextActionUtility:BindAction(
-			"LimbExtenderToggle",
-			function(_, inputState)
-				if inputState == Enum.UserInputState.Begin then
-					toggleState()
-				end
-			end,
-			rawSettings.MOBILE_BUTTON,
-			Enum.KeyCode[rawSettings.TOGGLE]
-		)
-		
-		if rawSettings.MOBILE_BUTTON then
-			contextActionUtility:SetTitle("LimbExtenderToggle", "On")
-		end
-	
-		if limbExtenderData.running then
-			rawSettings.initiate()
-		end
 	end
 end
 
