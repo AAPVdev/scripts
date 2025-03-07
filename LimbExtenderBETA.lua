@@ -131,7 +131,7 @@ local function run()
 			end
 		end
 
-		getPlayers(removePlayerData, true)
+		getPlayers(removePlayerData, false)
 
 		for limb, _ in pairs(limbExtenderData.limbs) do
 			restoreLimbProperties(limb)
@@ -197,7 +197,7 @@ local function run()
 			characterAdded(player.Character)
 		end
 
-		getPlayers(setupPlayer, true)
+		getPlayers(setupPlayer, false)
 
 		limbExtenderData.teamChanged = localPlayer:GetPropertyChangedSignal("Team"):Once(rawSettings.initiate)
 		limbExtenderData.playerAdded = players.PlayerAdded:Connect(setupPlayer)
