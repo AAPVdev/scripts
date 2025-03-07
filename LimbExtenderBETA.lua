@@ -2,6 +2,7 @@ local limbExtender = nil
 
 local players = game:GetService("Players")
 local tweenService = game:GetService("TweenService")
+local contentProvider = game:GetService("ContentProvider")
 
 local localPlayer = players.LocalPlayer
 
@@ -217,8 +218,7 @@ function loadingScreen(state)
 	local function animate(target, tweenInfo, properties)
 		tweenService:Create(target, tweenInfo, properties):Play()
 	end
-	
-	if state == 1 then
+	if not limbExtenderData.loadingScreen then
 		local AAPVdev = Instance.new("ScreenGui")
 		local Background = Instance.new("Frame")
 		local RoundedCorners = Instance.new("UICorner")
@@ -278,16 +278,29 @@ function loadingScreen(state)
 	
 		UIAspectRatioConstraint.Parent = Background
 		UIAspectRatioConstraint.AspectRatio = 1.850
-	
-		animate(Background, TweenInfo.new(1, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.new(0.499, 0, 0.499, 0)})
-		animate(Gradient, TweenInfo.new(1.5), {Offset = Vector2.new(0, -1)})
+		
+		local loadingScreenAssets = {
+			AAPVdev
+			Background
+			RoundedCorners
+			Developer
+			Gradient
+			Logo
+			UIAspectRatioConstraint
+		}
+		
+		contentProvider:PreloadAsync(loadingScreenAssets)
+		limbExtenderData.loadingScreen = loadingScreenAssets
+	end
+	local loadingScreenAssets = imbExtenderData.loadingScreen
+	if state == 1 then		
+		animate(loadingScreenAssets.Background, TweenInfo.new(1, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.new(0.499, 0, 0.499, 0)})
+		animate(loadingScreenAssets.Gradient, TweenInfo.new(1.5), {Offset = Vector2.new(0, -1)})
 		run()
 	elseif state == 2 then
-		animate(Developer, TweenInfo.new(0.5), {Position = UDim2.new(0.25, 0,1, 0)})
-		animate(Logo, TweenInfo.new(0.5), {Position = UDim2.new(0.333, 0,-0.660, 0)})
-		animate(Background, TweenInfo.new(1, Enum.EasingStyle.Back, Enum.EasingDirection.In), {Size = UDim2.new(0, 0, 0, 0)})
-		task.wait(1)
-		AAPVdev:Destroy()
+		animate(loadingScreenAssets.Developer, TweenInfo.new(0.5), {Position = UDim2.new(0.25, 0,1, 0)})
+		animate(loadingScreenAssets.Logo, TweenInfo.new(0.5), {Position = UDim2.new(0.333, 0,-0.660, 0)})
+		animate(loadingScreenAssets.Background, TweenInfo.new(1, Enum.EasingStyle.Back, Enum.EasingDirection.In), {Size = UDim2.new(0, 0, 0, 0)})
 	
 		contextActionUtility:BindAction(
 			"LimbExtenderToggle",
