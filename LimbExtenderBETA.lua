@@ -8,7 +8,7 @@ local contentProvider = game:GetService("ContentProvider")
 local localPlayer = players.LocalPlayer
 
 local function run()
-	if getgenv().limbExtenderData and getgenv().limbExtenderData.running ~= nil then
+	if getgenv().limbExtenderData and getgenv().limbExtenderData.running ~= true then
 		getgenv().limbExtenderData.terminateOldProcess("FullKill")
 	end
 
