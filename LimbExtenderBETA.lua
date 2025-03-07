@@ -17,9 +17,9 @@ local function run()
 		MOBILE_BUTTON = true,
 		LIMB_TRANSPARENCY = 0.9,
 		LIMB_CAN_COLLIDE = false,
-		TEAM_CHECK = true,
-		FORCEFIELD_CHECK = true,
-		RESTORE_ORIGINAL_LIMB_ON_DEATH = false,
+		TEAM_CHECK = false,
+		FORCEFIELD_CHECK = false,
+		RESET_LIMB_ON_DEATH2 = false,
 		USE_HIGHLIGHT = true,
 		DEPTH_MODE = 2,
 		HIGHLIGHT_FILL_COLOR = Color3.fromRGB(0, 255, 0),
@@ -42,9 +42,9 @@ local function run()
 	local limbs = limbExtenderData.limbs
 	local contextActionUtility = limbExtenderData.CAU
 
-	local function getPlayers(func)
+	local function getPlayers(func, includeLocalPlayer)
 		for _, player in ipairs(players:GetPlayers()) do
-			if player ~= localPlayer then
+			if includeLocalPlayer or player ~= localPlayer then
 				func(player)
 			end
 		end
@@ -123,7 +123,7 @@ local function run()
 			end
 		end
 
-		getPlayers(removePlayerData)
+		getPlayers(removePlayerData, true)
 
 		for limb, _ in pairs(limbExtenderData.limbs) do
 			restoreLimbProperties(limb)
@@ -135,6 +135,8 @@ local function run()
 		if rawSettings.MOBILE_BUTTON then
 			contextActionUtility:SetTitle("LimbExtenderToggle", "On")
 		end
+		
+		print(getgenv().limbExtenderData)
 	end
 
 	local function toggleState()
@@ -149,52 +151,55 @@ local function run()
 
 	function rawSettings.initiate()
 		if not limbExtenderData.running then return end
-			terminate()
-			local function setupPlayer(player)
-				local function characterAdded(character)
-					if character then
-						local targetLimb = character:WaitForChild(rawSettings.TARGET_LIMB, 0.5)
-						local humanoid = character:WaitForChild("Humanoid", 0.5)
-						local playerData = playerTable[player.Name]
-						if playerData and targetLimb and humanoid then
+		terminate()
+		local function setupPlayer(player)
+			local function characterAdded(character)
+				if character then
+					local targetLimb = character:WaitForChild(rawSettings.TARGET_LIMB, 0.5)
+					local humanoid = character:WaitForChild("Humanoid", 0.5)
+					local playerData = playerTable[player.Name]
+					if playerData and targetLimb and humanoid and humanoid.Health > 0 then
 
-							restoreLimbProperties(targetLimb)
+						restoreLimbProperties(targetLimb)
 
-							if (rawSettings.TEAM_CHECK and (localPlayer.Team == nil or player.Team ~= localPlayer.Team)) or not rawSettings.TEAM_CHECK then
-								modifyLimbProperties(targetLimb)
-							end
-
-							playerData["characterRemoving"] = player.CharacterRemoving:Once(function()
-								restoreLimbProperties(targetLimb)
-							end)
-
-							playerData["characterDied"] = humanoid.Died:Once(function()
-								restoreLimbProperties(targetLimb)
-							end)
-
-							playerData["teamChanged"] = player:GetPropertyChangedSignal("Team"):Once(function()
-								removePlayerData(player)
-								setupPlayer(player)
-							end)
+						if (rawSettings.TEAM_CHECK and (localPlayer.Team == nil or player.Team ~= localPlayer.Team)) or not rawSettings.TEAM_CHECK then
+							modifyLimbProperties(targetLimb)
 						end
+
+						playerData["characterRemoving"] = player.CharacterRemoving:Once(function()
+							restoreLimbProperties(targetLimb)
+						end)
+
+						local connection = rawSettings.RESET_LIMB_ON_DEATH2 and humanoid.HealthChanged or humanoid.Died
+						playerData["OnDeath"] = connection:Connect(function(health)
+							if health and health <= 0 then
+								restoreLimbProperties(targetLimb)
+							end
+						end)
+
+						playerData["teamChanged"] = player:GetPropertyChangedSignal("Team"):Once(function()
+							removePlayerData(player)
+							setupPlayer(player)
+						end)
 					end
 				end
-
-				playerTable[player.Name] = {}
-				playerTable[player.Name]["characterAdded"] = player.CharacterAdded:Connect(characterAdded)
-
-				characterAdded(player.Character)
 			end
 
-			getPlayers(setupPlayer)
+			playerTable[player.Name] = {}
+			playerTable[player.Name]["characterAdded"] = player.CharacterAdded:Connect(characterAdded)
 
-			limbExtenderData.teamChanged = localPlayer:GetPropertyChangedSignal("Team"):Once(rawSettings.initiate)
-			limbExtenderData.playerAdded = players.PlayerAdded:Connect(setupPlayer)
-			limbExtenderData.playerRemoving = players.PlayerRemoving:Connect(removePlayerData)
+			characterAdded(player.Character)
+		end
 
-			if rawSettings.MOBILE_BUTTON then
-				contextActionUtility:SetTitle("LimbExtenderToggle", "Off")
-			end
+		getPlayers(setupPlayer, true)
+
+		limbExtenderData.teamChanged = localPlayer:GetPropertyChangedSignal("Team"):Once(rawSettings.initiate)
+		limbExtenderData.playerAdded = players.PlayerAdded:Connect(setupPlayer)
+		limbExtenderData.playerRemoving = players.PlayerRemoving:Connect(removePlayerData)
+
+		if rawSettings.MOBILE_BUTTON then
+			contextActionUtility:SetTitle("LimbExtenderToggle", "Off")
+		end
 	end
 
 	limbExtender = setmetatable({}, {
@@ -216,7 +221,7 @@ local function run()
 		local UIAspectRatioConstraint = Instance.new("UIAspectRatioConstraint")
 
 		AAPVdev.Name = "AAPVdev"
-		AAPVdev.Parent = game.Players.LocalPlayer:WaitForChild("PlayerGui")
+		AAPVdev.Parent = localPlayer:WaitForChild("PlayerGui")
 		AAPVdev.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
 		Background.Name = "Background"
