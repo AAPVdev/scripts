@@ -208,8 +208,17 @@ local function run()
 			end
 		end
 	})
+	getgenv().limbExtenderData.terminateOldProcess = terminate
+	loadingScreen(2)
+	loadingScreen = nil
+end
 
-	task.spawn(function()
+function loadingScreen(state)
+	local function animate(target, tweenInfo, properties)
+		tweenService:Create(target, tweenInfo, properties):Play()
+	end
+	
+	if state == 1 then
 		local AAPVdev = Instance.new("ScreenGui")
 		local Background = Instance.new("Frame")
 		local RoundedCorners = Instance.new("UICorner")
@@ -217,11 +226,11 @@ local function run()
 		local Gradient = Instance.new("UIGradient")
 		local Logo = Instance.new("ImageLabel")
 		local UIAspectRatioConstraint = Instance.new("UIAspectRatioConstraint")
-
+	
 		AAPVdev.Name = "AAPVdev"
 		AAPVdev.Parent = localPlayer:WaitForChild("PlayerGui")
 		AAPVdev.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-
+	
 		Background.Name = "Background"
 		Background.Parent = AAPVdev
 		Background.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -230,11 +239,11 @@ local function run()
 		Background.BorderSizePixel = 0
 		Background.ClipsDescendants = true
 		Background.Position = UDim2.new(0.499282628, 0, 0.498812348, 0)
-
+	
 		RoundedCorners.CornerRadius = UDim.new(0, 20)
 		RoundedCorners.Name = "RoundedCorners"
 		RoundedCorners.Parent = Background
-
+	
 		Developer.Name = "Developer"
 		Developer.Parent = Background
 		Developer.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
@@ -249,13 +258,13 @@ local function run()
 		Developer.TextScaled = true
 		Developer.TextSize = 14.000
 		Developer.TextWrapped = true
-
+	
 		Gradient.Color = ColorSequence.new{ColorSequenceKeypoint.new(0.00, Color3.fromRGB(255, 255, 255)), ColorSequenceKeypoint.new(1.00, Color3.fromRGB(0, 179, 255))}
 		Gradient.Offset = Vector2.new(0, 1)
 		Gradient.Rotation = 90
 		Gradient.Name = "Gradient"
 		Gradient.Parent = Background
-
+	
 		Logo.Name = "Logo"
 		Logo.Parent = Background
 		Logo.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
@@ -266,27 +275,20 @@ local function run()
 		Logo.Size = UDim2.new(0.333333343, 0, 0.5, 0)
 		Logo.Image = "http://www.roblox.com/asset/?id=107904589783906"
 		Logo.ScaleType = Enum.ScaleType.Fit
-
+	
 		UIAspectRatioConstraint.Parent = Background
 		UIAspectRatioConstraint.AspectRatio = 1.850
-
-		task.wait(2)
-
-		local function animate(target, tweenInfo, properties)
-			tweenService:Create(target, tweenInfo, properties):Play()
-		end
-
+	
 		animate(Background, TweenInfo.new(1, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.new(0.499, 0, 0.499, 0)})
 		animate(Gradient, TweenInfo.new(1.5), {Offset = Vector2.new(0, -1)})
-
-		task.wait(2)
-
+		run()
+	elseif state == 2 then
 		animate(Developer, TweenInfo.new(0.5), {Position = UDim2.new(0.25, 0,1, 0)})
 		animate(Logo, TweenInfo.new(0.5), {Position = UDim2.new(0.333, 0,-0.660, 0)})
 		animate(Background, TweenInfo.new(1, Enum.EasingStyle.Back, Enum.EasingDirection.In), {Size = UDim2.new(0, 0, 0, 0)})
 		task.wait(1)
 		AAPVdev:Destroy()
-
+	
 		contextActionUtility:BindAction(
 			"LimbExtenderToggle",
 			function(_, inputState)
@@ -297,18 +299,17 @@ local function run()
 			rawSettings.MOBILE_BUTTON,
 			Enum.KeyCode[rawSettings.TOGGLE]
 		)
+		
 		if rawSettings.MOBILE_BUTTON then
 			contextActionUtility:SetTitle("LimbExtenderToggle", "On")
 		end
-
+	
 		if limbExtenderData.running then
 			rawSettings.initiate()
 		end
-
-		getgenv().limbExtenderData.terminateOldProcess = terminate
-	end)
+	end
 end
 
-run()
+loadingScreen(1)
 
 return limbExtender
