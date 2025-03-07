@@ -8,7 +8,7 @@ local contentProvider = game:GetService("ContentProvider")
 local localPlayer = players.LocalPlayer
 
 local function run()
-	if getgenv().limbExtenderData and getgenv().limbExtenderData.running == false then
+	if getgenv().limbExtenderData and getgenv().limbExtenderData.running ~= nil then
 		getgenv().limbExtenderData.terminateOldProcess("FullKill")
 	end
 
@@ -29,15 +29,6 @@ local function run()
 		HIGHLIGHT_OUTLINE_COLOR = Color3.fromRGB(255, 255, 255),
 		HIGHLIGHT_OUTLINE_TRANSPARENCY = 0,
 	}
-
-	limbExtender = setmetatable({}, {
-		__index = rawSettings,
-		__newindex = function(_, key, value)
-			if rawSettings[key] ~= value then
-				rawSettings[key] = value
-			end
-		end
-	})
 
 	local limbExtenderData = getgenv().limbExtenderData
 
@@ -226,6 +217,18 @@ local function run()
 		contextActionUtility:SetTitle("LimbExtenderToggle", "On")
 	end
 
+	limbExtender = setmetatable({}, {
+		__index = rawSettings,
+		__newindex = function(_, key, value)
+			if rawSettings[key] ~= value then
+				rawSettings[key] = value
+				if limbExtenderData.running then
+					rawSettings.initiate()
+				end
+			end
+		end
+	})
+	
 	if limbExtenderData.running then
 		rawSettings.initiate()
 	end
@@ -323,7 +326,8 @@ function loadingScreen(state)
 		limbExtenderData.loadingScreen = loadingScreenAssets
 	end
 	local loadingScreenAssets = limbExtenderData.loadingScreen
-
+	loadingScreenAssets.Developer.Position = UDim2.new(0.25, 0, 0.665000021, 0)
+	loadingScreenAssets.Logo.Position = UDim2.new(0.333333343, 0, 0.165000007, 0)
 	if state == 1 then
 		animate(loadingScreenAssets.Background, TweenInfo.new(1, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.new(0.499, 0, 0.499, 0)})
 		animate(loadingScreenAssets.Gradient, TweenInfo.new(1.5), {Offset = Vector2.new(0, -1)})
