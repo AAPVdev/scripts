@@ -1,5 +1,5 @@
 local limbExtender = nil
-getgenv().limbExtenderData = getgenv().limbExtenderData or {}
+_G.limbExtenderData = _G.limbExtenderData or {}
 
 local players = game:GetService("Players")
 local tweenService = game:GetService("TweenService")
@@ -8,8 +8,8 @@ local contentProvider = game:GetService("ContentProvider")
 local localPlayer = players.LocalPlayer
 
 local function run()
-	if getgenv().limbExtenderData and getgenv().limbExtenderData.running ~= nil then
-		getgenv().limbExtenderData.terminateOldProcess("FullKill")
+	if _G.limbExtenderData and _G.limbExtenderData.running ~= nil then
+		_G.limbExtenderData.terminateOldProcess("FullKill")
 	end
 
 	local rawSettings = {
@@ -30,10 +30,10 @@ local function run()
 		HIGHLIGHT_OUTLINE_TRANSPARENCY = 0,
 	}
 
-	local limbExtenderData = getgenv().limbExtenderData
+	local limbExtenderData = _G.limbExtenderData
 
 	limbExtenderData.running = limbExtenderData.running or false
-	limbExtenderData.CAU = limbExtenderData.CAU or loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/ContextActionUtility.lua"))()
+	limbExtenderData.CAU = limbExtenderData.CAU or game:GetService("ContextActionService")
 	limbExtenderData.playerTable = limbExtenderData.playerTable or {}
 	limbExtenderData.limbs = limbExtenderData.limbs or {}
 
@@ -115,7 +115,7 @@ local function run()
 	end
 
 	local function terminate(specialProcess)
-		for key, connection in pairs(getgenv().limbExtenderData) do
+		for key, connection in pairs(_G.limbExtenderData) do
 			if typeof(connection) == "RBXScriptConnection" then
 				connection:Disconnect()
 				limbExtenderData[key] = nil
@@ -207,9 +207,6 @@ local function run()
 			end
 		end
 	})
-	
-	loadingScreen(2)
-	loadingScreen = nil
 
 	contextActionUtility:BindAction(
 		"LimbExtenderToggle",
@@ -229,19 +226,22 @@ local function run()
 	if limbExtenderData.running then
 		rawSettings.initiate()
 	end
-	getgenv().limbExtenderData.terminateOldProcess = terminate
+	_G.limbExtenderData.terminateOldProcess = terminate
+	
+	loadingScreen(2)
+	loadingScreen = nil
 end
 
 function loadingScreen(state)
-	local limbExtenderData = getgenv().limbExtenderData
+	local limbExtenderData = _G.limbExtenderData
 
-	if not limbExtenderData.finishedLoading then return end
+	if limbExtenderData.finishedLoading == false and state == 1 then return end
 	limbExtenderData.finishedLoading = false
-	
+
 	local function animate(target, tweenInfo, properties)
 		tweenService:Create(target, tweenInfo, properties):Play()
 	end
-	
+
 	if not limbExtenderData.loadingScreen then
 		local AAPVdev = Instance.new("ScreenGui")
 		local Background = Instance.new("Frame")
@@ -304,31 +304,40 @@ function loadingScreen(state)
 		UIAspectRatioConstraint.AspectRatio = 1.850
 
 		local loadingScreenAssets = {
-			AAPVdev,
-			Background,
-			RoundedCorners,
-			Developer,
-			Gradient,
-			Logo,
-			UIAspectRatioConstraint,
+			AAPVdev = AAPVdev,
+			Background = Background,
+			RoundedCorners = RoundedCorners,
+			Developer = Developer,
+			Gradient = Gradient,
+			Logo = Logo,
+			UIAspectRatioConstraint = UIAspectRatioConstraint,
 		}
 
-		contentProvider:PreloadAsync(loadingScreenAssets)
+		local assetsArray = {}
+		for _, asset in pairs(loadingScreenAssets) do
+			table.insert(assetsArray, asset)
+		end
+		contentProvider:PreloadAsync(assetsArray)
+		assetsArray = nil
+		
 		limbExtenderData.loadingScreen = loadingScreenAssets
 	end
 	local loadingScreenAssets = limbExtenderData.loadingScreen
+	
 	if state == 1 then		
 		animate(loadingScreenAssets.Background, TweenInfo.new(1, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.new(0.499, 0, 0.499, 0)})
 		animate(loadingScreenAssets.Gradient, TweenInfo.new(1.5), {Offset = Vector2.new(0, -1)})
 		run()
+		task.wait(2)
 	elseif state == 2 then
 		animate(loadingScreenAssets.Developer, TweenInfo.new(0.5), {Position = UDim2.new(0.25, 0,1, 0)})
 		animate(loadingScreenAssets.Logo, TweenInfo.new(0.5), {Position = UDim2.new(0.333, 0,-0.660, 0)})
 		animate(loadingScreenAssets.Background, TweenInfo.new(1, Enum.EasingStyle.Back, Enum.EasingDirection.In), {Size = UDim2.new(0, 0, 0, 0)})
 	end
+	loadingScreenAssets = nil
+	animate = nil
 	limbExtenderData.finishedLoading = true
 end
 
 loadingScreen(1)
-
 return limbExtender
