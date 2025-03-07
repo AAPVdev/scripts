@@ -1,5 +1,3 @@
---!!!
-
 local limbExtender = nil
 
 local players = game:GetService("Players")
@@ -8,7 +6,7 @@ local tweenService = game:GetService("TweenService")
 local localPlayer = players.LocalPlayer
 
 local function run()
-	if getgenv().limbExtenderData and getgenv().limbExtenderData.running then
+	if getgenv().limbExtenderData and getgenv().limbExtenderData.running ~= nil then
 		getgenv().limbExtenderData.terminateOldProcess("FullKill")
 	end
 
@@ -45,7 +43,7 @@ local function run()
 	local contextActionUtility = limbExtenderData.CAU
 
 	local function getPlayers(func)
-		for _, player in pairs(players:GetPlayers()) do
+		for _, player in ipairs(players:GetPlayers()) do
 			if player ~= localPlayer then
 				func(player)
 			end
@@ -151,53 +149,52 @@ local function run()
 
 	function rawSettings.initiate()
 		if not limbExtenderData.running then return end
-		terminate()
+			terminate()
+			local function setupPlayer(player)
+				local function characterAdded(character)
+					if character then
+						local targetLimb = character:WaitForChild(rawSettings.TARGET_LIMB, 0.5)
+						local humanoid = character:WaitForChild("Humanoid", 0.5)
+						local playerData = playerTable[player.Name]
+						if playerData and targetLimb and humanoid then
 
-		local function setupPlayer(player)
-			local function characterAdded(character)
-				if character then
-					local targetLimb = character:WaitForChild(rawSettings.TARGET_LIMB, 1)
-					local humanoid = character:WaitForChild("Humanoid", 1)
-					local playerData = playerTable[player.Name]
-					if playerData and targetLimb and humanoid then
+							restoreLimbProperties(targetLimb)
 
-						restoreLimbProperties(targetLimb)
+							if (rawSettings.TEAM_CHECK and (localPlayer.Team == nil or player.Team ~= localPlayer.Team)) or not rawSettings.TEAM_CHECK then
+								modifyLimbProperties(targetLimb)
+							end
 
-						if (rawSettings.TEAM_CHECK and (localPlayer.Team == nil or player.Team ~= localPlayer.Team)) or not rawSettings.TEAM_CHECK then
-							modifyLimbProperties(targetLimb)
+							playerData["characterRemoving"] = player.CharacterRemoving:Once(function()
+								restoreLimbProperties(targetLimb)
+							end)
+
+							playerData["characterDied"] = humanoid.Died:Once(function()
+								restoreLimbProperties(targetLimb)
+							end)
+
+							playerData["teamChanged"] = player:GetPropertyChangedSignal("Team"):Once(function()
+								removePlayerData(player)
+								setupPlayer(player)
+							end)
 						end
-
-						playerData["characterRemoving"] = player.CharacterRemoving:Once(function()
-							restoreLimbProperties(targetLimb)
-						end)
-
-						playerData["characterDied"] = humanoid.Died:Once(function()
-							restoreLimbProperties(targetLimb)
-						end)
-
-						playerData["teamChanged"] = player:GetPropertyChangedSignal("Team"):Once(function()
-							removePlayerData(player)
-							setupPlayer(player)
-						end)
 					end
 				end
+
+				playerTable[player.Name] = {}
+				playerTable[player.Name]["characterAdded"] = player.CharacterAdded:Connect(characterAdded)
+
+				characterAdded(player.Character)
 			end
 
-			playerTable[player.Name] = {}
-			playerTable[player.Name]["characterAdded"] = player.CharacterAdded:Connect(characterAdded)
+			getPlayers(setupPlayer)
 
-			characterAdded(player.Character)
-		end
+			limbExtenderData.teamChanged = localPlayer:GetPropertyChangedSignal("Team"):Once(rawSettings.initiate)
+			limbExtenderData.playerAdded = players.PlayerAdded:Connect(setupPlayer)
+			limbExtenderData.playerRemoving = players.PlayerRemoving:Connect(removePlayerData)
 
-		getPlayers(setupPlayer)
-
-		limbExtenderData.teamChanged = localPlayer:GetPropertyChangedSignal("Team"):Once(rawSettings.initiate)
-		limbExtenderData.playerAdded = players.PlayerAdded:Connect(setupPlayer)
-		limbExtenderData.playerRemoving = players.PlayerRemoving:Connect(removePlayerData)
-
-		if rawSettings.MOBILE_BUTTON then
-			contextActionUtility:SetTitle("LimbExtenderToggle", "Off")
-		end
+			if rawSettings.MOBILE_BUTTON then
+				contextActionUtility:SetTitle("LimbExtenderToggle", "Off")
+			end
 	end
 
 	limbExtender = setmetatable({}, {
