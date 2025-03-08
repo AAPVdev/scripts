@@ -8,7 +8,8 @@ local contentProvider = game:GetService("ContentProvider")
 local localPlayer = players.LocalPlayer
 
 local function run()
-	if getgenv().limbExtenderData and getgenv().limbExtenderData.running ~= nil then
+	local limbExtenderData = getgenv().limbExtenderData
+	if limbExtenderData.running ~= nil then
 		getgenv().limbExtenderData.terminateOldProcess("FullKill")
 	end
 
@@ -29,8 +30,6 @@ local function run()
 		HIGHLIGHT_OUTLINE_COLOR = Color3.fromRGB(255, 255, 255),
 		HIGHLIGHT_OUTLINE_TRANSPARENCY = 0,
 	}
-
-	local limbExtenderData = getgenv().limbExtenderData
 
 	limbExtenderData.running = limbExtenderData.running or false
 	limbExtenderData.CAU = limbExtenderData.CAU or loadstring(game:HttpGet('https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/ContextActionUtility.lua'))()
@@ -202,21 +201,6 @@ local function run()
 	loadingScreen(2)
 	loadingScreen = nil
 
-	contextActionUtility:BindAction(
-		"LimbExtenderToggle",
-		function(_, inputState)
-			if inputState == Enum.UserInputState.Begin then
-				toggleState()
-			end
-		end,
-		rawSettings.MOBILE_BUTTON,
-		Enum.KeyCode[rawSettings.TOGGLE]
-	)
-
-	if rawSettings.MOBILE_BUTTON then
-		contextActionUtility:SetTitle("LimbExtenderToggle", "On")
-	end
-
 	limbExtender = setmetatable({}, {
 		__index = rawSettings,
 		__newindex = function(_, key, value)
@@ -229,9 +213,23 @@ local function run()
 		end
 	})
 	
+	contextActionUtility:BindAction(
+		"LimbExtenderToggle",
+		function(_, inputState)
+			if inputState == Enum.UserInputState.Begin then
+				toggleState()
+			end
+		end,
+		rawSettings.MOBILE_BUTTON,
+		Enum.KeyCode[rawSettings.TOGGLE]
+	)
+	
 	if limbExtenderData.running then
 		rawSettings.initiate()
+	elseif rawSettings.MOBILE_BUTTON then
+		contextActionUtility:SetTitle("LimbExtenderToggle", "On")
 	end
+	
 	getgenv().limbExtenderData.terminateOldProcess = terminate
 end
 
