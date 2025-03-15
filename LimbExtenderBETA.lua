@@ -10,7 +10,7 @@ local localPlayer = players.LocalPlayer
 local function run()
 	local limbExtenderData = getgenv().limbExtenderData
 	if limbExtenderData.running ~= nil then
-		getgenv().limbExtenderData.terminateOldProcess("FullKill")
+		limbExtenderData.terminateOldProcess("FullKill")
 	end
 
 	local rawSettings = {
@@ -223,14 +223,13 @@ local function run()
 		rawSettings.MOBILE_BUTTON,
 		Enum.KeyCode[rawSettings.TOGGLE]
 	)
-	
+	limbExtenderData.terminateOldProcess = terminate
+
 	if limbExtenderData.running then
 		rawSettings.initiate()
 	elseif rawSettings.MOBILE_BUTTON then
 		contextActionUtility:SetTitle("LimbExtenderToggle", "On")
 	end
-	
-	getgenv().limbExtenderData.terminateOldProcess = terminate
 end
 
 function loadingScreen(state)
