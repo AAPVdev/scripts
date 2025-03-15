@@ -32,7 +32,10 @@ local function run()
 	}
 
 	limbExtenderData.running = limbExtenderData.running or false
-	limbExtenderData.CAU = limbExtenderData.CAU or loadstring(game:HttpGet('https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/ContextActionUtility.lua'))()
+	limbExtenderData.CAU = limbExtenderData.CAU
+		or loadstring(game:HttpGet('https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/ContextActionUtility.lua'))()
+		--or require(script.Parent.ContextActionUtility)
+
 	limbExtenderData.playerTable = limbExtenderData.playerTable or {}
 	limbExtenderData.limbs = limbExtenderData.limbs or {}
 
@@ -82,22 +85,20 @@ local function run()
 	end
 
 	local function modifyLimbProperties(limb)
-		task.spawn(function()
-			saveLimbProperties(limb)
-			limb.Size = Vector3.new(rawSettings.LIMB_SIZE, rawSettings.LIMB_SIZE, rawSettings.LIMB_SIZE)
-			limb.Transparency = rawSettings.LIMB_TRANSPARENCY
-			limb.CanCollide = rawSettings.LIMB_CAN_COLLIDE
-			limb.Massless = true
+		saveLimbProperties(limb)
+		limb.Size = Vector3.new(rawSettings.LIMB_SIZE, rawSettings.LIMB_SIZE, rawSettings.LIMB_SIZE)
+		limb.Transparency = rawSettings.LIMB_TRANSPARENCY
+		limb.CanCollide = rawSettings.LIMB_CAN_COLLIDE
+		limb.Massless = true
 
-			local highlightInstance = limb:FindFirstChildWhichIsA("Highlight") or Instance.new("Highlight", limb)
-			highlightInstance.Name = "LimbHighlight"
-			highlightInstance.DepthMode = rawSettings.DEPTH_MODE == 1 and Enum.HighlightDepthMode.AlwaysOnTop or Enum.HighlightDepthMode.Occluded
-			highlightInstance.FillColor = rawSettings.HIGHLIGHT_FILL_COLOR
-			highlightInstance.FillTransparency = rawSettings.HIGHLIGHT_FILL_TRANSPARENCY
-			highlightInstance.OutlineColor = rawSettings.HIGHLIGHT_OUTLINE_COLOR
-			highlightInstance.OutlineTransparency = rawSettings.HIGHLIGHT_OUTLINE_TRANSPARENCY
-			highlightInstance.Enabled = rawSettings.USE_HIGHLIGHT
-		end)
+		local highlightInstance = limb:FindFirstChildWhichIsA("Highlight") or Instance.new("Highlight", limb)
+		highlightInstance.Name = "LimbHighlight"
+		highlightInstance.DepthMode = rawSettings.DEPTH_MODE == 1 and Enum.HighlightDepthMode.AlwaysOnTop or Enum.HighlightDepthMode.Occluded
+		highlightInstance.FillColor = rawSettings.HIGHLIGHT_FILL_COLOR
+		highlightInstance.FillTransparency = rawSettings.HIGHLIGHT_FILL_TRANSPARENCY
+		highlightInstance.OutlineColor = rawSettings.HIGHLIGHT_OUTLINE_COLOR
+		highlightInstance.OutlineTransparency = rawSettings.HIGHLIGHT_OUTLINE_TRANSPARENCY
+		highlightInstance.Enabled = rawSettings.USE_HIGHLIGHT
 	end
 
 	local function removePlayerData(player)
@@ -129,8 +130,8 @@ local function run()
 
 		if specialProcess == "FullKill" then
 			contextActionUtility:UnbindAction("LimbExtenderToggle")
-		end
-		if rawSettings.MOBILE_BUTTON then
+			script:Destroy()
+		elseif rawSettings.MOBILE_BUTTON then
 			contextActionUtility:SetTitle("LimbExtenderToggle", "On")
 		end
 	end
@@ -197,9 +198,30 @@ local function run()
 			contextActionUtility:SetTitle("LimbExtenderToggle", "Off")
 		end
 	end
+	
+	task.spawn(function()
+		task.wait(2)
+		loadingScreen(2)
+		loadingScreen = nil
+		
+		contextActionUtility:BindAction(
+			"LimbExtenderToggle",
+			function(_, inputState)
+				if inputState == Enum.UserInputState.Begin then
+					toggleState()
+				end
+			end,
+			rawSettings.MOBILE_BUTTON,
+			Enum.KeyCode[rawSettings.TOGGLE]
+		)
+		limbExtenderData.terminateOldProcess = terminate
 
-	loadingScreen(2)
-	loadingScreen = nil
+		if limbExtenderData.running then
+			rawSettings.initiate()
+		elseif rawSettings.MOBILE_BUTTON then
+			contextActionUtility:SetTitle("LimbExtenderToggle", "On")
+		end
+	end)
 
 	limbExtender = setmetatable({}, {
 		__index = rawSettings,
@@ -212,24 +234,6 @@ local function run()
 			end
 		end
 	})
-	
-	contextActionUtility:BindAction(
-		"LimbExtenderToggle",
-		function(_, inputState)
-			if inputState == Enum.UserInputState.Begin then
-				toggleState()
-			end
-		end,
-		rawSettings.MOBILE_BUTTON,
-		Enum.KeyCode[rawSettings.TOGGLE]
-	)
-	limbExtenderData.terminateOldProcess = terminate
-
-	if limbExtenderData.running then
-		rawSettings.initiate()
-	elseif rawSettings.MOBILE_BUTTON then
-		contextActionUtility:SetTitle("LimbExtenderToggle", "On")
-	end
 end
 
 function loadingScreen(state)
@@ -328,7 +332,6 @@ function loadingScreen(state)
 	if state == 1 then
 		animate(loadingScreenAssets.Background, TweenInfo.new(1, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.new(0.499, 0, 0.499, 0)})
 		animate(loadingScreenAssets.Gradient, TweenInfo.new(1.5), {Offset = Vector2.new(0, -1)})
-		task.wait(2)
 		run()
 	elseif state == 2 then
 		animate(loadingScreenAssets.Developer, TweenInfo.new(0.5), {Position = UDim2.new(0.25, 0,1, 0)})
