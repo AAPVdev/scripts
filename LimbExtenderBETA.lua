@@ -147,8 +147,8 @@ local function run()
 	end
 
 	function rawSettings.initiate()
-		if not limbExtenderData.running then return end
 		terminate()
+		if not limbExtenderData.running then return end
 		local function setupPlayer(player)
 			local function characterAdded(character)
 				if character then
