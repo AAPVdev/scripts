@@ -1,5 +1,6 @@
 local limbExtender = nil
 getgenv().limbExtenderData = getgenv().limbExtenderData or {}
+local limbExtenderData = getgenv().limbExtenderData
 
 local players = game:GetService("Players")
 local tweenService = game:GetService("TweenService")
@@ -8,7 +9,6 @@ local contentProvider = game:GetService("ContentProvider")
 local localPlayer = players.LocalPlayer
 
 local function run()
-	local limbExtenderData = getgenv().limbExtenderData
 	if limbExtenderData.running ~= nil then
 		limbExtenderData.terminateOldProcess("FullKill")
 	end
@@ -237,8 +237,6 @@ local function run()
 end
 
 function loadingScreen(state)
-	local limbExtenderData = getgenv().limbExtenderData
-
 	if limbExtenderData.finishedLoading == false and state == 1 then return end
 	limbExtenderData.finishedLoading = false
 
