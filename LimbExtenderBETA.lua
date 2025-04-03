@@ -136,7 +136,7 @@ local function run()
 		end
 	end
 
-	local function toggleState()
+	function rawSettings.toggleState()
 		limbExtenderData.running = not limbExtenderData.running
 
 		if limbExtenderData.running then
@@ -146,7 +146,7 @@ local function run()
 		end
 	end
 
-	function rawSettings.initiate()
+	function initiate()
 		terminate()
 		if not limbExtenderData.running then return end
 		local function setupPlayer(player)
