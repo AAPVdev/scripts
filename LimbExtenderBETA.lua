@@ -224,9 +224,7 @@ local function run()
 		elseif rawSettings.MOBILE_BUTTON and rawSettingsLISTEN_FOR_INPUT then
 			contextActionUtility:SetTitle("LimbExtenderToggle", "On")
 		end
-	end)
-
-	limbExtender = setmetatable({}, {
+		limbExtender = setmetatable({}, {
 		__index = rawSettings,
 		__newindex = function(_, key, value)
 			if rawSettings[key] ~= value then
@@ -236,7 +234,8 @@ local function run()
 				end
 			end
 		end
-	})
+		})	
+	end)
 end
 
 function loadingScreen(state)
