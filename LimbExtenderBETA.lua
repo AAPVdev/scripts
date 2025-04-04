@@ -208,7 +208,7 @@ local function run()
 			"LimbExtenderToggle",
 			function(_, inputState)
 				if inputState == Enum.UserInputState.Begin then
-					toggleState()
+					rawSettings.toggleState()
 				end
 			end,
 			rawSettings.MOBILE_BUTTON,
@@ -217,7 +217,7 @@ local function run()
 		limbExtenderData.terminateOldProcess = terminate
 
 		if limbExtenderData.running then
-			rawSettings.initiate()
+			initiate()
 		elseif rawSettings.MOBILE_BUTTON then
 			contextActionUtility:SetTitle("LimbExtenderToggle", "On")
 		end
