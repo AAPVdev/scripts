@@ -195,7 +195,7 @@ local function run()
 		limbExtenderData.playerAdded = players.PlayerAdded:Connect(setupPlayer)
 		limbExtenderData.playerRemoving = players.PlayerRemoving:Connect(removePlayerData)
 
-		if rawSettings.MOBILE_BUTTON then
+		if rawSettings.MOBILE_BUTTON and rawSettings.LISTEN_FOR_INPUT then
 			contextActionUtility:SetTitle("LimbExtenderToggle", "Off")
 		end
 	end
@@ -205,7 +205,7 @@ local function run()
 		loadingScreen(2)
 		loadingScreen = nil
 
-		if LISTEN_FOR_INPUT then
+		if rawSettings.LISTEN_FOR_INPUT then
 			contextActionUtility:BindAction(
 				"LimbExtenderToggle",
 				function(_, inputState)
@@ -221,7 +221,7 @@ local function run()
 
 		if limbExtenderData.running then
 			initiate()
-		elseif rawSettings.MOBILE_BUTTON then
+		elseif rawSettings.MOBILE_BUTTON and rawSettingsLISTEN_FOR_INPUT then
 			contextActionUtility:SetTitle("LimbExtenderToggle", "On")
 		end
 	end)
