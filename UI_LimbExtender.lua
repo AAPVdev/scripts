@@ -1,7 +1,9 @@
 local Players = game:GetService("Players")
 
-local le = loadstring(game:HttpGet('https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua'))()
+local le = loadstring(game:HttpGet('https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtenderBETA.lua'))()
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+local limbExtenderData = getgenv().limbExtenderData
 
 local Messages = {
     "fucking shit up",
@@ -20,10 +22,10 @@ local Messages = {
 local ChosenMessage = Messages[math.random(1, #Messages)]
 
 local Window = Rayfield:CreateWindow({
-    Name = "AAPVdev's Limb Extender",
+    Name = "Serene",
     Icon = "scroll-text",
 
-    LoadingTitle = "Loading AAPVdev's Limb Extender",
+    LoadingTitle = "Loading Rayfield UI",
     LoadingSubtitle = ChosenMessage,
 
     Theme = "DarkBlue",
@@ -47,11 +49,11 @@ local Window = Rayfield:CreateWindow({
     }
 })
 
+le.LISTEN_FOR_INPUT = false
 
-local Limb_Extender = Window:CreateTab("Limb Extender", "scale-3d")
-local Visual = Window:CreateTab("Visual", "eye")
+local Settings = Window:CreateTab("Settings", "scale-3d")
 
-local SettingsSection = Limb_Extender:CreateSection('Limb Extender Settings')
+local SettingsSection = Settings:CreateSection('Limb Extender Settings')
 
 local function createToggle(params)
     params.tab:CreateToggle({
@@ -61,69 +63,42 @@ local function createToggle(params)
         Flag = params.flag,
         Callback = function(Value)
             le[params.flag] = Value
-            if getgenv().LimbExtenderGlobalData.InputBeganConnection then
-                getgenv().LimbExtenderGlobalData.InputBeganConnection:Disconnect()
-                getgenv().LimbExtenderGlobalData.InputBeganConnection = nil
-            end
         end,
     })
 end
 
-local ModifyLimbs = Limb_Extender:CreateToggle({
+local ModifyLimbs = Settings:CreateToggle({
     Name = "Modify Limbs",
     SectionParent = SettingsSection,
     CurrentValue = false,
     Flag = "ModifyLimbs",
-    Callback = function(Value)
-        getgenv().LimbExtenderGlobalData.IsProcessActive = Value
-        if Value then
-            le.startProcess()
-             if getgenv().LimbExtenderGlobalData.InputBeganConnection then
-                getgenv().LimbExtenderGlobalData.InputBeganConnection:Disconnect()
-                getgenv().LimbExtenderGlobalData.InputBeganConnection = nil
-            end
-        else
-            le.endProcess()
-        end
+    Callback = function()
+        le.toggleState()
     end,
 })
 
-Limb_Extender:CreateDivider()
+Settings:CreateDivider()
 
 local toggleSettings = {
     {
         name = "Team Check",
         flag = "TEAM_CHECK",
-        tab = Limb_Extender,
+        tab = Settings,
         section = SettingsSection,
         value = true
     },
     {
         name = "ForceField Check",
         flag = "FORCEFIELD_CHECK",
-        tab = Limb_Extender,
+        tab = Settings,
         section = SettingsSection,
         value = true
     },
     {
         name = "Limb Collisions",
         flag = "LIMB_CAN_COLLIDE",
-        tab = Limb_Extender,
+        tab = Settings,
         section = SettingsSection,
-        value = false
-    },
-    {
-        name = "Restore Original Limb on Death", 
-        flag = "RESTORE_ORIGINAL_LIMB_ON_DEATH",
-        tab = Limb_Extender, 
-        section = SettingsSection,
-        value = true
-    },
-    {
-        name = "ESP", 
-        flag = "ESP",
-        tab = Visual, 
-        section = nil,
         value = false
     },
 }
@@ -132,7 +107,7 @@ for _, setting in pairs(toggleSettings) do
     createToggle(setting)
 end
 
-Limb_Extender:CreateSlider({
+Settings:CreateSlider({
     SectionParent = SettingsSection,
     Name = "Limb Size",
     Range = {5, 50},
@@ -141,27 +116,18 @@ Limb_Extender:CreateSlider({
     Flag = "LimbSize",
     Callback = function(Value)
         le.LIMB_SIZE = Value
-        if getgenv().LimbExtenderGlobalData.InputBeganConnection then
-            getgenv().LimbExtenderGlobalData.InputBeganConnection:Disconnect()
-            getgenv().LimbExtenderGlobalData.InputBeganConnection = nil
-        end
     end,
 })
 
-Limb_Extender:CreateKeybind({
+Settings:CreateKeybind({
     Name = "Toggle Keybind",
-    CurrentKeybind = "Q",
+    CurrentKeybind = le.TOGGLE,
     HoldToInteract = false,
     SectionParent = SettingsSection,
     Flag = "ToggleKeybind",
     Callback = function()
-        ModifyLimbs:Set(not getgenv().LimbExtenderGlobalData.IsProcessActive)
+        ModifyLimbs:Set(not limbExtenderData.running)
     end,
 })
-
-if getgenv().LimbExtenderGlobalData.InputBeganConnection then
-    getgenv().LimbExtenderGlobalData.InputBeganConnection:Disconnect()
-     getgenv().LimbExtenderGlobalData.InputBeganConnection = nil
-end
 
 Rayfield:LoadConfiguration()
