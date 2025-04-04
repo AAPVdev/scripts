@@ -204,10 +204,6 @@ local function run()
 		end
 	end
 	
-	task.wait(2)
-	loadingScreen(2)
-	loadingScreen = nil
-
 	limbExtender = setmetatable({}, {
 	__index = rawSettings,
 	__newindex = function(_, key, value)
@@ -240,110 +236,5 @@ local function run()
 	end
 end
 
-function loadingScreen(state)
-	if limbExtenderData.finishedLoading == false and state == 1 then return end
-	limbExtenderData.finishedLoading = false
-
-	local function animate(target, tweenInfo, properties)
-		tweenService:Create(target, tweenInfo, properties):Play()
-	end
-
-	if not limbExtenderData.loadingScreen then
-		local AAPVdev = Instance.new("ScreenGui")
-		local Background = Instance.new("Frame")
-		local RoundedCorners = Instance.new("UICorner")
-		local Developer = Instance.new("TextLabel")
-		local Gradient = Instance.new("UIGradient")
-		local Logo = Instance.new("ImageLabel")
-		local UIAspectRatioConstraint = Instance.new("UIAspectRatioConstraint")
-
-		AAPVdev.Name = "AAPVdev"
-		AAPVdev.Parent = localPlayer:WaitForChild("PlayerGui")
-		AAPVdev.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-
-		Background.Name = "Background"
-		Background.Parent = AAPVdev
-		Background.AnchorPoint = Vector2.new(0.5, 0.5)
-		Background.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-		Background.BorderColor3 = Color3.fromRGB(0, 0, 0)
-		Background.BorderSizePixel = 0
-		Background.ClipsDescendants = true
-		Background.Position = UDim2.new(0.499282628, 0, 0.498812348, 0)
-
-		RoundedCorners.CornerRadius = UDim.new(0, 20)
-		RoundedCorners.Name = "RoundedCorners"
-		RoundedCorners.Parent = Background
-
-		Developer.Name = "Developer"
-		Developer.Parent = Background
-		Developer.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-		Developer.BackgroundTransparency = 1.000
-		Developer.BorderColor3 = Color3.fromRGB(0, 0, 0)
-		Developer.BorderSizePixel = 0
-		Developer.Position = UDim2.new(0.25, 0, 0.665000021, 0)
-		Developer.Size = UDim2.new(0.5, 0, 0.25, 0)
-		Developer.Font = Enum.Font.Code
-		Developer.Text = "AAPVdev"
-		Developer.TextColor3 = Color3.fromRGB(255, 255, 255)
-		Developer.TextScaled = true
-		Developer.TextSize = 14.000
-		Developer.TextWrapped = true
-
-		Gradient.Color = ColorSequence.new{ColorSequenceKeypoint.new(0.00, Color3.fromRGB(255, 255, 255)), ColorSequenceKeypoint.new(1.00, Color3.fromRGB(0, 179, 255))}
-		Gradient.Offset = Vector2.new(0, 1)
-		Gradient.Rotation = 90
-		Gradient.Name = "Gradient"
-		Gradient.Parent = Background
-
-		Logo.Name = "Logo"
-		Logo.Parent = Background
-		Logo.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-		Logo.BackgroundTransparency = 1.000
-		Logo.BorderColor3 = Color3.fromRGB(255, 255, 255)
-		Logo.BorderSizePixel = 0
-		Logo.Position = UDim2.new(0.333333343, 0, 0.165000007, 0)
-		Logo.Size = UDim2.new(0.333333343, 0, 0.5, 0)
-		Logo.Image = "http://www.roblox.com/asset/?id=107904589783906"
-		Logo.ScaleType = Enum.ScaleType.Fit
-
-		UIAspectRatioConstraint.Parent = Background
-		UIAspectRatioConstraint.AspectRatio = 1.850
-
-		local loadingScreenAssets = {
-			AAPVdev = AAPVdev,
-			Background = Background,
-			RoundedCorners = RoundedCorners,
-			Developer = Developer,
-			Gradient = Gradient,
-			Logo = Logo,
-			UIAspectRatioConstraint = UIAspectRatioConstraint,
-		}
-
-		local assetsArray = {}
-		for _, asset in pairs(loadingScreenAssets) do
-			table.insert(assetsArray, asset)
-		end
-		contentProvider:PreloadAsync(assetsArray)
-		assetsArray = nil
-
-		limbExtenderData.loadingScreen = loadingScreenAssets
-	end
-	local loadingScreenAssets = limbExtenderData.loadingScreen
-	loadingScreenAssets.Developer.Position = UDim2.new(0.25, 0, 0.665000021, 0)
-	loadingScreenAssets.Logo.Position = UDim2.new(0.333333343, 0, 0.165000007, 0)
-	if state == 1 then
-		animate(loadingScreenAssets.Background, TweenInfo.new(1, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.new(0.499, 0, 0.499, 0)})
-		animate(loadingScreenAssets.Gradient, TweenInfo.new(1.5), {Offset = Vector2.new(0, -1)})
-		run()
-	elseif state == 2 then
-		animate(loadingScreenAssets.Developer, TweenInfo.new(0.5), {Position = UDim2.new(0.25, 0,1, 0)})
-		animate(loadingScreenAssets.Logo, TweenInfo.new(0.5), {Position = UDim2.new(0.333, 0,-0.660, 0)})
-		animate(loadingScreenAssets.Background, TweenInfo.new(1, Enum.EasingStyle.Back, Enum.EasingDirection.In), {Size = UDim2.new(0, 0, 0, 0)})
-	end
-	loadingScreenAssets = nil
-	animate = nil
-	limbExtenderData.finishedLoading = true
-end
-
-loadingScreen(1)
+run()
 return limbExtender
