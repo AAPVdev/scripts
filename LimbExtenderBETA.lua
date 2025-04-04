@@ -140,7 +140,7 @@ local function run()
 		limbExtenderData.running = not limbExtenderData.running
 
 		if limbExtenderData.running then
-			rawSettings.initiate()
+			initiate()
 		else
 			terminate()
 		end
@@ -190,7 +190,7 @@ local function run()
 
 		getPlayers(setupPlayer, false)
 
-		limbExtenderData.teamChanged = localPlayer:GetPropertyChangedSignal("Team"):Once(rawSettings.initiate)
+		limbExtenderData.teamChanged = localPlayer:GetPropertyChangedSignal("Team"):Once(initiate)
 		limbExtenderData.playerAdded = players.PlayerAdded:Connect(setupPlayer)
 		limbExtenderData.playerRemoving = players.PlayerRemoving:Connect(removePlayerData)
 
@@ -229,7 +229,7 @@ local function run()
 			if rawSettings[key] ~= value then
 				rawSettings[key] = value
 				if limbExtenderData.running then
-					rawSettings.initiate()
+					initiate()
 				end
 			end
 		end
