@@ -200,42 +200,40 @@ local function run()
 		end
 	end
 	
-	task.spawn(function()
-		task.wait(2)
-		loadingScreen(2)
-		loadingScreen = nil
+	task.wait(2)
+	loadingScreen(2)
+	loadingScreen = nil
 
-		limbExtender = setmetatable({}, {
-		__index = rawSettings,
-		__newindex = function(_, key, value)
-			if rawSettings[key] ~= value then
-				rawSettings[key] = value
-				if limbExtenderData.running then
-					initiate()
-				end
+	limbExtender = setmetatable({}, {
+	__index = rawSettings,
+	__newindex = function(_, key, value)
+		if rawSettings[key] ~= value then
+			rawSettings[key] = value
+			if limbExtenderData.running then
+				initiate()
 			end
 		end
-		})		
-		if rawSettings.LISTEN_FOR_INPUT then
-			contextActionUtility:BindAction(
-				"LimbExtenderToggle",
-				function(_, inputState)
-					if inputState == Enum.UserInputState.Begin then
-						rawSettings.toggleState()
-					end
-				end,
-				rawSettings.MOBILE_BUTTON,
-				Enum.KeyCode[rawSettings.TOGGLE]
-			)
-		end
-		limbExtenderData.terminateOldProcess = terminate
+	end
+	})		
+	if rawSettings.LISTEN_FOR_INPUT then
+		contextActionUtility:BindAction(
+			"LimbExtenderToggle",
+			function(_, inputState)
+				if inputState == Enum.UserInputState.Begin then
+					rawSettings.toggleState()
+				end
+			end,
+			rawSettings.MOBILE_BUTTON,
+			Enum.KeyCode[rawSettings.TOGGLE]
+		)
+	end
+	limbExtenderData.terminateOldProcess = terminate
 
-		if limbExtenderData.running then
-			initiate()
-		elseif rawSettings.MOBILE_BUTTON and rawSettingsLISTEN_FOR_INPUT then
-			contextActionUtility:SetTitle("LimbExtenderToggle", "On")
-		end
-	end)
+	if limbExtenderData.running then
+		initiate()
+	elseif rawSettings.MOBILE_BUTTON and rawSettingsLISTEN_FOR_INPUT then
+		contextActionUtility:SetTitle("LimbExtenderToggle", "On")
+	end
 end
 
 function loadingScreen(state)
