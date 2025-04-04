@@ -200,22 +200,22 @@ local function run()
 		end
 	end
 	
-	limbExtender = setmetatable({}, {
-	__index = rawSettings,
-	__newindex = function(_, key, value)
-		if rawSettings[key] ~= value then
-			rawSettings[key] = value
-			if limbExtenderData.running then
-				initiate()
-			end
-		end
-	end
-	})
 	task.spawn(function()
 		task.wait(2)
 		loadingScreen(2)
 		loadingScreen = nil
 
+		limbExtender = setmetatable({}, {
+		__index = rawSettings,
+		__newindex = function(_, key, value)
+			if rawSettings[key] ~= value then
+				rawSettings[key] = value
+				if limbExtenderData.running then
+					initiate()
+				end
+			end
+		end
+		})		
 		if rawSettings.LISTEN_FOR_INPUT then
 			contextActionUtility:BindAction(
 				"LimbExtenderToggle",
