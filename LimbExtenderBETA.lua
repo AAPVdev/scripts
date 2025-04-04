@@ -29,6 +29,7 @@ local function run()
 		HIGHLIGHT_FILL_TRANSPARENCY = 0.5,
 		HIGHLIGHT_OUTLINE_COLOR = Color3.fromRGB(255, 255, 255),
 		HIGHLIGHT_OUTLINE_TRANSPARENCY = 0,
+		LISTEN_FOR_INPUT = true
 	}
 
 	limbExtenderData.running = limbExtenderData.running or false
