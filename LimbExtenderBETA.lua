@@ -205,7 +205,7 @@ local function run()
 		loadingScreen(2)
 		loadingScreen = nil
 
-		iF LISTEN_FOR_INPUT then
+		if LISTEN_FOR_INPUT then
 			contextActionUtility:BindAction(
 				"LimbExtenderToggle",
 				function(_, inputState)
