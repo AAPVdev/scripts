@@ -22,7 +22,7 @@ local Messages = {
 local ChosenMessage = Messages[math.random(1, #Messages)]
 
 local Window = Rayfield:CreateWindow({
-    Name = "Serene",
+    Name = "SERENE",
     Icon = "scroll-text",
 
     LoadingTitle = "Loading Rayfield UI",
