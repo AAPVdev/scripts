@@ -195,10 +195,10 @@ end
 
 function rawSettings.toggleState(state)
 	limbExtenderData.running = not limbExtenderData.running
-
-	if limbExtenderData.running or state == true then
+	
+	if state == true or (state == nil and limbExtenderData.running) then
 		initiate()
-	elseif not limbExtenderData.running or state == false then
+	else
 		terminate()
 	end
 end
