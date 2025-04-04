@@ -204,17 +204,19 @@ local function run()
 		task.wait(2)
 		loadingScreen(2)
 		loadingScreen = nil
-		
-		contextActionUtility:BindAction(
-			"LimbExtenderToggle",
-			function(_, inputState)
-				if inputState == Enum.UserInputState.Begin then
-					rawSettings.toggleState()
-				end
-			end,
-			rawSettings.MOBILE_BUTTON,
-			Enum.KeyCode[rawSettings.TOGGLE]
-		)
+
+		iF LISTEN_FOR_INPUT then
+			contextActionUtility:BindAction(
+				"LimbExtenderToggle",
+				function(_, inputState)
+					if inputState == Enum.UserInputState.Begin then
+						rawSettings.toggleState()
+					end
+				end,
+				rawSettings.MOBILE_BUTTON,
+				Enum.KeyCode[rawSettings.TOGGLE]
+			)
+		end
 		limbExtenderData.terminateOldProcess = terminate
 
 		if limbExtenderData.running then
