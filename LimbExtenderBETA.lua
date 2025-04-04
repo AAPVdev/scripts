@@ -199,7 +199,7 @@ local function run()
 
 		if limbExtenderData.running or state == "initiate" then
 			initiate()
-		elseif state == "terminate"
+		elseif state == "terminate" then
 			terminate()
 		end
 	end
