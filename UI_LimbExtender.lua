@@ -55,16 +55,23 @@ local Settings = Window:CreateTab("Settings", "scale-3d")
 
 local SettingsSection = Settings:CreateSection('Limb Extender Settings')
 
-local function createToggle(params)
-    params.tab:CreateToggle({
-        Name = params.name,
-        SectionParent = params.section,
-        CurrentValue = params.value,
-        Flag = params.flag,
-        Callback = function(Value)
-            le[params.flag] = Value
-        end,
-    })
+local function createOption(params)
+    local methodName = 'Create' .. params.type  
+    local method = params.tab[methodName]
+    
+    if type(method) == 'function' then
+        method(params.tab, {
+            Name = params.name,
+            SectionParent = params.section,
+            CurrentValue = params.value,
+            Flag = params.flag,
+            Callback = function(Value)
+                le[params.flag] = Value
+            end,
+        })
+    else
+        warn("Method " .. methodName .. " not found in params.tab")
+    end
 end
 
 local ModifyLimbs = Settings:CreateToggle({
@@ -81,6 +88,7 @@ Settings:CreateDivider()
 
 local toggleSettings = {
     {
+        type = "Toggle"
         name = "Team Check",
         flag = "TEAM_CHECK",
         tab = Settings,
@@ -88,6 +96,7 @@ local toggleSettings = {
         value = true
     },
     {
+        type = "Toggle"
         name = "ForceField Check",
         flag = "FORCEFIELD_CHECK",
         tab = Settings,
@@ -95,6 +104,7 @@ local toggleSettings = {
         value = true
     },
     {
+        type = "Toggle"
         name = "Limb Collisions",
         flag = "LIMB_CAN_COLLIDE",
         tab = Settings,
@@ -104,7 +114,7 @@ local toggleSettings = {
 }
 
 for _, setting in pairs(toggleSettings) do
-    createToggle(setting)
+    createOption(setting)
 end
 
 Settings:CreateSlider({
