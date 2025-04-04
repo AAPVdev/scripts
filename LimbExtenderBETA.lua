@@ -141,17 +141,7 @@ local function run()
 	    	end 
 	end
 
-	function rawSettings.toggleState()
-		limbExtenderData.running = not limbExtenderData.running
-
-		if limbExtenderData.running then
-			initiate()
-		else
-			terminate()
-		end
-	end
-
-	function initiate()
+	local function initiate()
 		terminate()
 		if not limbExtenderData.running then return end
 		local function setupPlayer(player)
@@ -201,6 +191,16 @@ local function run()
 
 		if rawSettings.MOBILE_BUTTON and rawSettings.LISTEN_FOR_INPUT then
 			contextActionUtility:SetTitle("LimbExtenderToggle", "Off")
+		end
+	end
+
+	function rawSettings.toggleState(state)
+		limbExtenderData.running = not limbExtenderData.running
+
+		if limbExtenderData.running or state == "initiate" then
+			initiate()
+		elseif state == "terminate"
+			terminate()
 		end
 	end
 	
