@@ -129,16 +129,16 @@ local function run()
 			restoreLimbProperties(limb)
 		end
 
-		if not rawSettings.LISTEN_FOR_INPUT then
-			contextActionUtility:UnbindAction("LimbExtenderToggle")
-		end
-		
 		if specialProcess == "FullKill" then
-			contextActionUtility:UnbindAction("LimbExtenderToggle")
-			script:Destroy()
-		elseif rawSettings.MOBILE_BUTTON and rawSettings.LISTEN_FOR_INPUT then
-			contextActionUtility:SetTitle("LimbExtenderToggle", "On")
-		end
+		        contextActionUtility:UnbindAction("LimbExtenderToggle")
+		        script:Destroy()
+	   	else
+			if not rawSettings.LISTEN_FOR_INPUT then
+		            contextActionUtility:UnbindAction("LimbExtenderToggle")
+		        elseif rawSettings.MOBILE_BUTTON then
+		            contextActionUtility:SetTitle("LimbExtenderToggle", "On")
+		        end
+	    	end 
 	end
 
 	function rawSettings.toggleState()
