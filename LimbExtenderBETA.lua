@@ -130,7 +130,9 @@ local function run()
 		end
 
 		if specialProcess == "FullKill" then
-			contextActionUtility:UnbindAction("LimbExtenderToggle")
+			if not rawSettings.LISTEN_FOR_INPUT then
+				contextActionUtility:UnbindAction("LimbExtenderToggle")
+			end
 			script:Destroy()
 		elseif rawSettings.MOBILE_BUTTON and rawSettings.LISTEN_FOR_INPUT then
 			contextActionUtility:SetTitle("LimbExtenderToggle", "On")
