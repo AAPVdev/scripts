@@ -1,10 +1,3 @@
---[[
-Important Notice:
-This script is not intended to be executed directly as raw source code.
-To ensure proper functionality and avoid potential issues, please execute the script via a loadstring function.
-Running the script in this manner helps maintain compatibility and ensures that dependencies and environmental setups are correctly handled.
-]]
-
 local LimbExtender = nil
 
 local function main()
