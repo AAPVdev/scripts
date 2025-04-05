@@ -1,6 +1,6 @@
 local Players = game:GetService("Players")
 
-local le = loadstring(game:HttpGet('https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtenderBETA.lua'))()
+local le = loadstring(game:HttpGet('https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua'))()
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local limbExtenderData = getgenv().limbExtenderData
