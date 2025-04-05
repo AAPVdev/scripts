@@ -88,7 +88,7 @@ Settings:CreateDivider()
 
 local toggleSettings = {
     {
-        type = "Toggle"
+        type = "Toggle",
         name = "Team Check",
         flag = "TEAM_CHECK",
         tab = Settings,
@@ -96,7 +96,7 @@ local toggleSettings = {
         value = true
     },
     {
-        type = "Toggle"
+        type = "Toggle",
         name = "ForceField Check",
         flag = "FORCEFIELD_CHECK",
         tab = Settings,
@@ -104,7 +104,7 @@ local toggleSettings = {
         value = true
     },
     {
-        type = "Toggle"
+        type = "Toggle",
         name = "Limb Collisions",
         flag = "LIMB_CAN_COLLIDE",
         tab = Settings,
