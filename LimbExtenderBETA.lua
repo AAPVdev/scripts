@@ -193,16 +193,14 @@ local function initiate()
 end
 
 function rawSettings.toggleState(state)
-	if state ~= nil then
-	    limbExtenderData.running = state
+	local newState = (state == nil) and (not limbExtenderData.running) or state
+	
+	limbExtenderData.running = newState
+	
+	if newState then
+	    initiate()
 	else
-	    limbExtenderData.running = not limbExtenderData.running
-	end
-
-	if state == true or (state == nil and limbExtenderData.running) then
-		initiate()
-	else
-		terminate()
+	    terminate()
 	end
 end
 
