@@ -51,9 +51,8 @@ local Window = Rayfield:CreateWindow({
 
 le.LISTEN_FOR_INPUT = false
 
-local Settings = Window:CreateTab("Settings", "scale-3d")
-
-local SettingsSection = Settings:CreateSection('Limb Extender Settings')
+local Settings = Window:CreateTab("Limbs", "scale-3d")
+local Highlights = Window:CreateTab("Highlights", "eye")
 
 local function createOption(params)
     local methodName = 'Create' .. params.type  
@@ -65,7 +64,16 @@ local function createOption(params)
             SectionParent = params.section,
             CurrentValue = params.value,
             Flag = params.flag,
+            Options = params.options,
+            CurrentOption = params.currentOption,
+            MultipleOptions = params.multipleOptions,
+            Range = params.range,
+            Color = params.color,
+            Increment = params.increment,
             Callback = function(Value)
+                if params.multipleOptions == false then
+                    Value = Value[1]
+                end
                 le[params.flag] = Value
             end,
         })
@@ -76,11 +84,11 @@ end
 
 local ModifyLimbs = Settings:CreateToggle({
     Name = "Modify Limbs",
-    SectionParent = SettingsSection,
+    SectionParent = nil,
     CurrentValue = false,
     Flag = "ModifyLimbs",
-    Callback = function()
-        le.toggleState()
+    Callback = function(Value)
+        le.toggleState(Value)
     end,
 })
 
@@ -92,33 +100,110 @@ local toggleSettings = {
         name = "Team Check",
         flag = "TEAM_CHECK",
         tab = Settings,
-        section = SettingsSection,
-        value = true
+        section = nil,
+        value = le.TEAM_CHECK,
+        createDivider = false,
     },
     {
         type = "Toggle",
         name = "ForceField Check",
         flag = "FORCEFIELD_CHECK",
         tab = Settings,
-        section = SettingsSection,
-        value = true
+        section = nil,
+        value = le.FORCEFIELD_CHECK,
+        createDivider = false,
     },
     {
         type = "Toggle",
         name = "Limb Collisions",
         flag = "LIMB_CAN_COLLIDE",
         tab = Settings,
-        section = SettingsSection,
-        value = false
+        section = nil,
+        value = le.LIMB_CAN_COLLIDE,
+        createDivider = false,
+    },
+    {
+        type = "Slider",
+        name = "Limb Transparency",
+        flag = "LIMB_TRANSPARENCY",
+        tab = Settings,
+        range = {0, 1},
+        increment = 0.1,
+        section = nil,
+        value = le.LIMB_TRANSPARENCY,
+        createDivider = false,
+    },
+    {
+        type = "Toggle",
+        name = "Use Highlights",
+        flag = "USE_HIGHLIGHT",
+        tab = Highlights,
+        section = nil,
+        value = le.USE_HIGHLIGHT,
+        createDivider = true,
+    },
+    {
+        type = "Dropdown",
+        name = "Depth Mode",
+        flag = "DEPTH_MODE",
+        options = {"Occluded","AlwaysOnTop"},
+        currentOption = {le.DEPTH_MODE},
+        multipleOptions = false,
+        tab = Highlights,
+        section = nil,
+        createDivider = false,
+    },
+    {
+        type = "ColorPicker",
+        name = "Outline Color",
+        flag = "HIGHLIGHT_OUTLINE_COLOR",
+        tab = Highlights,
+        section = nil,
+        color = le.HIGHLIGHT_OUTLINE_COLOR,
+        createDivider = false,
+    },
+    {
+        type = "ColorPicker",
+        name = "Fill Color",
+        flag = "HIGHLIGHT_FILL_COLOR",
+        tab = Highlights,
+        section = nil,
+        color = le.HIGHLIGHT_FILL_COLOR,
+        createDivider = false,
+    },
+    {
+        type = "Slider",
+        name = "Fill Transparency",
+        flag = "HIGHLIGHT_FILL_TRANSPARENCY",
+        tab = Highlights,
+        range = {0, 1},
+        increment = 0.1,
+        section = nil,
+        value = le.HIGHLIGHT_FILL_TRANSPARENCY,
+        createDivider = false,
+    },
+    {
+        type = "Slider",
+        name = "Outline Transparency",
+        flag = "HIGHLIGHT_OUTLINE_TRANSPARENCY",
+        tab = Highlights,
+        range = {0, 1},
+        increment = 0.1,
+        section = nil,
+        value = le.HIGHLIGHT_OUTLINE_TRANSPARENCY,
+        createDivider = false,
     },
 }
 
 for _, setting in pairs(toggleSettings) do
     createOption(setting)
+    if setting.createDivider then
+        setting.tab:CreateDivider()
+    end
 end
 
 Settings:CreateSlider({
-    SectionParent = SettingsSection,
+    SectionParent = nil,
     Name = "Limb Size",
     Range = {5, 50},
     Increment = 5,
@@ -133,7 +218,7 @@ Settings:CreateKeybind({
     Name = "Toggle Keybind",
     CurrentKeybind = le.TOGGLE,
     HoldToInteract = false,
-    SectionParent = SettingsSection,
+    SectionParent = nil,
     Flag = "ToggleKeybind",
     Callback = function()
         ModifyLimbs:Set(not limbExtenderData.running)
