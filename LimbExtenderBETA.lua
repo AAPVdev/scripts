@@ -9,7 +9,7 @@ local rawSettings = {
 	FORCEFIELD_CHECK = false,
 	RESET_LIMB_ON_DEATH2 = false,
 	USE_HIGHLIGHT = true,
-	DEPTH_MODE = 2,
+	DEPTH_MODE = "Occluded",
 	HIGHLIGHT_FILL_COLOR = Color3.fromRGB(0, 255, 0),
 	HIGHLIGHT_FILL_TRANSPARENCY = 0.5,
 	HIGHLIGHT_OUTLINE_COLOR = Color3.fromRGB(255, 255, 255),
@@ -93,7 +93,7 @@ local function modifyLimbProperties(limb)
 
 	local highlightInstance = limb:FindFirstChildWhichIsA("Highlight") or Instance.new("Highlight", limb)
 	highlightInstance.Name = "LimbHighlight"
-	highlightInstance.DepthMode = rawSettings.DEPTH_MODE == 1 and Enum.HighlightDepthMode.AlwaysOnTop or Enum.HighlightDepthMode.Occluded
+	highlightInstance.DepthMode = Enum.HighlightDepthMode[rawSettings.DEPTH_MODE]
 	highlightInstance.FillColor = rawSettings.HIGHLIGHT_FILL_COLOR
 	highlightInstance.FillTransparency = rawSettings.HIGHLIGHT_FILL_TRANSPARENCY
 	highlightInstance.OutlineColor = rawSettings.HIGHLIGHT_OUTLINE_COLOR
