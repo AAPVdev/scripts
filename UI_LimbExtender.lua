@@ -7,25 +7,25 @@ local limbExtenderData = getgenv().limbExtenderData
 
 local Messages = {
     "fucking shit up",
-    "i love you ❤",
-    "prolapsed anus",
-    "is it joever?",
-    "im banned",
-    "my penis has warts",
+    "not my fault",
+    "what the fuck",
+    "arse anal",
+    "what executor do you use?",
+    "dont say cuss words",
     "california gurrls",
     "I HATE EXPLOITERS! 😡",
     "builderman is my dad",
-    "im on that good kush",
-    "big NERD 🤓"
+    "plopyninja was my first account",
+    "shawtyy"
 }
 
 local ChosenMessage = Messages[math.random(1, #Messages)]
 
 local Window = Rayfield:CreateWindow({
     Name = "SERENE",
-    Icon = "scroll-text",
+    Icon = "crosshair",
 
-    LoadingTitle = "Loading Rayfield UI",
+    LoadingTitle = "Made with ❤️ by SereneLobby",
     LoadingSubtitle = ChosenMessage,
 
     Theme = "DarkBlue",
@@ -94,6 +94,18 @@ local ModifyLimbs = Settings:CreateToggle({
 
 Settings:CreateDivider()
 
+local UseHighlights = Highlights:CreateToggle({
+    Name = "Use Highlights",
+    SectionParent = nil,
+    CurrentValue = false,
+    Flag = "USE_HIGHLIGHT",
+    Callback = function(Value)
+        le.USE_HIGHLIGHT = Value
+    end,
+})
+
+Highlights:CreateDivider()
+
 local toggleSettings = {
     {
         type = "Toggle",
@@ -134,13 +146,15 @@ local toggleSettings = {
         createDivider = false,
     },
     {
-        type = "Toggle",
-        name = "Use Highlights",
-        flag = "USE_HIGHLIGHT",
-        tab = Highlights,
+        type = "Slider",
+        name = "Limb Size",
+        flag = "LIMB_SIZE",
+        tab = Settings,
+        range = {5, 50},
+        increment = 5,
         section = nil,
-        value = le.USE_HIGHLIGHT,
-        createDivider = true,
+        value = le.LIMB_SIZE,
+        createDivider = false,
     },
     {
         type = "Dropdown",
@@ -202,18 +216,6 @@ for _, setting in pairs(toggleSettings) do
     end
 end
 
-Settings:CreateSlider({
-    SectionParent = nil,
-    Name = "Limb Size",
-    Range = {5, 50},
-    Increment = 5,
-    CurrentValue = 10,
-    Flag = "LimbSize",
-    Callback = function(Value)
-        le.LIMB_SIZE = Value
-    end,
-})
-
 Settings:CreateKeybind({
     Name = "Toggle Keybind",
     CurrentKeybind = le.TOGGLE,
@@ -222,6 +224,17 @@ Settings:CreateKeybind({
     Flag = "ToggleKeybind",
     Callback = function()
         ModifyLimbs:Set(not limbExtenderData.running)
+    end,
+})
+
+Highlights:CreateKeybind({
+    Name = "Toggle Keybind",
+    CurrentKeybind = "",
+    HoldToInteract = false,
+    SectionParent = nil,
+    Flag = "ToggleKeybind2",
+    Callback = function()
+        UseHighlights:Set(not le.USE_HIGHLIGHT)
     end,
 })
 
