@@ -250,7 +250,7 @@ local TargetLimb = Target:CreateDropdown({
    MultipleOptions = false,
    Flag = "TARGET_LIMB",
    Callback = function(Options)
-		le.TARGET_LIMB = Options[1]
+	le.TARGET_LIMB = Options[1]
    end,
 })
 
@@ -261,7 +261,7 @@ Themes:CreateDropdown({
    MultipleOptions = false,
    Flag = "CurrentTheme",
    Callback = function(Options)
-		Window.ModifyTheme(Options[1])
+	Window.ModifyTheme(Options[1])
    end,
 })
 
