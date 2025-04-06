@@ -1,7 +1,10 @@
 local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
 
 local le = loadstring(game:HttpGet('https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua'))()
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+local limbs = {}
 
 local limbExtenderData = getgenv().limbExtenderData
 
@@ -53,6 +56,7 @@ le.LISTEN_FOR_INPUT = false
 
 local Settings = Window:CreateTab("Limbs", "scale-3d")
 local Highlights = Window:CreateTab("Highlights", "eye")
+local Target = Window:CreateTab("Target", "crosshair")
 local Themes = Window:CreateTab("Themes", "palette")
 
 local function createOption(params)
@@ -239,6 +243,17 @@ Highlights:CreateKeybind({
     end,
 })
 
+local TargetLimb = Target:CreateDropdown({
+   Name = "Target Limb",
+   Options = {},
+   CurrentOption = {le.TARGET_LIMB},
+   MultipleOptions = false,
+   Flag = "TARGET_LIMB",
+   Callback = function(Options)
+		le.TARGET_LIMB = Options[1]
+   end,
+})
+
 Themes:CreateDropdown({
    Name = "Current Theme",
    Options = {"Default", "AmberGlow", "Amethyst", "Bloom", "DarkBlue", "Green", "Light", "Ocean", "Serenity"},
@@ -251,3 +266,35 @@ Themes:CreateDropdown({
 })
 
 Rayfield:LoadConfiguration()
+
+local function characterAdded(Character)
+    local function onChildChanged(child, isAdded)
+        if not child:IsA("BasePart") then return end
+        if isAdded then
+            table.insert(limbs, child.Name)
+        else
+            local index = table.find(limbs, child.Name)
+            if index then
+                table.remove(limbs, index)
+            end
+        end
+        TargetLimb:Refresh(limbs)
+    end
+
+    Character.ChildAdded:Connect(function(child)
+        onChildChanged(child, true)
+    end)
+
+    Character.ChildRemoved:Connect(function(child)
+        onChildChanged(child, false)
+    end)
+
+    for _, child in ipairs(Character:GetChildren()) do
+        onChildChanged(child, true)
+    end
+end
+
+LocalPlayer.CharacterAdded:Connect(characterAdded)
+if LocalPlayer.Character then
+    characterAdded(LocalPlayer.Character)
+end
