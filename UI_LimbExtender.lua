@@ -23,7 +23,7 @@ local ChosenMessage = Messages[math.random(1, #Messages)]
 
 local Window = Rayfield:CreateWindow({
     Name = "SERENE",
-    Icon = "crosshair",
+    Icon = "codesandbox",
 
     LoadingTitle = "Made with ❤️ by SereneLobby",
     LoadingSubtitle = ChosenMessage,
