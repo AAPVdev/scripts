@@ -250,7 +250,7 @@ local TargetLimb = Target:CreateDropdown({
    MultipleOptions = false,
    Flag = "TARGET_LIMB",
    Callback = function(Options)
-	le.TARGET_LIMB = Options[1]
+		le.TARGET_LIMB = Options[1]
    end,
 })
 
@@ -261,7 +261,7 @@ Themes:CreateDropdown({
    MultipleOptions = false,
    Flag = "CurrentTheme",
    Callback = function(Options)
-	Window.ModifyTheme(Options[1])
+		Window.ModifyTheme(Options[1])
    end,
 })
 
@@ -270,10 +270,10 @@ Rayfield:LoadConfiguration()
 local function characterAdded(Character)
     local function onChildChanged(child, isAdded)
         if not child:IsA("BasePart") then return end
-        if isAdded then
+        local index = table.find(limbs, child.Name)
+        if isAdded and not index then
             table.insert(limbs, child.Name)
         else
-            local index = table.find(limbs, child.Name)
             if index then
                 table.remove(limbs, index)
             end
