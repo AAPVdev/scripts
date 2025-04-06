@@ -268,25 +268,17 @@ Themes:CreateDropdown({
 Rayfield:LoadConfiguration()
 
 local function characterAdded(Character)
-    local function onChildChanged(child, isAdded)
+    local function onChildChanged(child)
         if not child:IsA("BasePart") then return end
         local index = table.find(limbs, child.Name)
-        if isAdded and not index then
+        if not index then
             table.insert(limbs, child.Name)
-        else
-            if index then
-                table.remove(limbs, index)
-            end
         end
         TargetLimb:Refresh(limbs)
     end
 
     Character.ChildAdded:Connect(function(child)
         onChildChanged(child, true)
-    end)
-
-    Character.ChildRemoved:Connect(function(child)
-        onChildChanged(child, false)
     end)
 
     for _, child in ipairs(Character:GetChildren()) do
