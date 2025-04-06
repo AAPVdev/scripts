@@ -15,7 +15,7 @@ local Messages = {
     "california gurrls",
     "I HATE EXPLOITERS! 😡",
     "builderman is my dad",
-    "plopyninja was my first account",
+    "plopyninja is my first account",
     "shawtyy"
 }
 
@@ -23,12 +23,12 @@ local ChosenMessage = Messages[math.random(1, #Messages)]
 
 local Window = Rayfield:CreateWindow({
     Name = "SERENE",
-    Icon = "codesandbox",
+    Icon = 0,
 
     LoadingTitle = "Made with ❤️ by SereneLobby",
     LoadingSubtitle = ChosenMessage,
 
-    Theme = "DarkBlue",
+    Theme = "Default",
 
     DisableRayfieldPrompts = true,
         
@@ -53,9 +53,10 @@ le.LISTEN_FOR_INPUT = false
 
 local Settings = Window:CreateTab("Limbs", "scale-3d")
 local Highlights = Window:CreateTab("Highlights", "eye")
+local Themes = Window:CreateTab("Themes", "palette")
 
 local function createOption(params)
-    local methodName = 'Create' .. params.type  
+    local methodName = 'Create' .. params.method  
     local method = params.tab[methodName]
     
     if type(method) == 'function' then
@@ -97,7 +98,7 @@ Settings:CreateDivider()
 local UseHighlights = Highlights:CreateToggle({
     Name = "Use Highlights",
     SectionParent = nil,
-    CurrentValue = false,
+    CurrentValue = le.USE_HIGHLIGHT,
     Flag = "USE_HIGHLIGHT",
     Callback = function(Value)
         le.USE_HIGHLIGHT = Value
@@ -108,7 +109,7 @@ Highlights:CreateDivider()
 
 local toggleSettings = {
     {
-        type = "Toggle",
+        method = "Toggle",
         name = "Team Check",
         flag = "TEAM_CHECK",
         tab = Settings,
@@ -117,7 +118,7 @@ local toggleSettings = {
         createDivider = false,
     },
     {
-        type = "Toggle",
+        method = "Toggle",
         name = "ForceField Check",
         flag = "FORCEFIELD_CHECK",
         tab = Settings,
@@ -126,7 +127,7 @@ local toggleSettings = {
         createDivider = false,
     },
     {
-        type = "Toggle",
+        method = "Toggle",
         name = "Limb Collisions",
         flag = "LIMB_CAN_COLLIDE",
         tab = Settings,
@@ -135,7 +136,7 @@ local toggleSettings = {
         createDivider = false,
     },
     {
-        type = "Slider",
+        method = "Slider",
         name = "Limb Transparency",
         flag = "LIMB_TRANSPARENCY",
         tab = Settings,
@@ -146,7 +147,7 @@ local toggleSettings = {
         createDivider = false,
     },
     {
-        type = "Slider",
+        method = "Slider",
         name = "Limb Size",
         flag = "LIMB_SIZE",
         tab = Settings,
@@ -157,7 +158,7 @@ local toggleSettings = {
         createDivider = false,
     },
     {
-        type = "Dropdown",
+        method = "Dropdown",
         name = "Depth Mode",
         flag = "DEPTH_MODE",
         options = {"Occluded","AlwaysOnTop"},
@@ -168,7 +169,7 @@ local toggleSettings = {
         createDivider = false,
     },
     {
-        type = "ColorPicker",
+        method = "ColorPicker",
         name = "Outline Color",
         flag = "HIGHLIGHT_OUTLINE_COLOR",
         tab = Highlights,
@@ -177,7 +178,7 @@ local toggleSettings = {
         createDivider = false,
     },
     {
-        type = "ColorPicker",
+        method = "ColorPicker",
         name = "Fill Color",
         flag = "HIGHLIGHT_FILL_COLOR",
         tab = Highlights,
@@ -186,7 +187,7 @@ local toggleSettings = {
         createDivider = false,
     },
     {
-        type = "Slider",
+        method = "Slider",
         name = "Fill Transparency",
         flag = "HIGHLIGHT_FILL_TRANSPARENCY",
         tab = Highlights,
@@ -197,7 +198,7 @@ local toggleSettings = {
         createDivider = false,
     },
     {
-        type = "Slider",
+        method = "Slider",
         name = "Outline Transparency",
         flag = "HIGHLIGHT_OUTLINE_TRANSPARENCY",
         tab = Highlights,
@@ -236,6 +237,17 @@ Highlights:CreateKeybind({
     Callback = function()
         UseHighlights:Set(not le.USE_HIGHLIGHT)
     end,
+})
+
+Themes:CreateDropdown({
+   Name = "Current Theme",
+   Options = {"Default", "AmberGlow", "Amethyst", "Bloom", "DarkBlue", "Green", "Light", "Ocean", "Serenity"},
+   CurrentOption = {"Default"},
+   MultipleOptions = false,
+   Flag = "CurrentTheme",
+   Callback = function(Options)
+		Window.ModifyTheme(Options[1])
+   end,
 })
 
 Rayfield:LoadConfiguration()
