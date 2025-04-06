@@ -89,7 +89,7 @@ local function modifyLimbProperties(limb)
 	limb.Size = Vector3.new(rawSettings.LIMB_SIZE, rawSettings.LIMB_SIZE, rawSettings.LIMB_SIZE)
 	limb.Transparency = rawSettings.LIMB_TRANSPARENCY
 	limb.CanCollide = rawSettings.LIMB_CAN_COLLIDE
-	IF rawSettings.TARGET_LIMB == "HumanoidRootPart" then
+	if rawSettings.TARGET_LIMB == "HumanoidRootPart" then
 		limb.Massless = false
 	else
 		limb.Massless = true
