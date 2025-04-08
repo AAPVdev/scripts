@@ -63,6 +63,8 @@ local function restoreLimbProperties(limb)
 		highlightInstance:Destroy()
 	end
 
+	limbProperties.SizeChanged:Disconnect()
+	
 	limbs[limb] = nil
 
 	limb.Size = limbProperties.Size
@@ -86,12 +88,19 @@ end
 
 local function modifyLimbProperties(limb)
 	saveLimbProperties(limb)
-	limb.Size = Vector3.new(rawSettings.LIMB_SIZE, rawSettings.LIMB_SIZE, rawSettings.LIMB_SIZE)
+	local newSize = Vector3.new(rawSettings.LIMB_SIZE, rawSettings.LIMB_SIZE, rawSettings.LIMB_SIZE)
+	limb.Size = newSize
+	
+	limbs[limb].SizeChanged = limb:GetPropertyChangedSignal("Size"):Connect(function()
+		if limb.Size ~= newSize then
+			limb.Size = newSize
+		end
+	end)
+	
 	limb.Transparency = rawSettings.LIMB_TRANSPARENCY
 	limb.CanCollide = rawSettings.LIMB_CAN_COLLIDE
-	if rawSettings.TARGET_LIMB == "HumanoidRootPart" then
-		limb.Massless = false
-	else
+
+	if rawSettings.TARGET_LIMB ~= "HumanoidRootPart" then
 		limb.Massless = true
 	end
 
