@@ -160,8 +160,6 @@ local function initiate()
 					local targetLimb = character:WaitForChild(rawSettings.TARGET_LIMB, 0.1)
 					local humanoid = character:WaitForChild("Humanoid", 0.1)
 					if targetLimb and humanoid and humanoid.Health > 0 then
-						restoreLimbProperties(targetLimb)
-	
 						if (rawSettings.TEAM_CHECK and (localPlayer.Team == nil or player.Team ~= localPlayer.Team)) or not rawSettings.TEAM_CHECK then
 							modifyLimbProperties(targetLimb)
 						end
@@ -169,6 +167,7 @@ local function initiate()
 						playerData["characterRemoving"] = player.CharacterRemoving:Once(function()
 							restoreLimbProperties(targetLimb)
 						end)
+						
 						local connection = rawSettings.RESET_LIMB_ON_DEATH2 and humanoid.HealthChanged or humanoid.Died
 						playerData["OnDeath"] = connection:Connect(function(health)
 							if health and health <= 0 then
@@ -185,7 +184,7 @@ local function initiate()
 
 		characterAdded(player.Character)
 	end
-
+	
 	getPlayers(setupPlayer, false)
 
 	limbExtenderData.teamChanged = localPlayer:GetPropertyChangedSignal("Team"):Once(initiate)
