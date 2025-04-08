@@ -9,7 +9,7 @@ local limbs = {}
 local limbExtenderData = getgenv().limbExtenderData
 
 local Messages = {
-    "jejemon!"
+    "jejemon!",
     "i have the highest grades in math",
     "hi krislyn",
     "fucking shit up",
@@ -21,7 +21,7 @@ local Messages = {
     "california gurrls",
     "I HATE EXPLOITERS! 😡",
     "builderman is my dad",
-    "plopyninja",
+    "plopyninja is my first account",
     "shawtyy"
 }
 
