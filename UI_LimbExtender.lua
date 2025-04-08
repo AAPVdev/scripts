@@ -9,6 +9,8 @@ local limbs = {}
 local limbExtenderData = getgenv().limbExtenderData
 
 local Messages = {
+	"i have the highest grades in math",
+	"krislyn",
     "fucking shit up",
     "not my fault",
     "what the fuck",
