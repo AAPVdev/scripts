@@ -21,7 +21,7 @@ local Messages = {
     "california gurrls",
     "I HATE EXPLOITERS! 😡",
     "builderman is my dad",
-    "plopyninja is my first account",
+    "plopyninja",
     "shawtyy"
 }
 
