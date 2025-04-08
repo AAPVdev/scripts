@@ -15,7 +15,7 @@ local Messages = {
     "not my fault",
     "what the fuck",
     "arse anal",
-    "what executor do you use?",
+    "what color is your executor?",
     "dont say cuss words",
     "california gurrls",
     "I HATE EXPLOITERS! 😡",
