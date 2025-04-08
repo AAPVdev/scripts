@@ -150,14 +150,15 @@ local function initiate()
 	local function setupPlayer(player)
 		local function characterAdded(character)
 			if character then
-				local targetLimb = character:WaitForChild(rawSettings.TARGET_LIMB, 0.5)
-				local humanoid = character:WaitForChild("Humanoid", 0.5)
 				local playerData = playerTable[player.Name]
 				if playerData then
 					playerData["teamChanged"] = player:GetPropertyChangedSignal("Team"):Once(function()
  						removePlayerData(player)
  						setupPlayer(player)
- 					end)			
+ 					end)
+					
+					local targetLimb = character:WaitForChild(rawSettings.TARGET_LIMB, 0.1)
+					local humanoid = character:WaitForChild("Humanoid", 0.1)
 					if targetLimb and humanoid and humanoid.Health > 0 then
 						restoreLimbProperties(targetLimb)
 	
