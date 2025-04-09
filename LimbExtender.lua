@@ -166,8 +166,8 @@ local function initiate()
  						setupPlayer(player)
  					end)
 					
-					local targetLimb = character:WaitForChild(rawSettings.TARGET_LIMB, 0.1)
-					local humanoid = character:WaitForChild("Humanoid", 0.1)
+					local humanoid = character:WaitForChild("Humanoid", 0.2)
+					local targetLimb = character:WaitForChild(rawSettings.TARGET_LIMB, 0.2)
 					if targetLimb and humanoid and humanoid.Health > 0 then
 						if (rawSettings.TEAM_CHECK and (localPlayer.Team == nil or player.Team ~= localPlayer.Team)) or not rawSettings.TEAM_CHECK then
 							modifyLimbProperties(targetLimb)
