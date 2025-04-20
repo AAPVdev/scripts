@@ -28,8 +28,8 @@ local Messages = {
 local ChosenMessage = Messages[math.random(1, #Messages)]
 
 local Window = Rayfield:CreateWindow({
-    Name = "SERENE",
-    Icon = 0,
+    Name = "Axios",
+    Icon = 107904589783906,
 
     LoadingTitle = "Made with ❤️ by SereneLobby",
     LoadingSubtitle = ChosenMessage,
@@ -140,7 +140,7 @@ local toggleSettings = {
         tab = Settings,
         section = nil,
         value = le.LIMB_CAN_COLLIDE,
-        createDivider = false,
+        createDivider = true,
     },
     {
         method = "Slider",
@@ -162,7 +162,7 @@ local toggleSettings = {
         increment = 5,
         section = nil,
         value = le.LIMB_SIZE,
-        createDivider = false,
+        createDivider = true,
     },
     {
         method = "Dropdown",
@@ -173,7 +173,7 @@ local toggleSettings = {
         multipleOptions = false,
         tab = Highlights,
         section = nil,
-        createDivider = false,
+        createDivider = true,
     },
     {
         method = "ColorPicker",
@@ -191,7 +191,7 @@ local toggleSettings = {
         tab = Highlights,
         section = nil,
         color = le.HIGHLIGHT_FILL_COLOR,
-        createDivider = false,
+        createDivider = true,
     },
     {
         method = "Slider",
@@ -213,7 +213,7 @@ local toggleSettings = {
         increment = 0.1,
         section = nil,
         value = le.HIGHLIGHT_OUTLINE_TRANSPARENCY,
-        createDivider = false,
+        createDivider = true,
     },
 }
 
@@ -237,7 +237,7 @@ Settings:CreateKeybind({
 
 Highlights:CreateKeybind({
     Name = "Toggle Keybind",
-    CurrentKeybind = "",
+    CurrentKeybind = le.TOGGLE,
     HoldToInteract = false,
     SectionParent = nil,
     Flag = "ToggleKeybind2",
