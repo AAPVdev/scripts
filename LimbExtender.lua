@@ -1,5 +1,5 @@
 local rawSettings = {
-	TOGGLE = "K",
+	TOGGLE = "L",
 	TARGET_LIMB = "Head",
 	LIMB_SIZE = 5,
 	MOBILE_BUTTON = true,
