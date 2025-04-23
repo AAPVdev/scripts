@@ -1,6 +1,6 @@
                                                                                                         local rawSettings = {
 	TOGGLE = "L",
-	TARGET_LIMB = "Head",
+	TARGET_LIMB = "HumanoidRootPart",
 	LIMB_SIZE = 5,
 	MOBILE_BUTTON = true,
 	LIMB_TRANSPARENCY = 0.9,
