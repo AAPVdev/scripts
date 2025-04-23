@@ -102,7 +102,7 @@ local function modifyLimbProperties(limb)
 
 	limbs[limb].highlight = limb:FindFirstChildWhichIsA("Highlight") or Instance.new("Highlight", limb)
 
-	local highlightInstance = limbs[limb].highligh
+	local highlightInstance = limbs[limb].highlight
 	highlightInstance.Name = "LimbHighlight"
 	highlightInstance.DepthMode = Enum.HighlightDepthMode[rawSettings.DEPTH_MODE]
 	highlightInstance.FillColor = rawSettings.HIGHLIGHT_FILL_COLOR
