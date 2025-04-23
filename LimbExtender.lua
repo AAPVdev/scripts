@@ -143,7 +143,6 @@ local function terminate(specialProcess)
 
 	if specialProcess == "FullKill" then
 			contextActionUtility:UnbindAction("LimbExtenderToggle")
-			script:Destroy()
 	else
 		if not rawSettings.LISTEN_FOR_INPUT then
 				contextActionUtility:UnbindAction("LimbExtenderToggle")
@@ -222,9 +221,7 @@ __index = rawSettings,
 __newindex = function(_, key, value)
 	if rawSettings[key] ~= value then
 		rawSettings[key] = value
-		if limbExtenderData.running then
-			initiate()
-		end
+		initiate()
 	end
 end
 })		
