@@ -1,4 +1,4 @@
-local rawSettings = {
+                                                                                                        local rawSettings = {
 	TOGGLE = "L",
 	TARGET_LIMB = "Head",
 	LIMB_SIZE = 5,
@@ -53,18 +53,14 @@ end
 
 local function restoreLimbProperties(limb)
 	local limbProperties = limbs[limb]
-	local highlightInstance = limb:FindFirstChild("LimbHighlight")
 
 	if not limbProperties then
 		return
 	end
 
-	if highlightInstance then
-		highlightInstance:Destroy()
-	end
-
 	limbProperties.SizeChanged:Disconnect()
-	
+	limbProperties.highlight:Destroy()
+
 	limbs[limb] = nil
 
 	limb.Size = limbProperties.Size
@@ -104,7 +100,9 @@ local function modifyLimbProperties(limb)
 		limb.Massless = true
 	end
 
-	local highlightInstance = limb:FindFirstChildWhichIsA("Highlight") or Instance.new("Highlight", limb)
+	limbs[limb].highlight = limb:FindFirstChildWhichIsA("Highlight") or Instance.new("Highlight", limb)
+
+	local highlightInstance = limbs[limb].highligh
 	highlightInstance.Name = "LimbHighlight"
 	highlightInstance.DepthMode = Enum.HighlightDepthMode[rawSettings.DEPTH_MODE]
 	highlightInstance.FillColor = rawSettings.HIGHLIGHT_FILL_COLOR
