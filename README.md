@@ -1,7 +1,7 @@
 # 📜 Scripts  
 
 ## 🔹 Limb Extender (NO UI)  
-Extend limbs without a graphical interface. Offers more customizable core settings compared to the UI version.
+I would really only use this if rayfield gets detected.Not reccomended for normal use.
 ```lua
 local settings = {
 	TOGGLE = "K",
@@ -32,7 +32,7 @@ end
 ---
 
 ## 🔹 Limb Extender (WITH UI)  
-Extend limbs with a user-friendly graphical interface.  
+Strongly reccomend you use this one.  
 ```lua
 loadstring(game:HttpGet('https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/UI_LimbExtender.lua'))()
 ```
