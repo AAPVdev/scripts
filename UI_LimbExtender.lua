@@ -2,6 +2,9 @@ local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 
 local le = loadstring(game:HttpGet('https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua'))()
+
+le.LISTEN_FOR_INPUT = false
+
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local limbs = {}
@@ -54,8 +57,6 @@ local Window = Rayfield:CreateWindow({
         Key = {""}
     }
 })
-
-le.LISTEN_FOR_INPUT = false
 
 local Settings = Window:CreateTab("Limbs", "scale-3d")
 local Highlights = Window:CreateTab("Highlights", "eye")
