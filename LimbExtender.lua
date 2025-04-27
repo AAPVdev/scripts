@@ -9,11 +9,11 @@
 	FORCEFIELD_CHECK = true,
 	RESET_LIMB_ON_DEATH2 = false,
 	USE_HIGHLIGHT = true,
-	DEPTH_MODE = "Occluded",
-	HIGHLIGHT_FILL_COLOR = Color3.fromRGB(0, 255, 0),
-	HIGHLIGHT_FILL_TRANSPARENCY = 0.5,
+	DEPTH_MODE = "AlwaysOnTop",
+	HIGHLIGHT_FILL_COLOR = Color3.fromRGB(0, 140, 140),
+	HIGHLIGHT_FILL_TRANSPARENCY = 0.7,
 	HIGHLIGHT_OUTLINE_COLOR = Color3.fromRGB(255, 255, 255),
-	HIGHLIGHT_OUTLINE_TRANSPARENCY = 0,
+	HIGHLIGHT_OUTLINE_TRANSPARENCY = 1,
 	LISTEN_FOR_INPUT = true
 }
 
@@ -58,7 +58,7 @@ local function restoreLimbProperties(limb)
 		return
 	end
 
-	limbProperties.SizeChanged:Disconnect()
+	limbProperties.SizeChanged:Disconnect()	limbProperties.CollisionChanged:Disconnect()
 	limbProperties.highlight:Destroy()
 
 	limbs[limb] = nil
@@ -88,11 +88,13 @@ local function modifyLimbProperties(limb)
 	limb.Size = newSize
 	
 	limbs[limb].SizeChanged = limb:GetPropertyChangedSignal("Size"):Connect(function()
-		if limb.Size ~= newSize then
-			limb.Size = newSize
-		end
+		limb.Size = newSize
 	end)
-	
+
+limbs[limb].CollisionChanged = limb:GetPropertyChangedSignal("CanCollide"):Connect(function()
+limb.CanCollide = rawSettings.LIMB_CAN_COLLIDE
+end)
+
 	limb.Transparency = rawSettings.LIMB_TRANSPARENCY
 	limb.CanCollide = rawSettings.LIMB_CAN_COLLIDE
 
