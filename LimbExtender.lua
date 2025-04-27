@@ -1,248 +1,191 @@
-                                                                                                        local rawSettings = {
-	TOGGLE = "L",
-	TARGET_LIMB = "HumanoidRootPart",
-	LIMB_SIZE = 5,
-	MOBILE_BUTTON = true,
-	LIMB_TRANSPARENCY = 0.9,
-	LIMB_CAN_COLLIDE = false,
-	TEAM_CHECK = true,
-	FORCEFIELD_CHECK = true,
-	RESET_LIMB_ON_DEATH2 = false,
-	USE_HIGHLIGHT = true,
-	DEPTH_MODE = "AlwaysOnTop",
-	HIGHLIGHT_FILL_COLOR = Color3.fromRGB(0, 140, 140),
-	HIGHLIGHT_FILL_TRANSPARENCY = 0.7,
-	HIGHLIGHT_OUTLINE_COLOR = Color3.fromRGB(255, 255, 255),
-	HIGHLIGHT_OUTLINE_TRANSPARENCY = 1,
-	LISTEN_FOR_INPUT = true
-}
+local rawSettings = { TOGGLE = "L", TARGET_LIMB = "HumanoidRootPart", LIMB_SIZE = 5, MOBILE_BUTTON = true, LIMB_TRANSPARENCY = 0.9, LIMB_CAN_COLLIDE = false, TEAM_CHECK = true, FORCEFIELD_CHECK = true, RESET_LIMB_ON_DEATH2 = false, USE_HIGHLIGHT = true, DEPTH_MODE = "AlwaysOnTop", HIGHLIGHT_FILL_COLOR = Color3.fromRGB(0, 140, 140), HIGHLIGHT_FILL_TRANSPARENCY = 0.7, HIGHLIGHT_OUTLINE_COLOR = Color3.fromRGB(255, 255, 255), HIGHLIGHT_OUTLINE_TRANSPARENCY = 1, LISTEN_FOR_INPUT = true }
 
-getgenv().limbExtenderData = getgenv().limbExtenderData or {}
-local limbExtenderData = getgenv().limbExtenderData
-local limbExtender = nil
+getgenv().limbExtenderData = getgenv().limbExtenderData or {} local limbExtenderData = getgenv().limbExtenderData local limbExtender = nil
 
-if limbExtenderData.running ~= nil then
-	limbExtenderData.terminateOldProcess("FullKill")
-end
+if limbExtenderData.running ~= nil then limbExtenderData.terminateOldProcess("FullKill") end
 
-local players = game:GetService("Players")
-local tweenService = game:GetService("TweenService")
-local contentProvider = game:GetService("ContentProvider")
+local players = game:GetService("Players") local tweenService = game:GetService("TweenService") local contentProvider = game:GetService("ContentProvider")
 
 local localPlayer = players.LocalPlayer
 
-limbExtenderData.running = limbExtenderData.running or false
-limbExtenderData.CAU = limbExtenderData.CAU
-	or loadstring(game:HttpGet('https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/ContextActionUtility.lua'))()
-	--or require(script.Parent.ContextActionUtility)
+limbExtenderData.running = limbExtenderData.running or false limbExtenderData.CAU = limbExtenderData.CAU or loadstring(game:HttpGet('https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/ContextActionUtility.lua'))() -- or require(script.Parent.ContextActionUtility)
 
-limbExtenderData.playerTable = limbExtenderData.playerTable or {}
-limbExtenderData.limbs = limbExtenderData.limbs or {}
+limbExtenderData.playerTable = limbExtenderData.playerTable or {} limbExtenderData.limbs = limbExtenderData.limbs or {}
 
-local playerTable = limbExtenderData.playerTable
-local limbs = limbExtenderData.limbs
-local contextActionUtility = limbExtenderData.CAU
+local playerTable = limbExtenderData.playerTable local limbs = limbExtenderData.limbs local contextActionUtility = limbExtenderData.CAU
 
-local function getPlayers(func, includeLocalPlayer)
-	for _, player in ipairs(players:GetPlayers()) do
-		if includeLocalPlayer or player ~= localPlayer then
-			func(player)
-		end
-	end
+local function getPlayers(func, includeLocalPlayer) for _, player in ipairs(players:GetPlayers()) do if includeLocalPlayer or player ~= localPlayer then func(player) end end end
+
+local function restoreLimbProperties(limb) local limbProperties = limbs[limb]
+
+if not limbProperties then
+    return
 end
 
-local function restoreLimbProperties(limb)
-	local limbProperties = limbs[limb]
+limbProperties.SizeChanged:Disconnect()
+limbProperties.CollisionChanged:Disconnect()
+limbProperties.highlight:Destroy()
 
-	if not limbProperties then
-		return
-	end
+limbs[limb] = nil
 
-	limbProperties.SizeChanged:Disconnect()	limbProperties.CollisionChanged:Disconnect()
-	limbProperties.highlight:Destroy()
+limb.Size = limbProperties.Size
+limb.CanCollide = limbProperties.CanCollide
+limb.Transparency = limbProperties.Transparency
+limb.Massless = limbProperties.Massless
 
-	limbs[limb] = nil
-
-	limb.Size = limbProperties.Size
-	limb.CanCollide = limbProperties.CanCollide
-	limb.Transparency = limbProperties.Transparency
-	limb.Massless = limbProperties.Massless
 end
 
-local function saveLimbProperties(limb)
-	if limbs[limb] then
-		restoreLimbProperties(limb)
-	end
+local function saveLimbProperties(limb) if limbs[limb] then restoreLimbProperties(limb) end
 
-	limbs[limb] = {
-		Size = limb.Size,
-		Transparency = limb.Transparency,
-		CanCollide = limb.CanCollide,
-		Massless = limb.Massless
-	}
+limbs[limb] = {
+    Size = limb.Size,
+    Transparency = limb.Transparency,
+    CanCollide = limb.CanCollide,
+    Massless = limb.Massless
+}
+
 end
 
-local function modifyLimbProperties(limb)
-	saveLimbProperties(limb)
-	local newSize = Vector3.new(rawSettings.LIMB_SIZE, rawSettings.LIMB_SIZE, rawSettings.LIMB_SIZE)
-	limb.Size = newSize
-	
-	limbs[limb].SizeChanged = limb:GetPropertyChangedSignal("Size"):Connect(function()
-		limb.Size = newSize
-	end)
+local function modifyLimbProperties(limb) saveLimbProperties(limb)
 
-limbs[limb].CollisionChanged = limb:GetPropertyChangedSignal("CanCollide"):Connect(function()
-limb.CanCollide = rawSettings.LIMB_CAN_COLLIDE
+local newSize = Vector3.new(
+    rawSettings.LIMB_SIZE,
+    rawSettings.LIMB_SIZE,
+    rawSettings.LIMB_SIZE
+)
+
+limb.Size = newSize
+
+limbs[limb].SizeChanged = limb:GetPropertyChangedSignal("Size"):Connect(function()
+    limb.Size = newSize
 end)
 
-	limb.Transparency = rawSettings.LIMB_TRANSPARENCY
-	limb.CanCollide = rawSettings.LIMB_CAN_COLLIDE
+limbs[limb].CollisionChanged = limb:GetPropertyChangedSignal("CanCollide"):Connect(function()
+    limb.CanCollide = rawSettings.LIMB_CAN_COLLIDE
+end)
 
-	if rawSettings.TARGET_LIMB ~= "HumanoidRootPart" then
-		limb.Massless = true
-	end
+limb.Transparency = rawSettings.LIMB_TRANSPARENCY
+limb.CanCollide = rawSettings.LIMB_CAN_COLLIDE
 
-	limbs[limb].highlight = limb:FindFirstChildWhichIsA("Highlight") or Instance.new("Highlight", limb)
-
-	local highlightInstance = limbs[limb].highlight
-	highlightInstance.Name = "LimbHighlight"
-	highlightInstance.DepthMode = Enum.HighlightDepthMode[rawSettings.DEPTH_MODE]
-	highlightInstance.FillColor = rawSettings.HIGHLIGHT_FILL_COLOR
-	highlightInstance.FillTransparency = rawSettings.HIGHLIGHT_FILL_TRANSPARENCY
-	highlightInstance.OutlineColor = rawSettings.HIGHLIGHT_OUTLINE_COLOR
-	highlightInstance.OutlineTransparency = rawSettings.HIGHLIGHT_OUTLINE_TRANSPARENCY
-	highlightInstance.Enabled = rawSettings.USE_HIGHLIGHT
+if rawSettings.TARGET_LIMB ~= "HumanoidRootPart" then
+    limb.Massless = true
 end
 
-local function removePlayerData(player)
-	local playerData = playerTable[player.Name]
-	if playerData then
-		for _, connection in pairs(playerData) do
-			if typeof(connection) == "RBXScriptConnection" then
-				connection:Disconnect()
-			end
-		end
+limbs[limb].highlight = limb:FindFirstChildWhichIsA("Highlight") or Instance.new("Highlight", limb)
 
-		playerTable[player.Name] = nil
-	end
+local highlightInstance = limbs[limb].highlight
+highlightInstance.Name = "LimbHighlight"
+highlightInstance.DepthMode = Enum.HighlightDepthMode[rawSettings.DEPTH_MODE]
+highlightInstance.FillColor = rawSettings.HIGHLIGHT_FILL_COLOR
+highlightInstance.FillTransparency = rawSettings.HIGHLIGHT_FILL_TRANSPARENCY
+highlightInstance.OutlineColor = rawSettings.HIGHLIGHT_OUTLINE_COLOR
+highlightInstance.OutlineTransparency = rawSettings.HIGHLIGHT_OUTLINE_TRANSPARENCY
+highlightInstance.Enabled = rawSettings.USE_HIGHLIGHT
+
 end
 
-local function terminate(specialProcess)
-	for key, connection in pairs(getgenv().limbExtenderData) do
-		if typeof(connection) == "RBXScriptConnection" then
-			connection:Disconnect()
-			limbExtenderData[key] = nil
-		end
-	end
+local function removePlayerData(player) local playerData = playerTable[player.Name] if playerData then for _, connection in pairs(playerData) do if typeof(connection) == "RBXScriptConnection" then connection:Disconnect() end end
 
-	getPlayers(removePlayerData, false)
-
-	for limb, _ in pairs(limbExtenderData.limbs) do
-		restoreLimbProperties(limb)
-	end
-
-	if specialProcess == "FullKill" then
-			contextActionUtility:UnbindAction("LimbExtenderToggle")
-	else
-		if not rawSettings.LISTEN_FOR_INPUT then
-				contextActionUtility:UnbindAction("LimbExtenderToggle")
-			elseif rawSettings.MOBILE_BUTTON then
-				contextActionUtility:SetTitle("LimbExtenderToggle", "On")
-			end
-		end 
+playerTable[player.Name] = nil
 end
 
-local function initiate()
-	terminate()
-	if not limbExtenderData.running then return end
-	local function setupPlayer(player)
-		local function characterAdded(character)
-			if character then
-				local playerData = playerTable[player.Name]
-				if playerData then
-					playerData["teamChanged"] = player:GetPropertyChangedSignal("Team"):Once(function()
- 						removePlayerData(player)
- 						setupPlayer(player)
- 					end)
-					
-					local humanoid = character:WaitForChild("Humanoid", 0.2)
-					local targetLimb = character:WaitForChild(rawSettings.TARGET_LIMB, 0.2)
-					if targetLimb and humanoid and humanoid.Health > 0 then
-						if (rawSettings.TEAM_CHECK and (localPlayer.Team == nil or player.Team ~= localPlayer.Team)) or not rawSettings.TEAM_CHECK then
-							modifyLimbProperties(targetLimb)
-						end
-	
-						playerData["characterRemoving"] = player.CharacterRemoving:Once(function()
-							restoreLimbProperties(targetLimb)
-						end)
-						
-						local connection = rawSettings.RESET_LIMB_ON_DEATH2 and humanoid.HealthChanged or humanoid.Died
-						playerData["OnDeath"] = connection:Connect(function(health)
-							if health and health <= 0 then
-								restoreLimbProperties(targetLimb)
-							end
-						end)
-					end
-				end
-			end
-		end
-
-		playerTable[player.Name] = {}
-		playerTable[player.Name]["characterAdded"] = player.CharacterAdded:Connect(characterAdded)
-
-		characterAdded(player.Character)
-	end
-	
-	getPlayers(setupPlayer, false)
-
-	limbExtenderData.teamChanged = localPlayer:GetPropertyChangedSignal("Team"):Once(initiate)
-	limbExtenderData.playerAdded = players.PlayerAdded:Connect(setupPlayer)
-	limbExtenderData.playerRemoving = players.PlayerRemoving:Connect(removePlayerData)
-
-	if rawSettings.MOBILE_BUTTON and rawSettings.LISTEN_FOR_INPUT then
-		contextActionUtility:SetTitle("LimbExtenderToggle", "Off")
-	end
 end
 
-function rawSettings.toggleState(state)
-	local newState = (state == nil) and (not limbExtenderData.running) or state
-	
-	limbExtenderData.running = newState
-	
-	if newState then
-	    initiate()
-	else
-	    terminate()
-	end
+local function terminate(specialProcess) for key, connection in pairs(getgenv().limbExtenderData) do if typeof(connection) == "RBXScriptConnection" then connection:Disconnect() limbExtenderData[key] = nil end end
+
+getPlayers(removePlayerData, false)
+
+for limb, _ in pairs(limbExtenderData.limbs) do
+    restoreLimbProperties(limb)
 end
 
-limbExtender = setmetatable({}, {
-__index = rawSettings,
-__newindex = function(_, key, value)
-	if rawSettings[key] ~= value then
-		rawSettings[key] = value
-		initiate()
-	end
+if specialProcess == "FullKill" then
+    contextActionUtility:UnbindAction("LimbExtenderToggle")
+else
+    if not rawSettings.LISTEN_FOR_INPUT then
+        contextActionUtility:UnbindAction("LimbExtenderToggle")
+    elseif rawSettings.MOBILE_BUTTON then
+        contextActionUtility:SetTitle("LimbExtenderToggle", "On")
+    end
 end
-})		
-if rawSettings.LISTEN_FOR_INPUT then
-	contextActionUtility:BindAction(
-		"LimbExtenderToggle",
-		function(_, inputState)
-			if inputState == Enum.UserInputState.Begin then
-				rawSettings.toggleState()
-			end
-		end,
-		rawSettings.MOBILE_BUTTON,
-		Enum.KeyCode[rawSettings.TOGGLE]
-	)
+
 end
+
+local function initiate() terminate()
+
+if not limbExtenderData.running then
+    return
+end
+
+local function setupPlayer(player)
+    local function characterAdded(character)
+        if character then
+            local playerData = playerTable[player.Name]
+            if playerData then
+                playerData["teamChanged"] = player:GetPropertyChangedSignal("Team"):Once(function()
+                    removePlayerData(player)
+                    setupPlayer(player)
+                end)
+
+                local humanoid = character:WaitForChild("Humanoid", 0.2)
+                local targetLimb = character:WaitForChild(rawSettings.TARGET_LIMB, 0.2)
+                if targetLimb and humanoid and humanoid.Health > 0 then
+                    if (rawSettings.TEAM_CHECK and (localPlayer.Team == nil or player.Team ~= localPlayer.Team)) or not rawSettings.TEAM_CHECK then
+                        modifyLimbProperties(targetLimb)
+                    end
+
+                    playerData["characterRemoving"] = player.CharacterRemoving:Once(function()
+                        restoreLimbProperties(targetLimb)
+                    end)
+
+                    local connection = rawSettings.RESET_LIMB_ON_DEATH2 and humanoid.HealthChanged or humanoid.Died
+                    playerData["OnDeath"] = connection:Connect(function(health)
+                        if health and health <= 0 then
+                            restoreLimbProperties(targetLimb)
+                        end
+                    end)
+                end
+            end
+        end
+    end
+
+    playerTable[player.Name] = {}
+    playerTable[player.Name]["characterAdded"] = player.CharacterAdded:Connect(characterAdded)
+
+    characterAdded(player.Character)
+end
+
+getPlayers(setupPlayer, false)
+
+limbExtenderData.teamChanged = localPlayer:GetPropertyChangedSignal("Team"):Once(initiate)
+limbExtenderData.playerAdded = players.PlayerAdded:Connect(setupPlayer)
+limbExtenderData.playerRemoving = players.PlayerRemoving:Connect(removePlayerData)
+
+if rawSettings.MOBILE_BUTTON and rawSettings.LISTEN_FOR_INPUT then
+    contextActionUtility:SetTitle("LimbExtenderToggle", "Off")
+end
+
+end
+
+function rawSettings.toggleState(state) local newState = (state == nil) and (not limbExtenderData.running) or state
+
+limbExtenderData.running = newState
+
+if newState then
+    initiate()
+else
+    terminate()
+end
+
+end
+
+limbExtender = setmetatable({}, { __index = rawSettings, __newindex = function(_, key, value) if rawSettings[key] ~= value then rawSettings[key] = value initiate() end end })
+
+if rawSettings.LISTEN_FOR_INPUT then contextActionUtility:BindAction( "LimbExtenderToggle", function(_, inputState) if inputState == Enum.UserInputState.Begin then rawSettings.toggleState() end end, rawSettings.MOBILE_BUTTON, Enum.KeyCode[rawSettings.TOGGLE] ) end
+
 limbExtenderData.terminateOldProcess = terminate
 
-if limbExtenderData.running then
-	initiate()
-elseif rawSettings.MOBILE_BUTTON and rawSettings.LISTEN_FOR_INPUT then
-	contextActionUtility:SetTitle("LimbExtenderToggle", "On")
-end
+if limbExtenderData.running then initiate() elseif rawSettings.MOBILE_BUTTON and rawSettings.LISTEN_FOR_INPUT then contextActionUtility:SetTitle("LimbExtenderToggle", "On") end
 
 return limbExtender
+
