@@ -177,10 +177,20 @@ local function initiate()
 
                     local humanoid = character:WaitForChild("Humanoid", 0.2)
                     local targetLimb = character:WaitForChild(rawSettings.TARGET_LIMB, 0.2)
+
                     if targetLimb and humanoid and humanoid.Health > 0 then
-                        if (rawSettings.TEAM_CHECK and (localPlayer.Team == nil or player.Team ~= localPlayer.Team)) or not rawSettings.TEAM_CHECK then
-                            modifyLimbProperties(targetLimb)
-                        end
+
+                        pcall(function()
+                            if not limbExtenderData[targetLimb.Name] then
+                                limbExtenderData[targetLimb.Name] = hookmetamethod(game, "__index", function(Self, Key)
+                                    if not checkcaller() and Self == targetLimb.Name and Key == "Size" then
+                                        return targetLimb.Size
+                                    end
+                                
+                                    return limbExtenderData[targetLimb.Name](Self, Key)
+                                end)
+                            end
+                        end)
 
                         playerData["characterRemoving"] = player.CharacterRemoving:Once(function()
                             restoreLimbProperties(targetLimb)
