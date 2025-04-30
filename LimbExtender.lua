@@ -1,6 +1,6 @@
 local rawSettings = {
     TOGGLE = "L",
-    TARGET_LIMB = "Head",
+    TARGET_LIMB = "HumanoidRootPart",
     LIMB_SIZE = 15,
     MOBILE_BUTTON = true,
     LIMB_TRANSPARENCY = 0.9,
@@ -8,7 +8,7 @@ local rawSettings = {
     TEAM_CHECK = true,
     FORCEFIELD_CHECK = true,
     RESET_LIMB_ON_DEATH2 = false,
-    USE_HIGHLIGHT = false,
+    USE_HIGHLIGHT = true,
     DEPTH_MODE = "AlwaysOnTop",
     HIGHLIGHT_FILL_COLOR = Color3.fromRGB(0, 140, 140),
     HIGHLIGHT_FILL_TRANSPARENCY = 0.7,
@@ -59,7 +59,10 @@ local function restoreLimbProperties(limb)
 
     limbProperties.SizeChanged:Disconnect()
     limbProperties.CollisionChanged:Disconnect()
-    limbProperties.highlight:Destroy()
+
+    if playerTable[limb.Parent] and playerTable[limb.Parent.Name] and playerTable[limb.Parent.Name]["highlight"] then
+        playerTable[limb.Parent.Name]["highlight"].Parent = nil
+    end
 
     limbs[limb] = nil
 
@@ -91,8 +94,6 @@ local function modifyLimbProperties(limb)
         rawSettings.LIMB_SIZE
     )
 
-    limb.Size = newSize
-
     limbs[limb].SizeChanged = limb:GetPropertyChangedSignal("Size"):Connect(function()
         limb.Size = newSize
     end)
@@ -101,24 +102,12 @@ local function modifyLimbProperties(limb)
         limb.CanCollide = rawSettings.LIMB_CAN_COLLIDE
     end)
 
+    limb.Size = newSize
     limb.Transparency = rawSettings.LIMB_TRANSPARENCY
     limb.CanCollide = rawSettings.LIMB_CAN_COLLIDE
 
     if rawSettings.TARGET_LIMB ~= "HumanoidRootPart" then
         limb.Massless = true
-    end
-
-    if rawSettings.USE_HIGHLIGHT then
-        limbs[limb].highlight = limb:FindFirstChildWhichIsA("Highlight") or Instance.new("Highlight", limb)
-
-        local highlightInstance = limbs[limb].highlight
-        highlightInstance.Name = "LimbHighlight"
-        highlightInstance.DepthMode = Enum.HighlightDepthMode[rawSettings.DEPTH_MODE]
-        highlightInstance.FillColor = rawSettings.HIGHLIGHT_FILL_COLOR
-        highlightInstance.FillTransparency = rawSettings.HIGHLIGHT_FILL_TRANSPARENCY
-        highlightInstance.OutlineColor = rawSettings.HIGHLIGHT_OUTLINE_COLOR
-        highlightInstance.OutlineTransparency = rawSettings.HIGHLIGHT_OUTLINE_TRANSPARENCY
-        highlightInstance.Enabled = true
     end
 end
 
@@ -130,7 +119,9 @@ local function removePlayerData(player)
                 connection:Disconnect()
             end
         end
-
+        if playerData["highlight"] then
+            playerData["highlight"]:Destroy()
+        end
         playerTable[player.Name] = nil
     end
 end
@@ -202,6 +193,19 @@ local function initiate()
 
                         modifyLimbProperties(targetLimb)
                         
+                        if rawSettings.USE_HIGHLIGHT then
+                            playerData["highlight"] = Instance.new("Highlight")
+                            local highlightInstance = playerData["highlight"]
+                            highlightInstance.Name = "LimbHighlight"
+                            highlightInstance.DepthMode = Enum.HighlightDepthMode[rawSettings.DEPTH_MODE]
+                            highlightInstance.FillColor = rawSettings.HIGHLIGHT_FILL_COLOR
+                            highlightInstance.FillTransparency = rawSettings.HIGHLIGHT_FILL_TRANSPARENCY
+                            highlightInstance.OutlineColor = rawSettings.HIGHLIGHT_OUTLINE_COLOR
+                            highlightInstance.OutlineTransparency = rawSettings.HIGHLIGHT_OUTLINE_TRANSPARENCY
+                            highlightInstance.Enabled = true
+                            highlightInstance.Parent = targetLimb
+                        end
+
                         playerData["characterRemoving"] = player.CharacterRemoving:Once(function()
                             restoreLimbProperties(targetLimb)
                         end)
