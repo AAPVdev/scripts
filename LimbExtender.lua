@@ -181,23 +181,20 @@ local function initiate()
                     if targetLimb and humanoid and humanoid.Health > 0 then
                 
                         pcall(function()
-                            if limbExtenderData[targetLimb.Name] then
-                                return
+                            local name = targetLimb.Name
+                            if limbExtenderData[name] then
+                                return 
                             end
-                    
-                            local originalIndex
-                            local hookId = hookmetamethod(game, "__index", function(Self, Key)
-                                if not checkcaller() and Self == targetLimb and Key == "Size" then
+                        
+                            local oldIndex = hookmetamethod(game, "__index", function(self, key)
+                                if not checkcaller() and self == targetLimb and key == "Size" then
                                     return targetLimb.Size
                                 end
-                        
-                                return originalIndex(Self, Key)
+                                return oldIndex(self, key)
                             end)
-                                
-                            originalIndex = hookId
-                            limbExtenderData[targetLimb.Name] = {
-                                hookId       = hookId,
-                                originalIndex = originalIndex,
+                        
+                            limbExtenderData[name] = {
+                                originalIndex = oldIndex,
                             }
                         end)
 
