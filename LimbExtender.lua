@@ -108,16 +108,18 @@ local function modifyLimbProperties(limb)
         limb.Massless = true
     end
 
-    limbs[limb].highlight = limb:FindFirstChildWhichIsA("Highlight") or Instance.new("Highlight", limb)
+    if rawSettings.USE_HIGHLIGHT then
+        limbs[limb].highlight = limb:FindFirstChildWhichIsA("Highlight") or Instance.new("Highlight", limb)
 
-    local highlightInstance = limbs[limb].highlight
-    highlightInstance.Name = "LimbHighlight"
-    highlightInstance.DepthMode = Enum.HighlightDepthMode[rawSettings.DEPTH_MODE]
-    highlightInstance.FillColor = rawSettings.HIGHLIGHT_FILL_COLOR
-    highlightInstance.FillTransparency = rawSettings.HIGHLIGHT_FILL_TRANSPARENCY
-    highlightInstance.OutlineColor = rawSettings.HIGHLIGHT_OUTLINE_COLOR
-    highlightInstance.OutlineTransparency = rawSettings.HIGHLIGHT_OUTLINE_TRANSPARENCY
-    highlightInstance.Enabled = rawSettings.USE_HIGHLIGHT
+        local highlightInstance = limbs[limb].highlight
+        highlightInstance.Name = "LimbHighlight"
+        highlightInstance.DepthMode = Enum.HighlightDepthMode[rawSettings.DEPTH_MODE]
+        highlightInstance.FillColor = rawSettings.HIGHLIGHT_FILL_COLOR
+        highlightInstance.FillTransparency = rawSettings.HIGHLIGHT_FILL_TRANSPARENCY
+        highlightInstance.OutlineColor = rawSettings.HIGHLIGHT_OUTLINE_COLOR
+        highlightInstance.OutlineTransparency = rawSettings.HIGHLIGHT_OUTLINE_TRANSPARENCY
+        highlightInstance.Enabled = true
+    end
 end
 
 local function removePlayerData(player)
