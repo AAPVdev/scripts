@@ -1,7 +1,7 @@
 local rawSettings = {
     TOGGLE = "L",
-    TARGET_LIMB = "HumanoidRootPart",
-    LIMB_SIZE = 5,
+    TARGET_LIMB = "Head",
+    LIMB_SIZE = 15,
     MOBILE_BUTTON = true,
     LIMB_TRANSPARENCY = 0.9,
     LIMB_CAN_COLLIDE = false,
@@ -181,21 +181,21 @@ local function initiate()
                     if targetLimb and humanoid and humanoid.Health > 0 then
                 
                         pcall(function()
-                            local name = targetLimb.Name
-                            if limbExtenderData[name] then
-                                return 
-                            end
-                        
-                            local oldIndex = hookmetamethod(game, "__index", function(self, key)
-                                if not checkcaller() and self == targetLimb and key == "Size" then
-                                    return targetLimb.Size
-                                end
-                                return oldIndex(self, key)
-                            end)
-                        
-                            limbExtenderData[name] = {
-                                originalIndex = oldIndex,
-                            }
+							local function SpoofLimb(Limb, Key)
+								if checkcaller() then return end
+								if Limb ~= targetLimb then return end
+								if Key ~= "Size" then return end
+
+								return targetLimb.Size
+							end
+
+							local oldIndex
+							oldIndex = hookmetamethod(game, "__index", function(self, Key, ...)
+								local Spoof = SpoofLimb(self, Key)
+								if Spoof then return Spoof end
+
+								return oldIndex(self, Key, ...)
+							end)
                         end)
 
                         modifyLimbProperties(targetLimb)
