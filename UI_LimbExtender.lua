@@ -31,10 +31,10 @@ local Messages = {
 local ChosenMessage = Messages[math.random(1, #Messages)]
 
 local Window = Rayfield:CreateWindow({
-    Name = "Axios",
+    Name = "AXIOS",
     Icon = 107904589783906,
 
-    LoadingTitle = "Made with ❤️ by SereneLobby",
+    LoadingTitle = "AXIOS",
     LoadingSubtitle = ChosenMessage,
 
     Theme = "Default",
@@ -46,16 +46,6 @@ local Window = Rayfield:CreateWindow({
         FolderName = "LimbExtenderConfigs",
         FileName = "Configuration"
     },
-    KeySystem = false,
-    KeySettings = {
-        Title = "",
-        Subtitle = "",
-        Note = "",
-        FileName = "",
-        SaveKey = false,
-        GrabKeyFromSite = false,
-        Key = {""}
-    }
 })
 
 local Settings = Window:CreateTab("Limbs", "scale-3d")
