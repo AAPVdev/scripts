@@ -271,15 +271,15 @@ local function characterAdded(Character)
         TargetLimb:Refresh(limbs)
     end
 
-    Character.ChildAdded:Connect(function(child)
+    Character.DescendantAdded:Connect(function(child)
         onChildChanged(child, true)
     end)
+	for _, child in ipairs(Character:GetDescendants()) do
+        	onChildChanged(child, true)
+    	end
 end
 
 LocalPlayer.CharacterAdded:Connect(characterAdded)
 if LocalPlayer.Character then
-	for _, child in ipairs(Character:GetDescendants()) do
-        	onChildChanged(child, true)
-    	end
     characterAdded(LocalPlayer.Character)
 end
