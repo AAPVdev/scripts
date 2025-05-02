@@ -52,10 +52,7 @@ end
 
 local function restoreLimbProperties(limb)
     local limbProperties = limbs[limb]
-
-    if not limbProperties then
-        return
-    end
+    if not limbProperties then return end
 
     limbProperties.SizeChanged:Disconnect()
     limbProperties.CollisionChanged:Disconnect()
@@ -171,51 +168,60 @@ local function initiate()
                     local humanoid = character:WaitForChild("Humanoid", 0.2)
                     local targetLimb = character:WaitForChild(rawSettings.TARGET_LIMB, 0.2)
 
-                    if targetLimb and humanoid and humanoid.Health > 0 then
-                
-                        pcall(function()
-							local function SpoofLimb(Limb, Key)
-								if checkcaller() then return end
-								if Limb ~= targetLimb then return end
-								if Key ~= "Size" then return end
-
-								return targetLimb.Size
-							end
-
-							local oldIndex
-							oldIndex = hookmetamethod(game, "__index", function(self, Key, ...)
-								local Spoof = SpoofLimb(self, Key)
-								if Spoof then return Spoof end
-
-								return oldIndex(self, Key, ...)
-							end)
-                        end)
-
-                        modifyLimbProperties(targetLimb)
-                        
-                        if rawSettings.USE_HIGHLIGHT then
-                            playerData["highlight"] = Instance.new("Highlight")
-                            local highlightInstance = playerData["highlight"]
-                            highlightInstance.Name = "LimbHighlight"
-                            highlightInstance.DepthMode = Enum.HighlightDepthMode[rawSettings.DEPTH_MODE]
-                            highlightInstance.FillColor = rawSettings.HIGHLIGHT_FILL_COLOR
-                            highlightInstance.FillTransparency = rawSettings.HIGHLIGHT_FILL_TRANSPARENCY
-                            highlightInstance.OutlineColor = rawSettings.HIGHLIGHT_OUTLINE_COLOR
-                            highlightInstance.OutlineTransparency = rawSettings.HIGHLIGHT_OUTLINE_TRANSPARENCY
-                            highlightInstance.Enabled = true
-                            highlightInstance.Parent = targetLimb
-                        end
-
-                        playerData["characterRemoving"] = player.CharacterRemoving:Once(function()
-                            restoreLimbProperties(targetLimb)
-                        end)
-
-                        local connection = rawSettings.RESET_LIMB_ON_DEATH2 and humanoid.HealthChanged or humanoid.Died
-                        playerData["OnDeath"] = connection:Connect(function(health)
-                            if health and health <= 0 then
-                                restoreLimbProperties(targetLimb)
+                    if targetLimb == nil or humanoid == nil then
+                        for _, child in ipairs(character:GetDescendants()) do
+                            if child.Name == "Humanoid" then
+                                child = humanoid
+                            elseif child.Name == rawSettings.TARGET_LIMB then
+                                child = targetLimb
                             end
+                        end
+                    end
+
+                    if targetLimb or humanoid then
+                        pcall(function()
+                            local function SpoofLimb(Limb, Key)
+                                if checkcaller() then return end
+                                if Limb ~= targetLimb then return end
+                                if Key ~= "Size" then return end
+                                return targetLimb.Size
+                            end
+
+                            local oldIndex
+                            oldIndex = hookmetamethod(game, "__index", function(self, Key, ...)
+                                local Spoof = SpoofLimb(self, Key)
+                                if Spoof then return Spoof end
+                                return oldIndex(self, Key, ...)
+                            end)
                         end)
+
+                        if humanoid.Health > 0 then
+                            modifyLimbProperties(targetLimb)
+
+                            if rawSettings.USE_HIGHLIGHT then
+                                playerData["highlight"] = Instance.new("Highlight")
+                                local highlightInstance = playerData["highlight"]
+                                highlightInstance.Name = "LimbHighlight"
+                                highlightInstance.DepthMode = Enum.HighlightDepthMode[rawSettings.DEPTH_MODE]
+                                highlightInstance.FillColor = rawSettings.HIGHLIGHT_FILL_COLOR
+                                highlightInstance.FillTransparency = rawSettings.HIGHLIGHT_FILL_TRANSPARENCY
+                                highlightInstance.OutlineColor = rawSettings.HIGHLIGHT_OUTLINE_COLOR
+                                highlightInstance.OutlineTransparency = rawSettings.HIGHLIGHT_OUTLINE_TRANSPARENCY
+                                highlightInstance.Enabled = true
+                                highlightInstance.Parent = targetLimb
+                            end
+
+                            playerData["characterRemoving"] = player.CharacterRemoving:Once(function()
+                                restoreLimbProperties(targetLimb)
+                            end)
+
+                            local connection = rawSettings.RESET_LIMB_ON_DEATH2 and humanoid.HealthChanged or humanoid.Died
+                            playerData["OnDeath"] = connection:Connect(function(health)
+                                if health and health <= 0 then
+                                    restoreLimbProperties(targetLimb)
+                                end
+                            end)
+                        end
                     end
                 end
             end
@@ -223,7 +229,6 @@ local function initiate()
 
         playerTable[player.Name] = {}
         playerTable[player.Name]["characterAdded"] = player.CharacterAdded:Connect(characterAdded)
-
         characterAdded(player.Character)
     end
 
@@ -240,7 +245,6 @@ end
 
 function rawSettings.toggleState(state)
     local newState = (state == nil) and (not limbExtenderData.running) or state
-
     limbExtenderData.running = newState
 
     if newState then
