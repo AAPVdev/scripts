@@ -183,7 +183,7 @@ local function initiate()
                             pcall(function()
                                 local function SpoofLimb(Limb, Key)
                                     if checkcaller() then return end
-                                    if tostring(Limb) ~= targetLimb.Name then return end
+                                    if Limb ~= targetLimb then return end
                                     if Key ~= "Size" then return end
                                     return targetLimb.Size
                                 end
