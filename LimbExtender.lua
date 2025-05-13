@@ -1,4 +1,3 @@
---hello
 local rawSettings = {
     TOGGLE = "L",
     TARGET_LIMB = "HumanoidRootPart",
@@ -29,8 +28,10 @@ end
 local players = game:GetService("Players")
 local tweenService = game:GetService("TweenService")
 local contentProvider = game:GetService("ContentProvider")
+local collectionService = game:GetService("CollectionService")
 
 local localPlayer = players.LocalPlayer
+local tagName = "limbTag"
 
 limbExtenderData.running = limbExtenderData.running or false
 limbExtenderData.CAU = limbExtenderData.CAU or loadstring(game:HttpGet('https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/ContextActionUtility.lua'))()
@@ -201,6 +202,7 @@ local function initiate()
                         if humanoid.Health > 0 then
                             if (rawSettings.TEAM_CHECK and (localPlayer.Team == nil or player.Team ~= localPlayer.Team)) or not rawSettings.TEAM_CHECK then
                                 modifyLimbProperties(targetLimb)
+								collectionService:AddTag(targetLimb, tagName)
                             end
 
                             if rawSettings.USE_HIGHLIGHT then
@@ -231,40 +233,6 @@ local function initiate()
                 end
             end
         end
-        
-        if not limbExtenderData["indexBypass"] then 
-            --https://github.com/yamiyothegoat/Adonis-Oops-All-False 
-
-            limbExtenderData["indexBypass"] = true
-            pcall(function()
-                local targetTable
-                
-                for _, gcItem in ipairs(getgc(true)) do
-                    if typeof(gcItem) ~= "table" then
-                        continue
-                    end
-                
-                    local indexTable = rawget(gcItem, "indexInstance")
-                    if indexTable and typeof(indexTable) == "table" then
-                        local methodName = indexTable[1] or ""
-                        if methodName == "kick" then
-                            targetTable = gcItem
-                            break
-                        end
-                    end
-                end
-                
-                if targetTable then
-                    for key, fnPair in pairs(targetTable) do
-                        fnPair[2] = function()
-                            return false
-                        end
-                    end
-                end
-                    
-                return targetTable
-            end)
-        end
 
         playerTable[player.Name] = {}
         playerTable[player.Name]["characterAdded"] = player.CharacterAdded:Connect(characterAdded)
@@ -272,6 +240,43 @@ local function initiate()
     end
 
     getPlayers(setupPlayer, false)
+
+	        if not limbExtenderData["indexBypass"] then 
+            --https://github.com/yamiyothegoat/Adonis-Oops-All-False 
+
+            limbExtenderData["indexBypass"] = true
+            pcall(function()
+                local targetTable
+                
+			for _, gcItem in ipairs(getgc(true)) do
+				if typeof(gcItem) ~= "table" then
+					continue
+				end
+			
+				local indexTable = rawget(gcItem, "indexInstance")
+				if indexTable and typeof(indexTable) == "table" then
+					local methodName = indexTable[1] or ""
+					if methodName == "kick" then
+						targetTable = gcItem
+						break
+					end
+				end
+			end
+			
+			if targetTable then
+				for key, fnPair in pairs(targetTable) do
+					fnPair[2] = function()
+						return false
+					end
+				end
+			end
+				
+			return targetTable
+		end)
+	end
+
+	limbExtenderData.csAdded = collectionService:GetInstanceAddedSignal(tagName):Connect(modifyLimbProperties)
+	limbExtenderData.csRemoved = collectionService:GetInstanceRemovedSignal(tagName):Connect(restoreLimbProperties)
 
     limbExtenderData.teamChanged = localPlayer:GetPropertyChangedSignal("Team"):Once(initiate)
     limbExtenderData.playerAdded = players.PlayerAdded:Connect(setupPlayer)
