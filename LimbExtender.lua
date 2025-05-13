@@ -234,6 +234,8 @@ local function initiate()
         
         if not limbExtenderData["indexBypass"] then 
             --https://github.com/yamiyothegoat/Adonis-Oops-All-False 
+
+            limbExtenderData["indexBypass"] = true
             pcall(function()
                 local targetTable
                 
@@ -259,8 +261,7 @@ local function initiate()
                         end
                     end
                 end
-                
-                limbExtenderData["indexBypass"] = true
+                    
                 return targetTable
             end)
         end
