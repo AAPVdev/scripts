@@ -9,8 +9,8 @@ type StreamableWithInstance = {
 	[any]: any,
 }
 
-local Trove = require(script.Parent.Trove)
-local Signal = require(script.Parent.Signal)
+local Trove = require(loadstring(game:HttpGet("https://raw.githubusercontent.com/Sleitnick/RbxUtil/refs/heads/main/modules/trove/init.luau"))()
+local Signal = require(loadstring(game:HttpGet("https://raw.githubusercontent.com/Sleitnick/RbxUtil/refs/heads/main/modules/signal/init.luau"))()
 
 --[=[
 	@within Streamable
