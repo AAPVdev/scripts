@@ -271,12 +271,9 @@ local function characterAdded(Character)
         TargetLimb:Refresh(limbs)
     end
 
-    Character.DescendantAdded:Connect(function(child)
+    Character.ChildAdded:Connect(function(child)
         onChildChanged(child, true)
     end)
-	for _, child in ipairs(Character:GetDescendants()) do
-        	onChildChanged(child, true)
-    	end
 end
 
 LocalPlayer.CharacterAdded:Connect(characterAdded)
