@@ -267,13 +267,18 @@ local function characterAdded(Character)
         local index = table.find(limbs, child.Name)
         if not index then
             table.insert(limbs, child.Name)
+			table.sort(limbs)
+			TargetLimb:Refresh(limbs)
         end
-        TargetLimb:Refresh(limbs)
     end
 
     Character.ChildAdded:Connect(function(child)
-        onChildChanged(child, true)
+        onChildChanged(child)
     end)
+
+	for _, child in ipairs(Character:GetChildren()) do
+		onChildChanged(child)
+	end
 end
 
 LocalPlayer.CharacterAdded:Connect(characterAdded)
