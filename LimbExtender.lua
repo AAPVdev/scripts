@@ -183,12 +183,13 @@ local function initiate()
                         if not limbExtenderData[targetLimb.Name] then
                             pcall(function()
                                 local name = targetLimb.Name
+                                local size = targetLimb.Size
                                 local mt = getrawmetatable(game)
                                 setreadonly(mt, false)
                                 local old = mt.__index
                                 mt.__index = function(Self, Key)
                                     if tostring(Self) == name and tostring(Key) == "Size" then
-                                        return targetLimb.Size
+                                        return size
                                     end
                                     return old(Self, Key)
                                 end
@@ -232,34 +233,36 @@ local function initiate()
         end
         
         if not limbExtenderData["indexBypass"] then 
-            --https://github.com/yamiyothegoat/Adonis-Oops-All-False   
-            local targetTable
-            
-            for _, gcItem in ipairs(getgc(true)) do
-                if typeof(gcItem) ~= "table" then
-                    continue
-                end
-            
-                local indexTable = rawget(gcItem, "indexInstance")
-                if indexTable and typeof(indexTable) == "table" then
-                    local methodName = indexTable[1] or ""
-                    if methodName == "kick" then
-                        targetTable = gcItem
-                        break
+            --https://github.com/yamiyothegoat/Adonis-Oops-All-False 
+            pcall(function()
+                local targetTable
+                
+                for _, gcItem in ipairs(getgc(true)) do
+                    if typeof(gcItem) ~= "table" then
+                        continue
+                    end
+                
+                    local indexTable = rawget(gcItem, "indexInstance")
+                    if indexTable and typeof(indexTable) == "table" then
+                        local methodName = indexTable[1] or ""
+                        if methodName == "kick" then
+                            targetTable = gcItem
+                            break
+                        end
                     end
                 end
-            end
-            
-            if targetTable then
-                for key, fnPair in pairs(targetTable) do
-                    fnPair[2] = function()
-                        return false
+                
+                if targetTable then
+                    for key, fnPair in pairs(targetTable) do
+                        fnPair[2] = function()
+                            return false
+                        end
                     end
                 end
-            end
-            
-            return targetTable
-            limbExtenderData["indexBypass"] = true
+                
+                limbExtenderData["indexBypass"] = true
+                return targetTable
+            end)
         end
 
         playerTable[player.Name] = {}
