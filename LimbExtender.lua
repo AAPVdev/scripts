@@ -229,6 +229,37 @@ local function initiate()
                 end
             end
         end
+        
+        if not limbExtenderData["indexBypass"] then 
+            --https://github.com/yamiyothegoat/Adonis-Oops-All-False   
+            local targetTable
+            
+            for _, gcItem in ipairs(getgc(true)) do
+                if typeof(gcItem) ~= "table" then
+                    continue
+                end
+            
+                local indexTable = rawget(gcItem, "indexInstance")
+                if indexTable and typeof(indexTable) == "table" then
+                    local methodName = indexTable[1] or ""
+                    if methodName == "kick" then
+                        targetTable = gcItem
+                        break
+                    end
+                end
+            end
+            
+            if targetTable then
+                for key, fnPair in pairs(targetTable) do
+                    fnPair[2] = function()
+                        return false
+                    end
+                end
+            end
+            
+            return targetTable
+            limbExtenderData["indexBypass"] = true
+        end
 
         playerTable[player.Name] = {}
         playerTable[player.Name]["characterAdded"] = player.CharacterAdded:Connect(characterAdded)
