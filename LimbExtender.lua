@@ -200,7 +200,10 @@ local function initiate()
                         end
 
                         if humanoid.Health > 0 then
-                            modifyLimbProperties(targetLimb)
+        
+                            if (rawSettings.TEAM_CHECK and (localPlayer.Team == nil or player.Team ~= localPlayer.Team)) or not rawSettings.TEAM_CHECK then
+							    modifyLimbProperties(targetLimb)
+						    end
 
                             if rawSettings.USE_HIGHLIGHT then
                                 playerData["highlight"] = Instance.new("Highlight")
