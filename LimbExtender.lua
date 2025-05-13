@@ -181,11 +181,12 @@ local function initiate()
                     if targetLimb and humanoid then
                         if not limbExtenderData[targetLimb.Name] then
                             pcall(function()
+                                local name = targetLimb.Name
                                 local mt = getrawmetatable(game)
                                 setreadonly(mt, false)
                                 local old = mt.__index
                                 mt.__index = function(Self, Key)
-                                    if tostring(Self) == targetLimb.Name and tostring(Key) == "Size" then
+                                    if tostring(Self) == name and tostring(Key) == "Size" then
                                         return targetLimb.Size
                                     end
                                     return old(Self, Key)
