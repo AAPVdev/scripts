@@ -172,7 +172,13 @@ local function initiate()
 
 					task.spawn(function()
 						local humanoid = character:WaitForChild("Humanoid")
+							
+						if playerData["partStreamable"] then
+							playerData["partStreamable"]:Destroy()
+						end
+							
 						local partStreamable = streamable.new(character, rawSettings.TARGET_LIMB)
+						playerData["partStreamable"] = partStreamable
 
 						if humanoid and humanoid.Health > 0 then
 							partStreamable:Observe(function(part, trove)
