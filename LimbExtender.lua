@@ -172,9 +172,9 @@ local function initiate()
                     if targetLimb == nil or humanoid == nil then
                         for _, child in ipairs(character:GetDescendants()) do
                             if child.Name == "Humanoid" then
-                                child = humanoid
+                                humanoid = child
                             elseif child.Name == rawSettings.TARGET_LIMB then
-                                child = targetLimb
+                                targetLimb = child
                             end
                         end
                     end
