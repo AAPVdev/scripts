@@ -1,3 +1,4 @@
+--hello
 local rawSettings = {
     TOGGLE = "L",
     TARGET_LIMB = "HumanoidRootPart",
