@@ -21,8 +21,9 @@ getgenv().limbExtenderData = getgenv().limbExtenderData or {}
 local limbExtenderData = getgenv().limbExtenderData
 local limbExtender = nil
 
-if limbExtenderData.running ~= nil then
+if limbExtenderData.terminateOldProcess ~= nil then
 	limbExtenderData.terminateOldProcess("FullKill")
+	limbExtenderData.terminateOldProcess = nil
 end
 
 local players = game:GetService("Players")
