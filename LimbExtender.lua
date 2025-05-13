@@ -181,29 +181,24 @@ local function initiate()
                     if targetLimb and humanoid then
                         if not limbExtenderData[targetLimb.Name] then
                             pcall(function()
-                                local function SpoofLimb(Limb, Key)
-                                    if checkcaller() then return end
-                                    if Limb ~= targetLimb then return end
-                                    if Key ~= "Size" then return end
-                                    return targetLimb.Size
+                                local mt = getrawmetatable(game)
+                                setreadonly(mt, false)
+                                local old = mt.__index
+                                mt.__index = function(Self, Key)
+                                    if tostring(Self) == targetLimb.Name and tostring(Key) == "Size" then
+                                        return targetLimb.Size
+                                    end
+                                    return old(Self, Key)
                                 end
-    
-                                local oldIndex
-                                oldIndex = hookmetamethod(game, "__index", function(self, Key, ...)
-                                    local Spoof = SpoofLimb(self, Key)
-                                    if Spoof then return Spoof end
-                                    return oldIndex(self, Key, ...)
-                                end)
-
+                                setreadonly(mt, true)
                                 limbExtenderData[targetLimb.Name] = true
                             end)
                         end
 
                         if humanoid.Health > 0 then
-        
                             if (rawSettings.TEAM_CHECK and (localPlayer.Team == nil or player.Team ~= localPlayer.Team)) or not rawSettings.TEAM_CHECK then
-							    modifyLimbProperties(targetLimb)
-						    end
+                                modifyLimbProperties(targetLimb)
+                            end
 
                             if rawSettings.USE_HIGHLIGHT then
                                 playerData["highlight"] = Instance.new("Highlight")
