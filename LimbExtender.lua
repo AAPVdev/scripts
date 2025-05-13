@@ -178,22 +178,26 @@ local function initiate()
                         end
                     end
 
-                    if targetLimb or humanoid then
-                        pcall(function()
-                            local function SpoofLimb(Limb, Key)
-                                if checkcaller() then return end
-                                if Limb ~= targetLimb then return end
-                                if Key ~= "Size" then return end
-                                return targetLimb.Size
-                            end
+                    if targetLimb and humanoid then
+                        if not limbExtenderData[targetLimb.Name] then
+                            pcall(function()
+                                local function SpoofLimb(Limb, Key)
+                                    if checkcaller() then return end
+                                    if Limb ~= targetLimb then return end
+                                    if Key ~= "Size" then return end
+                                    return targetLimb.Size
+                                end
+    
+                                local oldIndex
+                                oldIndex = hookmetamethod(game, "__index", function(self, Key, ...)
+                                    local Spoof = SpoofLimb(self, Key)
+                                    if Spoof then return Spoof end
+                                    return oldIndex(self, Key, ...)
+                                end)
 
-                            local oldIndex
-                            oldIndex = hookmetamethod(game, "__index", function(self, Key, ...)
-                                local Spoof = SpoofLimb(self, Key)
-                                if Spoof then return Spoof end
-                                return oldIndex(self, Key, ...)
+                                limbExtenderData[targetLimb.Name] = true
                             end)
-                        end)
+                        end
 
                         if humanoid.Health > 0 then
                             modifyLimbProperties(targetLimb)
