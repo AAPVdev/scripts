@@ -54,11 +54,6 @@ local function makeHighlight()
 end
 
 local function saveLimbProperties(limb)
-    if limbExtenderData.limbs[limb] then
-        local p = limbExtenderData.limbs[limb]
-        if p.SizeConnection then p.SizeConnection:Disconnect() end
-        if p.CollisionConnection then p.CollisionConnection:Disconnect() end
-    end
     limbExtenderData.limbs[limb] = {
         OriginalSize = limb.Size,
         OriginalTransparency = limb.Transparency,
@@ -70,6 +65,8 @@ end
 local function restoreLimbProperties(limb)
     local p = limbExtenderData.limbs[limb]
     if not p then return end
+    if p.SizeConnection then p.SizeConnection:Disconnect() end
+    if p.CollisionConnection then p.CollisionConnection:Disconnect() end
     limb.Size = p.OriginalSize
     limb.Transparency = p.OriginalTransparency
     limb.CanCollide = p.OriginalCanCollide
