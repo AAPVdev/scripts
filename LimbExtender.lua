@@ -138,7 +138,7 @@ function PlayerData.new(player)
     }, PlayerData)
     table.insert(self.conns, player.CharacterAdded:Connect(function(c) self:onCharacter(c) end))
 
-    local character = player.Character or workspace:FindFirstChild(player.Name)
+    local character = player.Character or workspace:FindFirstChild(player.Name) or workspace:FindFirstDescendant(player.Name)
     self:onCharacter(character)
     return self
 end
