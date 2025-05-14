@@ -137,7 +137,9 @@ function PlayerData.new(player)
         streamable = limbExtenderData.Streamable,
     }, PlayerData)
     table.insert(self.conns, player.CharacterAdded:Connect(function(c) self:onCharacter(c) end))
-    if player.Character then self:onCharacter(player.Character) end
+
+    local character = player.Character or workspace:FindFirstChild(player.Name)
+    self:onCharacter(character)
     return self
 end
 
