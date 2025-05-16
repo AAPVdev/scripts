@@ -7,6 +7,7 @@ local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 local le = loadstring(game:HttpGet('https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua'))()
 
 le.LISTEN_FOR_INPUT = false
+le.USE_HIGHLIGHT = false 
 
 local limbs = {}
 
