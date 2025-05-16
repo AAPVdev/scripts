@@ -122,13 +122,29 @@ function Axios:BuildGUI()
     local targetDropdown = TabTarget:CreateDropdown({ Name = "Target Limb", Options = {}, CurrentOption = {LimbExtender.TARGET_LIMB}, MultipleOptions = false, Flag = "TargetLimb", Callback = function(opt)
         LimbExtender.TARGET_LIMB = opt[1]
     end })
-    LocalPlayer.CharacterAdded:Connect(function(char)
-        for _, part in ipairs(char:GetChildren()) do
-            if part:IsA("BasePart") then table.insert(Axios._limbList, part.Name) end
+
+    local function charAdded(char)
+        local function onChildChanged(child)
+            if not child:IsA("BasePart") then return end
+            local index = table.find(Axios._limbList, child.Name)
+            if not index then
+                table.insert(limbs, child.Name)
+                table.sort(Axios._limbList)
+                targetDropdown:Refresh(Axios._limbList)
+            end
         end
-        table.sort(Axios._limbList)
-        targetDropdown:Refresh(Axios._limbList)
-    end)
+
+        char.ChildAdded:Connect(function(child)
+            onChildChanged(child)
+        end)
+
+        for _, child in ipairs(char:GetChildren()) do
+            onChildChanged(child)
+        end
+    end
+    
+    charAdded(LocalPlayer.Character)
+    LocalPlayer.CharacterAdded:Connect(charAdded)
 
     TabTheme:CreateDropdown({ Name = "Theme", Options = {"Default", "AmberGlow", "Amethyst", "Bloom", "DarkBlue", "Green", "Light", "Ocean", "Serenity"}, CurrentOption = {self.Config.Theme}, MultipleOptions = false, Flag = "ThemeSelect", Callback = function(opt)
         self.Config.Theme = opt[1]; Window.ModifyTheme(opt[1])
