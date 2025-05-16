@@ -1,7 +1,7 @@
 # 📜 Scripts  
 
 ## 🔹 Limb Extender (NO UI)  
-I would really only use this if rayfield gets detected.Not reccomended for normal use.
+I would really only use this if rayfield gets detected. Not recommended for normal use.
 ```lua
 local settings = {
 	TOGGLE = "K",
