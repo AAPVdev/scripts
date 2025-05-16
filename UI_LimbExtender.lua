@@ -1,287 +1,141 @@
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 
-local le = loadstring(game:HttpGet('https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua'))()
+local Axios = {}
 
-le.LISTEN_FOR_INPUT = false
-
+local Sense = loadstring(game:HttpGet('https://raw.githubusercontent.com/jensonhirst/Sirius/request/library/sense/source.lua'))()
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+local LimbExtender = loadstring(game:HttpGet('https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua'))()
 
-local limbs = {}
-
-local limbExtenderData = getgenv().limbExtenderData
-
-local Messages = {
-    "jejemon!",
-    "i have the highest grades in math",
-    "hi krislyn",
-    "fucking shit up",
-    "not my fault",
-    "what the fuck",
-    "arse anal",
-    "what color is your executor?",
-    "dont say cuss words",
-    "california gurrls",
-    "I HATE EXPLOITERS! 😡",
-    "builderman is my dad",
-    "plopyninja is my first account",
-    "shawtyy"
-}
-
-local ChosenMessage = Messages[math.random(1, #Messages)]
-
-local Window = Rayfield:CreateWindow({
-    Name = "AXIOS",
-    Icon = 107904589783906,
-
-    LoadingTitle = "AXIOS",
-    LoadingSubtitle = ChosenMessage,
-
+Axios.Config = {
     Theme = "Default",
-
-    DisableRayfieldPrompts = true,
-        
-    ConfigurationSaving = {
-        Enabled = true,
-        FolderName = "LimbExtenderConfigs",
-        FileName = "Configuration"
+    Sense = {
+        team = { enemy = true, friendly = true },
+        visuals = {
+            box = { enabled = false, outline = true, fill = false },
+            box3d = false,
+            tracers = { enabled = false, outline = true, origin = "Bottom" },
+            tags = { name = false, distance = false, health = false },
+            healthBar = { enabled = false, outline = true },
+            chams = { enabled = false, visibleOnly = false },
+            offScreenArrow = { enabled = false, size = 15, radius = 150, outline = true },
+            weapon = { enabled = false, outline = true }
+        },
+        colors = {
+            friendly = { box = Color3.fromRGB(0,255,0), fill = Color3.fromRGB(0,150,0), chams = Color3.fromRGB(0,255,0) },
+            enemy =    { box = Color3.fromRGB(255,0,0), fill = Color3.fromRGB(255,100,100), chams = Color3.fromRGB(255,0,0) }
+        }
     },
-})
-
-local Settings = Window:CreateTab("Limbs", "scale-3d")
-local Highlights = Window:CreateTab("Highlights", "eye")
-local Target = Window:CreateTab("Target", "crosshair")
-local Themes = Window:CreateTab("Themes", "palette")
-
-local function createOption(params)
-    local methodName = 'Create' .. params.method  
-    local method = params.tab[methodName]
-    
-    if type(method) == 'function' then
-        method(params.tab, {
-            Name = params.name,
-            SectionParent = params.section,
-            CurrentValue = params.value,
-            Flag = params.flag,
-            Options = params.options,
-            CurrentOption = params.currentOption,
-            MultipleOptions = params.multipleOptions,
-            Range = params.range,
-            Color = params.color,
-            Increment = params.increment,
-            Callback = function(Value)
-                if params.multipleOptions == false then
-                    Value = Value[1]
-                end
-                le[params.flag] = Value
-            end,
-        })
-    else
-        warn("Method " .. methodName .. " not found in params.tab")
-    end
-end
-
-local ModifyLimbs = Settings:CreateToggle({
-    Name = "Modify Limbs",
-    SectionParent = nil,
-    CurrentValue = false,
-    Flag = "ModifyLimbs",
-    Callback = function(Value)
-        le.toggleState(Value)
-    end,
-})
-
-Settings:CreateDivider()
-
-local UseHighlights = Highlights:CreateToggle({
-    Name = "Use Highlights",
-    SectionParent = nil,
-    CurrentValue = le.USE_HIGHLIGHT,
-    Flag = "USE_HIGHLIGHT",
-    Callback = function(Value)
-        le.USE_HIGHLIGHT = Value
-    end,
-})
-
-Highlights:CreateDivider()
-
-local toggleSettings = {
-    {
-        method = "Toggle",
-        name = "Team Check",
-        flag = "TEAM_CHECK",
-        tab = Settings,
-        section = nil,
-        value = le.TEAM_CHECK,
-        createDivider = false,
-    },
-    {
-        method = "Toggle",
-        name = "ForceField Check",
-        flag = "FORCEFIELD_CHECK",
-        tab = Settings,
-        section = nil,
-        value = le.FORCEFIELD_CHECK,
-        createDivider = false,
-    },
-    {
-        method = "Toggle",
-        name = "Limb Collisions",
-        flag = "LIMB_CAN_COLLIDE",
-        tab = Settings,
-        section = nil,
-        value = le.LIMB_CAN_COLLIDE,
-        createDivider = true,
-    },
-    {
-        method = "Slider",
-        name = "Limb Transparency",
-        flag = "LIMB_TRANSPARENCY",
-        tab = Settings,
-        range = {0, 1},
-        increment = 0.1,
-        section = nil,
-        value = le.LIMB_TRANSPARENCY,
-        createDivider = false,
-    },
-    {
-        method = "Slider",
-        name = "Limb Size",
-        flag = "LIMB_SIZE",
-        tab = Settings,
-        range = {5, 50},
-        increment = 5,
-        section = nil,
-        value = le.LIMB_SIZE,
-        createDivider = true,
-    },
-    {
-        method = "Dropdown",
-        name = "Depth Mode",
-        flag = "DEPTH_MODE",
-        options = {"Occluded","AlwaysOnTop"},
-        currentOption = {le.DEPTH_MODE},
-        multipleOptions = false,
-        tab = Highlights,
-        section = nil,
-        createDivider = true,
-    },
-    {
-        method = "ColorPicker",
-        name = "Outline Color",
-        flag = "HIGHLIGHT_OUTLINE_COLOR",
-        tab = Highlights,
-        section = nil,
-        color = le.HIGHLIGHT_OUTLINE_COLOR,
-        createDivider = false,
-    },
-    {
-        method = "ColorPicker",
-        name = "Fill Color",
-        flag = "HIGHLIGHT_FILL_COLOR",
-        tab = Highlights,
-        section = nil,
-        color = le.HIGHLIGHT_FILL_COLOR,
-        createDivider = true,
-    },
-    {
-        method = "Slider",
-        name = "Fill Transparency",
-        flag = "HIGHLIGHT_FILL_TRANSPARENCY",
-        tab = Highlights,
-        range = {0, 1},
-        increment = 0.1,
-        section = nil,
-        value = le.HIGHLIGHT_FILL_TRANSPARENCY,
-        createDivider = false,
-    },
-    {
-        method = "Slider",
-        name = "Outline Transparency",
-        flag = "HIGHLIGHT_OUTLINE_TRANSPARENCY",
-        tab = Highlights,
-        range = {0, 1},
-        increment = 0.1,
-        section = nil,
-        value = le.HIGHLIGHT_OUTLINE_TRANSPARENCY,
-        createDivider = true,
-    },
+    LimbExtender = {
+        running = false,
+        settings = {
+            TEAM_CHECK = LimbExtender.TEAM_CHECK,
+            FORCEFIELD_CHECK = LimbExtender.TEAM_CHECK,
+            COLLISIONS = LimbExtender.LIMB_CAN_COLLIDE,
+            TRANSPARENCY = LimbExtender.LIMB_TRANSPARENCY,
+            SIZE = LimbExtender.LIMB_SIZE,
+        },
+        keybind = LimbExtender.TOGGLE
+    }
 }
 
-for _, setting in pairs(toggleSettings) do
-    createOption(setting)
-    if setting.createDivider then
-        setting.tab:CreateDivider()
+function Axios:Init()
+    Sense.teamSettings.enemy.enabled = self.Config.Sense.team.enemy
+    Sense.teamSettings.friendly.enabled = self.Config.Sense.team.friendly
+    Sense.Load()
+
+    self:BuildGUI()
+    LimbExtender.LISTEN_FOR_INPUT = false
+    for flag, val in pairs(self.Config.LimbExtender.settings) do
+        LimbExtender[flag] = val
     end
 end
 
-Settings:CreateKeybind({
-    Name = "Toggle Keybind",
-    CurrentKeybind = le.TOGGLE,
-    HoldToInteract = false,
-    SectionParent = nil,
-    Flag = "ToggleKeybind",
-    Callback = function()
-        ModifyLimbs:Set(not limbExtenderData.running)
-    end,
-})
+function Axios:BuildGUI()
+    local Window = Rayfield:CreateWindow({
+        Name = "AXIOS",
+        Icon = 107904589783906,
+        LoadingTitle = "AXIOS",
+        LoadingSubtitle = "Welcome to AXIOS",
+        Theme = self.Config.Theme,
+        DisableRayfieldPrompts = true,
+        ConfigurationSaving = { Enabled = true, FolderName = "AXIOSConfigs", FileName = "Config" }
+    })
 
-Highlights:CreateKeybind({
-    Name = "Toggle Keybind",
-    CurrentKeybind = le.TOGGLE,
-    HoldToInteract = false,
-    SectionParent = nil,
-    Flag = "ToggleKeybind2",
-    Callback = function()
-        UseHighlights:Set(not le.USE_HIGHLIGHT)
-    end,
-})
+    local TabSense  = Window:CreateTab("Sense", "eye")
+    local TabLimbs  = Window:CreateTab("Limbs", "scale-3d")
+    local TabTarget = Window:CreateTab("Target", "crosshair")
+    local TabTheme  = Window:CreateTab("Themes", "palette")
 
-local TargetLimb = Target:CreateDropdown({
-   Name = "Target Limb",
-   Options = {},
-   CurrentOption = {le.TARGET_LIMB},
-   MultipleOptions = false,
-   Flag = "TARGET_LIMB",
-   Callback = function(Options)
-		le.TARGET_LIMB = Options[1]
-   end,
-})
+    TabSense:CreateSection("Team Settings")
+    TabSense:CreateToggle({ Name = "Enable Enemy ESP", CurrentValue = self.Config.Sense.team.enemy, Flag = "ESPEnemy", Callback = function(v)
+        Sense.teamSettings.enemy.enabled = v
+    end })
+    TabSense:CreateToggle({ Name = "Enable Friendly ESP", CurrentValue = self.Config.Sense.team.friendly, Flag = "ESPFriendly", Callback = function(v)
+        Sense.teamSettings.friendly.enabled = v
+    end })
 
-Themes:CreateDropdown({
-   Name = "Current Theme",
-   Options = {"Default", "AmberGlow", "Amethyst", "Bloom", "DarkBlue", "Green", "Light", "Ocean", "Serenity"},
-   CurrentOption = {"Default"},
-   MultipleOptions = false,
-   Flag = "CurrentTheme",
-   Callback = function(Options)
-		Window.ModifyTheme(Options[1])
-   end,
-})
+    TabSense:CreateSection("Boxes")
+    TabSense:CreateToggle({ Name = "Enable Boxes", CurrentValue = self.Config.Sense.visuals.box.enabled, Flag = "Boxes", Callback = function(v)
+        self.Config.Sense.visuals.box.enabled = v; Sense.options.box = v
+    end })
+    TabSense:CreateToggle({ Name = "Fill Boxes", CurrentValue = self.Config.Sense.visuals.box.fill, Flag = "BoxFill", Callback = function(v)
+        self.Config.Sense.visuals.box.fill = v; Sense.options.boxFill = v
+    end })
 
-Rayfield:LoadConfiguration()
+    TabSense:CreateSection("Tracers")
+    TabSense:CreateToggle({ Name = "Enable Tracers", CurrentValue = self.Config.Sense.visuals.tracers.enabled, Flag = "Tracers", Callback = function(v)
+        self.Config.Sense.visuals.tracers.enabled = v; Sense.options.tracer = v
+    end })
+    TabSense:CreateDropdown({ Name = "Tracer Origin", Options = {"Bottom","Top","Mouse"}, CurrentOption = self.Config.Sense.visuals.tracers.origin, Flag = "TracerOrigin", Callback = function(opt)
+        self.Config.Sense.visuals.tracers.origin = opt; Sense.options.tracerOrigin = opt
+    end })
 
-local function characterAdded(Character)
-    local function onChildChanged(child)
-        if not child:IsA("BasePart") then return end
-        local index = table.find(limbs, child.Name)
-        if not index then
-            table.insert(limbs, child.Name)
-			table.sort(limbs)
-			TargetLimb:Refresh(limbs)
+    TabSense:CreateColorPicker({ Name = "Friendly Color", Color = self.Config.Sense.colors.friendly.box, Flag = "FriendlyColor", Callback = function(c)
+        self.Config.Sense.colors.friendly.box = c
+        Sense.teamSettings.friendly.boxColor = {c,1}
+    end })
+    TabSense:CreateColorPicker({ Name = "Enemy Color", Color = self.Config.Sense.colors.enemy.box, Flag = "EnemyColor", Callback = function(c)
+        self.Config.Sense.colors.enemy.box = c
+        Sense.teamSettings.enemy.boxColor = {c,1}
+    end })
+
+    TabLimbs:CreateToggle({ Name = "Enable LimbExtender", CurrentValue = false, Flag = "ToggleLimbs", Callback = function(v)
+        self.Config.LimbExtender.running = v
+        LimbExtender.toggleState(v)
+    end })
+    TabLimbs:CreateDivider()
+    TabLimbs:CreateToggle({ Name = "Team Check", CurrentValue = self.Config.LimbExtender.settings.TEAM_CHECK, Flag = "TeamCheck", Callback = function(v)
+        self.Config.LimbExtender.settings.TEAM_CHECK = v; LimbExtender.TEAM_CHECK = v
+    end })
+    TabLimbs:CreateSlider({ Name = "Limb Size", Range = {5,50}, CurrentValue = self.Config.LimbExtender.settings.SIZE, Flag = "LimbSize", Callback = function(v)
+        self.Config.LimbExtender.settings.SIZE = v; LimbExtender.LIMB_SIZE = v
+    end })
+    TabLimbs:CreateSlider({ Name = "Transparency", Range = {0,1}, Increment = 0.1, CurrentValue = self.Config.LimbExtender.settings.TRANSPARENCY, Flag = "LimbTransparency", Callback = function(v)
+        self.Config.LimbExtender.settings.TRANSPARENCY = v; LimbExtender.LIMB_TRANSPARENCY = v
+    end })
+    TabLimbs:CreateKeybind({ Name = "Toggle Keybind", CurrentKeybind = self.Config.LimbExtender.keybind, Flag = "LimbKey", Callback = function()
+        local newVal = not self.Config.LimbExtender.running
+        self.Config.LimbExtender.running = newVal; LimbExtender.toggleState(newVal)
+    end })
+
+    local targetDropdown = TabTarget:CreateDropdown({ Name = "Target Limb", Options = {}, CurrentOption = {LimbExtender.TARGET_LIMB}, MultipleOptions = false, Flag = "TargetLimb", Callback = function(opt)
+        LimbExtender.TARGET_LIMB = opt[1]
+    end })
+    LocalPlayer.CharacterAdded:Connect(function(char)
+        for _, part in ipairs(char:GetChildren()) do
+            if part:IsA("BasePart") then table.insert(Axios._limbList, part.Name) end
         end
-    end
-
-    Character.ChildAdded:Connect(function(child)
-        onChildChanged(child)
+        table.sort(Axios._limbList)
+        targetDropdown:Refresh(Axios._limbList)
     end)
 
-	for _, child in ipairs(Character:GetChildren()) do
-		onChildChanged(child)
-	end
+    TabTheme:CreateDropdown({ Name = "Theme", Options = {"Default", "AmberGlow", "Amethyst", "Bloom", "DarkBlue", "Green", "Light", "Ocean", "Serenity"}, CurrentOption = {self.Config.Theme}, MultipleOptions = false, Flag = "ThemeSelect", Callback = function(opt)
+        self.Config.Theme = opt[1]; Window.ModifyTheme(opt[1])
+    end })
+
+    Rayfield:LoadConfiguration()
 end
 
-LocalPlayer.CharacterAdded:Connect(characterAdded)
-if LocalPlayer.Character then
-    characterAdded(LocalPlayer.Character)
-end
+Axios._limbList = {}
+Axios:Init()
