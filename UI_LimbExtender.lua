@@ -62,8 +62,8 @@ function Axios:BuildGUI()
         ConfigurationSaving = { Enabled = true, FolderName = "AXIOSConfigs", FileName = "Config" }
     })
 
-    local TabSense  = Window:CreateTab("Sense", "eye")
     local TabLimbs  = Window:CreateTab("Limbs", "scale-3d")
+    local TabSense  = Window:CreateTab("Sense", "eye")
     local TabTarget = Window:CreateTab("Target", "crosshair")
     local TabTheme  = Window:CreateTab("Themes", "palette")
 
