@@ -1,12 +1,11 @@
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 
-local Sense = loadstring(game:HttpGet('https://raw.githubusercontent.com/jensonhirst/Sirius/request/library/sense/source.lua'))()
-local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 local le = loadstring(game:HttpGet('https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua'))()
 
 le.LISTEN_FOR_INPUT = false
-le.USE_HIGHLIGHT = false 
+
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local limbs = {}
 
@@ -50,126 +49,9 @@ local Window = Rayfield:CreateWindow({
 })
 
 local Settings = Window:CreateTab("Limbs", "scale-3d")
-local SenseTab = Window:CreateTab("Sense")
+local Highlights = Window:CreateTab("Highlights", "eye")
 local Target = Window:CreateTab("Target", "crosshair")
 local Themes = Window:CreateTab("Themes", "palette")
-
-Sense.teamSettings.enemy.enabled = true
-Sense.teamSettings.friendly.enabled = true
-
-local function changeSetting(name, value)
-    for _, team in ipairs({'enemy', 'friendly'}) do
-        Sense.teamSettings[team][name] = value
-    end
-end
-
-local tabs = {
-    ['Team Settings'] = {
-        items = {
-            {type = 'Toggle', name = 'Hide Team', default = false, flag = 'HideTeam', callback = function(x)
-                Sense.teamSettings.friendly.enabled = not x
-            end},
-            {type = 'ColorPicker', name = 'Team Color', default = Color3.fromRGB(0,255,0), flag = 'TeamColor', callback = function(c)
-                for _, prop in ipairs({'boxColor','box3dColor','offScreenArrowColor','tracerColor'}) do
-                    Sense.teamSettings.friendly[prop] = {c,1}
-                end
-            end},
-            {type = 'ColorPicker', name = 'Enemy Color', default = Color3.fromRGB(255,0,0), flag = 'EnemyColor', callback = function(c)
-                for _, prop in ipairs({'boxColor','box3dColor','offScreenArrowColor','tracerColor'}) do
-                    Sense.teamSettings.enemy[prop] = {c,1}
-                end
-            end},
-        }
-    },
-    ['Box'] = {
-        items = {
-            {type='Toggle', name='Boxes Enabled', default=false, flag='Boxes', prop='box'},
-            {type='Toggle', name='Boxes Outline', default=true, flag='BoxesOutlined', prop='boxOutline'},
-            {type='Toggle', name='Boxes Fill', default=false, flag='BoxesFilled', prop='boxFill'},
-            {type='ColorPicker', name='Team Fill Color', default=Color3.fromRGB(0,255,0), flag='TeamFillColor', team='friendly', prop='boxFillColor', alpha=0.5},
-            {type='ColorPicker', name='Enemy Fill Color', default=Color3.fromRGB(255,0,0), flag='EnemyFillColor', team='enemy', prop='boxFillColor', alpha=0.5},
-            {type='Toggle', name='3D Boxes', default=false, flag='3DBoxes', prop='box3d'},
-        }
-    },
-    ['Health'] = {
-        items = {
-            {type='Toggle', name='HealthBar Enabled', default=false, flag='HealthBar', prop='healthBar'},
-            {type='ColorPicker', name='Health Color', default=Color3.fromRGB(0,255,0), flag='HealthColor', prop='healthyColor'},
-            {type='ColorPicker', name='Dying Color', default=Color3.fromRGB(255,0,0), flag='DyingColor', prop='dyingColor'},
-            {type='Toggle', name='HealthBar Outline', default=true, flag='HBsOutlined', prop='healthBarOutline'},
-        }
-    },
-    ['Tracer'] = {
-        items = {
-            {type='Toggle', name='Tracers Enabled', default=false, flag='Tracers', prop='tracer'},
-            {type='Toggle', name='Tracers Outline', default=true, flag='TracersOutlined', prop='tracerOutline'},
-            {type='Dropdown', name='Tracer Origin', options={'Bottom','Top','Mouse'}, default='Bottom', flag='TracerOrigin', prop='tracerOrigin'},
-        }
-    },
-    ['Tag'] = {
-        items = {
-            {type='Toggle', name='Show Name', default=false, flag='Names', prop='name'},
-            {type='Toggle', name='Name Outline', default=true, flag='NamesOutlined', prop='nameOutline'},
-            {type='Toggle', name='Show Distance', default=false, flag='Distances', prop='distance'},
-            {type='Toggle', name='Distance Outline', default=true, flag='DistancesOutlined', prop='distanceOutline'},
-            {type='Toggle', name='Show Health Text', default=false, flag='Health', prop='healthText'},
-            {type='Toggle', name='Health Text Outline', default=true, flag='HealthsOutlined', prop='healthOutline'},
-        }
-    },
-    ['Chams'] = {
-        items = {
-            {type='Toggle', name='Chams Enabled', default=false, flag='Chams', prop='chams'},
-            {type='Toggle', name='Chams Visible Only', default=false, flag='ChamsVisOnly', prop='chamsVisibleOnly'},
-            {type='ColorPicker', name='Team Chams Fill', default=Color3.new(0.2,0.2,0.2), flag='TeamFillChams', team='friendly', prop='chamsFillColor', alpha=0.5},
-            {type='ColorPicker', name='Team Chams Outline', default=Color3.new(0,1,0), flag='TeamOutlineChams', team='friendly', prop='chamsOutlineColor', alpha=0},
-            {type='ColorPicker', name='Enemy Chams Fill', default=Color3.new(0.2,0.2,0.2), flag='EnemyFillChams', team='enemy', prop='chamsFillColor', alpha=0.5},
-            {type='ColorPicker', name='Enemy Chams Outline', default=Color3.new(1,0,0), flag='EnemyOutlineChams', team='enemy', prop='chamsOutlineColor', alpha=0},
-        }
-    },
-    ['Off Screen Arrow'] = {
-        items = {
-            {type='Toggle', name='Off Screen Arrow Enabled', default=false, flag='OSA', prop='offScreenArrow'},
-            {type='Slider', name='Arrow Size', range={15,50}, default=15, flag='OSASize', prop='offScreenArrowSize'},
-            {type='Slider', name='Arrow Radius', range={150,360}, default=150, flag='OSARadius', prop='offScreenArrowRadius'},
-            {type='Toggle', name='Arrow Outline', default=true, flag='OSAOutlined', prop='offScreenArrowOutline'},
-        }
-    },
-    ['Weapon'] = {
-        items = {
-            {type='Toggle', name='Weapon Enabled', default=false, flag='Weapons', prop='weapon'},
-            {type='Toggle', name='Weapon Outline', default=true, flag='WeaponOutlined', prop='weaponOutline'},
-        }
-    }
-}
-
-for sectionName, sectionData in pairs(tabs) do
-    SenseTab:CreateSection(sectionName)
-    for _, item in ipairs(sectionData.items) do
-        if item.type == 'Toggle' then
-            SenseTab:CreateToggle({ Name = item.name, CurrentValue = item.default, Flag = item.flag,
-                Callback = function(v) changeSetting(item.prop, v) end })
-        elseif item.type == 'ColorPicker' then
-            SenseTab:CreateColorPicker({ Name = item.name, Color = item.default, Flag = item.flag,
-                Callback = function(c)
-                    local a = item.alpha or 1
-                    if item.team then
-                        Sense.teamSettings[item.team][item.prop] = {c, a}
-                    else
-                        changeSetting(item.prop, {c, a})
-                    end
-                end
-            })
-        elseif item.type == 'Dropdown' then
-            SenseTab:CreateDropdown({ Name = item.name, Options = item.options, CurrentOption = item.default, Flag = item.flag,
-                Callback = function(opt) changeSetting(item.prop, opt) end })
-        elseif item.type == 'Slider' then
-            SenseTab:CreateSlider({ Name = item.name, Range = item.range, CurrentValue = item.default, Flag = item.flag,
-                Callback = function(val) changeSetting(item.prop, val) end })
-        end
-    end
-end
-
-Sense.Load()
 
 local function createOption(params)
     local methodName = 'Create' .. params.method  
@@ -210,6 +92,18 @@ local ModifyLimbs = Settings:CreateToggle({
 })
 
 Settings:CreateDivider()
+
+local UseHighlights = Highlights:CreateToggle({
+    Name = "Use Highlights",
+    SectionParent = nil,
+    CurrentValue = le.USE_HIGHLIGHT,
+    Flag = "USE_HIGHLIGHT",
+    Callback = function(Value)
+        le.USE_HIGHLIGHT = Value
+    end,
+})
+
+Highlights:CreateDivider()
 
 local toggleSettings = {
     {
@@ -261,6 +155,57 @@ local toggleSettings = {
         value = le.LIMB_SIZE,
         createDivider = true,
     },
+    {
+        method = "Dropdown",
+        name = "Depth Mode",
+        flag = "DEPTH_MODE",
+        options = {"Occluded","AlwaysOnTop"},
+        currentOption = {le.DEPTH_MODE},
+        multipleOptions = false,
+        tab = Highlights,
+        section = nil,
+        createDivider = true,
+    },
+    {
+        method = "ColorPicker",
+        name = "Outline Color",
+        flag = "HIGHLIGHT_OUTLINE_COLOR",
+        tab = Highlights,
+        section = nil,
+        color = le.HIGHLIGHT_OUTLINE_COLOR,
+        createDivider = false,
+    },
+    {
+        method = "ColorPicker",
+        name = "Fill Color",
+        flag = "HIGHLIGHT_FILL_COLOR",
+        tab = Highlights,
+        section = nil,
+        color = le.HIGHLIGHT_FILL_COLOR,
+        createDivider = true,
+    },
+    {
+        method = "Slider",
+        name = "Fill Transparency",
+        flag = "HIGHLIGHT_FILL_TRANSPARENCY",
+        tab = Highlights,
+        range = {0, 1},
+        increment = 0.1,
+        section = nil,
+        value = le.HIGHLIGHT_FILL_TRANSPARENCY,
+        createDivider = false,
+    },
+    {
+        method = "Slider",
+        name = "Outline Transparency",
+        flag = "HIGHLIGHT_OUTLINE_TRANSPARENCY",
+        tab = Highlights,
+        range = {0, 1},
+        increment = 0.1,
+        section = nil,
+        value = le.HIGHLIGHT_OUTLINE_TRANSPARENCY,
+        createDivider = true,
+    },
 }
 
 for _, setting in pairs(toggleSettings) do
@@ -278,6 +223,17 @@ Settings:CreateKeybind({
     Flag = "ToggleKeybind",
     Callback = function()
         ModifyLimbs:Set(not limbExtenderData.running)
+    end,
+})
+
+Highlights:CreateKeybind({
+    Name = "Toggle Keybind",
+    CurrentKeybind = le.TOGGLE,
+    HoldToInteract = false,
+    SectionParent = nil,
+    Flag = "ToggleKeybind2",
+    Callback = function()
+        UseHighlights:Set(not le.USE_HIGHLIGHT)
     end,
 })
 
