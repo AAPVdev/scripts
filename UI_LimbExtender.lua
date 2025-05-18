@@ -241,9 +241,9 @@ Highlights:CreateButton({
    Name = "Delete All Game Highlights",
    Callback = function()
 	for i, v in ipairs(game:GetDescendants()) do
-		if not v:IsA("Highlight") then return end
-		if v.Parent.Name == "Limb Extender Highlights Folder" then return end
-		v:Destroy()
+		if v:IsA("Highlight") and v.Parent.Name ~= "Limb Extender Highlights Folder" then
+			v:Destroy()
+		end
 	end
    end,
 })
