@@ -34,23 +34,13 @@ limbExtenderData.Streamable = limbExtenderData.Streamable or loadstring(game:Htt
 limbExtenderData.playerTable = limbExtenderData.playerTable or {}
 limbExtenderData.limbs = limbExtenderData.limbs or {}
 
+local Streamable = limbExtenderData.Streamable
+local CAU = limbExtenderData.CAU
+
 local function watchProperty(instance, prop, callback)
     return instance:GetPropertyChangedSignal(prop):Connect(function()
         callback(instance)
     end)
-end
-
-local function makeHighlight()
-    local hi = Instance.new("Highlight")
-    hi.Name = "LimbHighlight"
-    hi.DepthMode = Enum.HighlightDepthMode[rawSettings.DEPTH_MODE]
-    hi.FillColor = rawSettings.HIGHLIGHT_FILL_COLOR
-    hi.FillTransparency = rawSettings.HIGHLIGHT_FILL_TRANSPARENCY
-    hi.OutlineColor = rawSettings.HIGHLIGHT_OUTLINE_COLOR
-    hi.OutlineTransparency = rawSettings.HIGHLIGHT_OUTLINE_TRANSPARENCY
-    hi.Enabled = true
-    hi.Parent = Players
-    return hi
 end
 
 local function saveLimbProperties(limb)
@@ -123,6 +113,25 @@ local function indexBypass()
     end)
 end
 
+local function makeHighlight()
+    local hi = Instance.new("Highlight")
+    hi.Name = "LimbHighlight"
+    hi.DepthMode = Enum.HighlightDepthMode[rawSettings.DEPTH_MODE]
+    hi.FillColor = rawSettings.HIGHLIGHT_FILL_COLOR
+    hi.FillTransparency = rawSettings.HIGHLIGHT_FILL_TRANSPARENCY
+    hi.OutlineColor = rawSettings.HIGHLIGHT_OUTLINE_COLOR
+    hi.OutlineTransparency = rawSettings.HIGHLIGHT_OUTLINE_TRANSPARENCY
+    hi.Enabled = true
+    hi.Parent = Players
+    return hi
+end
+
+local function isTeam(player)
+	if rawSettings.TEAM_CHECK and localPlayer.Team and player.Team == localPlayer.Team then
+		return true
+	end
+end
+
 local PlayerData = {}
 PlayerData.__index = PlayerData
 
@@ -131,7 +140,6 @@ function PlayerData.new(player)
         player = player,
         conns = {},
         highlight = nil,
-        streamable = limbExtenderData.Streamable,
     }, PlayerData)
     table.insert(self.conns, player.CharacterAdded:Connect(function(c) self:onCharacter(c) end))
 
@@ -140,49 +148,55 @@ function PlayerData.new(player)
     return self
 end
 
-function PlayerData:onCharacter(char)
-    if not char then return end
-
+function PlayerData:setupCharacter(char)
     table.insert(self.conns, self.player:GetPropertyChangedSignal("Team"):Once(function()
         self:Destroy()
         limbExtenderData.playerTable[self.player.Name] = PlayerData.new(self.player)
     end))
 
-    if rawSettings.TEAM_CHECK and localPlayer.Team and self.player.Team == localPlayer.Team then return end
+    if isTeam(self.player) then return end
 
     task.spawn(function()
-        local humanoid = char:WaitForChild("Humanoid")
-
+        local humanoid = char:WaitForChild("Humanoid", 1)
         if not humanoid or humanoid.Health <= 0 then return end
+
         if self.PartStreamable then self.PartStreamable:Destroy() end
+        self.PartStreamable = Streamable.new(char, rawSettings.TARGET_LIMB)
 
-        local stream = self.streamable.new(char, rawSettings.TARGET_LIMB)
-        self.PartStreamable = stream
-
-        stream:Observe(function(part, trove)
+        self.PartStreamable:Observe(function(part, trove)
             spoofSize(part)
             modifyLimbProperties(part)
 
-			if rawSettings.USE_HIGHLIGHT then
-				if not self.highlight then
-					self.highlight = makeHighlight()
-				end
-				self.highlight.Adornee = part
-			end
-
+            if rawSettings.USE_HIGHLIGHT then
+                if not self.highlight then
+                    self.highlight = makeHighlight()
+                end
+                self.highlight.Adornee = part
+            end
 
             table.insert(self.conns, self.player.CharacterRemoving:Once(function()
                 restoreLimbProperties(part)
             end))
 
-            local deathSig = rawSettings.RESET_LIMB_ON_DEATH2 and humanoid.HealthChanged or humanoid.Died
-            table.insert(self.conns, deathSig:Connect(function(hp)
+            local deathEvent = rawSettings.RESET_LIMB_ON_DEATH2 and humanoid.HealthChanged or humanoid.Died
+            table.insert(self.conns, deathEvent:Connect(function(hp)
                 if hp and hp <= 0 then restoreLimbProperties(part) end
             end))
 
             trove:Add(function() restoreLimbProperties(part) end)
         end)
     end)
+end
+
+function PlayerData:onCharacter(char)
+    if not char then return end
+    if rawSettings.FORCEFIELD_CHECK and char:FindFirstChildOfClass("ForceField") then
+        table.insert(self.conns, char.ChildRemoved:Once(function(child)
+            if child:IsA("ForceField") then self:setupCharacter(char) end
+        end))
+        return
+    end
+    self:setupCharacter(char)
 end
 
 function PlayerData:Destroy()
@@ -232,7 +246,7 @@ local function terminate(reason)
     if reason == "FullKill" or not rawSettings.LISTEN_FOR_INPUT then
         limbExtenderData.CAU:UnbindAction("LimbExtenderToggle")
     elseif rawSettings.MOBILE_BUTTON then
-        limbExtenderData.CAU:SetTitle("LimbExtenderToggle", "On")
+        CAU:SetTitle("LimbExtenderToggle", "On")
     end
 end
 
@@ -251,7 +265,7 @@ local function initiate()
     limbExtenderData.PlayerRemoving = Players.PlayerRemoving:Connect(onPlayerRemoving)
 	
     if rawSettings.MOBILE_BUTTON and rawSettings.LISTEN_FOR_INPUT then
-        limbExtenderData.CAU:SetTitle("LimbExtenderToggle", "Off")
+        CAU:SetTitle("LimbExtenderToggle", "Off")
     end
 end
 
@@ -264,18 +278,8 @@ function rawSettings.toggleState(state)
     end
 end
 
-local limbExtender = setmetatable({}, {
-    __index = rawSettings,
-    __newindex = function(_, key, value)
-        if rawSettings[key] ~= value then
-            rawSettings[key] = value
-            initiate()
-        end
-    end,
-})
-
 if rawSettings.LISTEN_FOR_INPUT then
-    limbExtenderData.InputBind = limbExtenderData.CAU:BindAction(
+    limbExtenderData.InputBind = CAU:BindAction(
         "LimbExtenderToggle",
         function(_, inputState)
             if inputState == Enum.UserInputState.Begin then
@@ -295,4 +299,12 @@ elseif rawSettings.MOBILE_BUTTON and rawSettings.LISTEN_FOR_INPUT then
     limbExtenderData.CAU:SetTitle("LimbExtenderToggle", "On")
 end
 
-return limbExtender
+return setmetatable({}, {
+    __index = rawSettings,
+    __newindex = function(_, key, value)
+        if rawSettings[key] ~= value then
+            rawSettings[key] = value
+            initiate()
+        end
+    end,
+})
