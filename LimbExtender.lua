@@ -114,6 +114,7 @@ local function indexBypass()
 end
 
 local function makeHighlight()
+    local hiFolder = Players:FindFirstChild("Limb Extender Highlights Folder") or Instance.new("Folder")
     local hi = Instance.new("Highlight")
     hi.Name = "LimbHighlight"
     hi.DepthMode = Enum.HighlightDepthMode[rawSettings.DEPTH_MODE]
@@ -122,14 +123,16 @@ local function makeHighlight()
     hi.OutlineColor = rawSettings.HIGHLIGHT_OUTLINE_COLOR
     hi.OutlineTransparency = rawSettings.HIGHLIGHT_OUTLINE_TRANSPARENCY
     hi.Enabled = true
-    hi.Parent = Players
+    hiFolder.Parent = Players
+    hiFolder.Name = "Limb Extender Highlights Folder"
+    hi.Parent = hiFolder
     return hi
 end
 
 local function isTeam(player)
-	if rawSettings.TEAM_CHECK and localPlayer.Team and player.Team == localPlayer.Team then
-		return true
-	end
+    if rawSettings.TEAM_CHECK and localPlayer.Team and player.Team == localPlayer.Team then
+        return true
+    end
 end
 
 local PlayerData = {}
