@@ -257,7 +257,9 @@ function LimbExtender:bindInputToggle()
 	)
 end
 
-function LimbExtender:toggle()
+function LimbExtender:toggle(value)
+	if not self then return end
+	if value then self.running = value end
 	if self.running then self:terminate() self.running = false
 	else self:start() end
 end
