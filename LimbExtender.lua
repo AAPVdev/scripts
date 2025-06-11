@@ -278,8 +278,8 @@ function LimbExtender:makeHighlight()
 	return hi
 end
 
-limbExtenderData.CAU = limbExtenderData.CAU or RunService:IsStudio() and require(game:GetService("ReplicatedStorage"):WaitForChild("Modules"):WaitForChild("ContextActionUtility")) or loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/ContextActionUtility.lua"))
-limbExtenderData.Streamable = limbExtenderData.Streamable or RunService:IsStudio() and require(game:GetService("ReplicatedStorage"):WaitForChild("Modules"):WaitForChild("Streamable")) or loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/Streamable.lua"))
+limbExtenderData.CAU = limbExtenderData.CAU or RunService:IsStudio() and require(game:GetService("ReplicatedStorage"):WaitForChild("Modules"):WaitForChild("ContextActionUtility")) or loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/ContextActionUtility.lua"))()
+limbExtenderData.Streamable = limbExtenderData.Streamable or loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/Streamable.lua"))()
 
 local settings = Settings.new(rawSettings)
 settings.Streamable = limbExtenderData.Streamable
