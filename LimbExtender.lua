@@ -1,296 +1,313 @@
 local rawSettings = {
-	TOGGLE = "L",
-	TARGET_LIMB = "Head",
-	LIMB_SIZE = 15,
-	LIMB_TRANSPARENCY = 0.9,
-	LIMB_CAN_COLLIDE = false,
-	MOBILE_BUTTON = true,
-	LISTEN_FOR_INPUT = true,
-	TEAM_CHECK = true,
-	FORCEFIELD_CHECK = true,
-	RESET_LIMB_ON_DEATH2 = false,
-	USE_HIGHLIGHT = true,
-	DEPTH_MODE = "AlwaysOnTop",
-	HIGHLIGHT_FILL_COLOR = Color3.fromRGB(0,140,140),
-	HIGHLIGHT_FILL_TRANSPARENCY = 0.7,
-	HIGHLIGHT_OUTLINE_COLOR = Color3.fromRGB(255,255,255),
-	HIGHLIGHT_OUTLINE_TRANSPARENCY = 1,
+    TOGGLE = "L",
+    TARGET_LIMB = "HumanoidRootPart",
+    LIMB_SIZE = 15,
+    LIMB_TRANSPARENCY = 0.9,
+    LIMB_CAN_COLLIDE = false,
+    MOBILE_BUTTON = true,
+    LISTEN_FOR_INPUT = true,
+    TEAM_CHECK = true,
+    FORCEFIELD_CHECK = true,
+    RESET_LIMB_ON_DEATH2 = false,
+    USE_HIGHLIGHT = true,
+    DEPTH_MODE = "AlwaysOnTop",
+    HIGHLIGHT_FILL_COLOR = Color3.fromRGB(0,140,140),
+    HIGHLIGHT_FILL_TRANSPARENCY = 0.7,
+    HIGHLIGHT_OUTLINE_COLOR = Color3.fromRGB(255,255,255),
+    HIGHLIGHT_OUTLINE_TRANSPARENCY = 1,
 }
 
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
 local localPlayer = Players.LocalPlayer
 
-local global = RunService:IsStudio() and _G or getgenv()
+local limbExtenderData = getgenv().limbExtenderData or {}
+getgenv().limbExtenderData = limbExtenderData
 
-local limbExtenderData = global.limbExtenderData or {}
-global.limbExtenderData = limbExtenderData
-
-local Settings = {}
-Settings.__index = Settings
-function Settings.new(raw)
-	local self = setmetatable({ data = raw, onChange = nil }, Settings)
-	return self
+if limbExtenderData.terminateOldProcess then
+    limbExtenderData.terminateOldProcess("FullKill")
+    limbExtenderData.terminateOldProcess = nil
 end
 
-function Settings:__index(key)
-	if Settings[key] then return Settings[key] end
-	return self.data[key]
+limbExtenderData.running = limbExtenderData.running or false
+limbExtenderData.CAU = limbExtenderData.CAU or loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/ContextActionUtility.lua"))()
+limbExtenderData.Streamable = limbExtenderData.Streamable or loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/Streamable.lua"))()
+limbExtenderData.playerTable = limbExtenderData.playerTable or {}
+limbExtenderData.limbs = limbExtenderData.limbs or {}
+
+local Streamable = limbExtenderData.Streamable
+local CAU = limbExtenderData.CAU
+
+local function watchProperty(instance, prop, callback)
+    return instance:GetPropertyChangedSignal(prop):Connect(function()
+        callback(instance)
+    end)
 end
 
-function Settings:__newindex(key, value)
-	if self.data[key] ~= value then
-		self.data[key] = value
-		if self.onChange then self.onChange(key, value) end
-	end
+local function saveLimbProperties(limb)
+    limbExtenderData.limbs[limb] = {
+        OriginalSize = limb.Size,
+        OriginalTransparency = limb.Transparency,
+        OriginalCanCollide = limb.CanCollide,
+        OriginalMassless = limb.Massless,
+    }
 end
 
-local LimbData = {}
-LimbData.__index = LimbData
-function LimbData.new(limb, settings)
-	local self = setmetatable({ limb = limb, settings = settings, conns = {} }, LimbData)
-	self:save()
-	self:modify()
-	return self
+local function restoreLimbProperties(limb)
+    local p = limbExtenderData.limbs[limb]
+    if not p then return end
+    if p.SizeConnection then p.SizeConnection:Disconnect() end
+    if p.CollisionConnection then p.CollisionConnection:Disconnect() end
+    limb.Size = p.OriginalSize
+    limb.Transparency = p.OriginalTransparency
+    limb.CanCollide = p.OriginalCanCollide
+    limb.Massless = p.OriginalMassless
+    limbExtenderData.limbs[limb] = nil
 end
 
-function LimbData:save()
-	self.original = {
-		Size = self.limb.Size,
-		Transparency = self.limb.Transparency,
-		CanCollide = self.limb.CanCollide,
-		Massless = self.limb.Massless,
-	}
+local function modifyLimbProperties(limb)
+    saveLimbProperties(limb)
+    local entry = limbExtenderData.limbs[limb]
+    local newSize = Vector3.new(rawSettings.LIMB_SIZE, rawSettings.LIMB_SIZE, rawSettings.LIMB_SIZE)
+    local canCollide = rawSettings.LIMB_CAN_COLLIDE
+    entry.SizeConnection = watchProperty(limb, "Size", function(l) l.Size = newSize end)
+    entry.CollisionConnection = watchProperty(limb, "CanCollide", function(l) l.CanCollide = canCollide end)
+    limb.Size = newSize
+    limb.Transparency = rawSettings.LIMB_TRANSPARENCY
+    limb.CanCollide = canCollide
+    if rawSettings.TARGET_LIMB ~= "HumanoidRootPart" then
+        limb.Massless = true
+    end
 end
 
-function LimbData:modify()
-	local newSize = Vector3.new(self.settings.LIMB_SIZE, self.settings.LIMB_SIZE, self.settings.LIMB_SIZE)
-	table.insert(self.conns, self.limb:GetPropertyChangedSignal("Size"):Connect(function() self.limb.Size = newSize end))
-	table.insert(self.conns, self.limb:GetPropertyChangedSignal("CanCollide"):Connect(function() self.limb.CanCollide = self.settings.LIMB_CAN_COLLIDE end))
-	self.limb.Size = newSize
-	self.limb.Transparency = self.settings.LIMB_TRANSPARENCY
-	self.limb.CanCollide = self.settings.LIMB_CAN_COLLIDE
-	if self.settings.TARGET_LIMB ~= "HumanoidRootPart" then
-		self.limb.Massless = true
-	end
+local function spoofSize(part)
+    if limbExtenderData[rawSettings.TARGET_LIMB] then return end
+    limbExtenderData[rawSettings.TARGET_LIMB] = true
+    pcall(function()
+        local mt = getrawmetatable(game)
+        local saved = part.Size
+        setreadonly(mt, false)
+        local old = mt.__index
+        mt.__index = function(self, key)
+            if tostring(self) == rawSettings.TARGET_LIMB and key == "Size" then
+                return saved
+            end
+            return old(self, key)
+        end
+        setreadonly(mt, true)
+    end)
 end
 
-function LimbData:restore()
-	for _, conn in ipairs(self.conns) do if typeof(conn) == "RBXScriptConnection" then conn:Disconnect() end end
-	local o = self.original
-	self.limb.Size = o.Size
-	self.limb.Transparency = o.Transparency
-	self.limb.CanCollide = o.CanCollide
-	self.limb.Massless = o.Massless
+local function indexBypass()
+    if limbExtenderData.indexBypass then return end
+    limbExtenderData.indexBypass = true
+    pcall(function()
+        for _, obj in ipairs(getgc(true)) do
+            local idx = rawget(obj, "indexInstance")
+            if typeof(idx) == "table" and idx[1] == "kick" then
+                for _, pair in pairs(obj) do
+                    pair[2] = function() return false end
+                end
+                break
+            end
+        end
+    end)
+end
+
+local function makeHighlight()
+    local hiFolder = Players:FindFirstChild("Limb Extender Highlights Folder") or Instance.new("Folder")
+    local hi = Instance.new("Highlight")
+    hi.Name = "LimbHighlight"
+    hi.DepthMode = Enum.HighlightDepthMode[rawSettings.DEPTH_MODE]
+    hi.FillColor = rawSettings.HIGHLIGHT_FILL_COLOR
+    hi.FillTransparency = rawSettings.HIGHLIGHT_FILL_TRANSPARENCY
+    hi.OutlineColor = rawSettings.HIGHLIGHT_OUTLINE_COLOR
+    hi.OutlineTransparency = rawSettings.HIGHLIGHT_OUTLINE_TRANSPARENCY
+    hi.Enabled = true
+    hiFolder.Parent = Players
+    hiFolder.Name = "Limb Extender Highlights Folder"
+    hi.Parent = hiFolder
+    return hi
+end
+
+local function isTeam(player)
+    if rawSettings.TEAM_CHECK and localPlayer.Team and player.Team == localPlayer.Team then
+        return true
+    end
 end
 
 local PlayerData = {}
 PlayerData.__index = PlayerData
-function PlayerData.new(player, extender)
-	local self = setmetatable({
-		player = player,
-		extender = extender,
-		conns = {},
-		highlight = nil,
-		streamable = nil,
-	}, PlayerData)
-	table.insert(self.conns, player.CharacterAdded:Connect(function(c) self:onCharacter(c) end))
-	local char = player.Character or workspace:FindFirstChild(player.Name)
-	self:onCharacter(char)
-	return self
-end
 
-function PlayerData:onCharacter(char)
-	if not char then return end
-	if self.extender.settings.FORCEFIELD_CHECK and char:FindFirstChildOfClass("ForceField") then
-		table.insert(self.conns, char.ChildRemoved:Once(function(child)
-			if child:IsA("ForceField") then self:onCharacter(char) end
-		end))
-		return
-	end
-	self:setupCharacter(char)
+function PlayerData.new(player)
+    local self = setmetatable({
+        player = player,
+        conns = {},
+        highlight = nil,
+    }, PlayerData)
+    table.insert(self.conns, player.CharacterAdded:Connect(function(c) self:onCharacter(c) end))
+
+    local character = player.Character or workspace:FindFirstChild(player.Name)
+    self:onCharacter(character)
+    return self
 end
 
 function PlayerData:setupCharacter(char)
+    table.insert(self.conns, self.player:GetPropertyChangedSignal("Team"):Once(function()
+        self:Destroy()
+        limbExtenderData.playerTable[self.player.Name] = PlayerData.new(self.player)
+    end))
 
-	table.insert(self.conns, self.player:GetPropertyChangedSignal("Team"):Once(function()
-		self:Destroy()
-		self.extender:onPlayerAdded(self.player)
-	end))
+    if isTeam(self.player) then return end
 
-	task.spawn(function()
-		local humanoid = char:WaitForChild("Humanoid", 1)
-		if not humanoid or humanoid.Health <= 0 then return end
+    task.spawn(function()
+        local humanoid = char:WaitForChild("Humanoid", 1)
+        if not humanoid or humanoid.Health <= 0 then return end
 
-		if self.streamable then self.streamable:Destroy() end
-		self.streamable = self.extender.settings.Streamable.new(char, self.extender.settings.TARGET_LIMB)
-		self.streamable:Observe(function(part, trove)
+        if self.PartStreamable then self.PartStreamable:Destroy() end
+        self.PartStreamable = Streamable.new(char, rawSettings.TARGET_LIMB)
 
-			self.extender:spoofSize(part)
+        self.PartStreamable:Observe(function(part, trove)
+            spoofSize(part)
+            modifyLimbProperties(part)
 
-			local ld = LimbData.new(part, self.extender.settings)
-			self.extender.limbs[part] = ld
+            if rawSettings.USE_HIGHLIGHT then
+                if not self.highlight then
+                    self.highlight = makeHighlight()
+                end
+                self.highlight.Adornee = part
+            end
 
-			if self.extender.settings.USE_HIGHLIGHT then
-				if not self.highlight then self.highlight = self.extender:makeHighlight() end
-				self.highlight.Adornee = part
-			end
+            table.insert(self.conns, self.player.CharacterRemoving:Once(function()
+                restoreLimbProperties(part)
+            end))
 
-			table.insert(self.conns, self.player.CharacterRemoving:Once(function()
-				ld:restore()
-			end))
+            local deathEvent = rawSettings.RESET_LIMB_ON_DEATH2 and humanoid.HealthChanged or humanoid.Died
+            table.insert(self.conns, deathEvent:Connect(function(hp)
+                if hp and hp <= 0 then restoreLimbProperties(part) end
+            end))
 
-			if self.extender.settings.RESET_LIMB_ON_DEATH2 then
-				table.insert(self.conns, humanoid.HealthChanged:Connect(function(h) if h <= 0 then ld:restore() end end))
-			else
-				table.insert(self.conns, humanoid.Died:Connect(function() ld:restore() end))
-			end
+            trove:Add(function() restoreLimbProperties(part) end)
+        end)
+    end)
+end
 
-			trove:Add(function() ld:restore() end)
-		end)
-	end)
+function PlayerData:onCharacter(char)
+    if not char then return end
+    if rawSettings.FORCEFIELD_CHECK and char:FindFirstChildOfClass("ForceField") then
+        table.insert(self.conns, char.ChildRemoved:Once(function(child)
+            if child:IsA("ForceField") then self:setupCharacter(char) end
+        end))
+        return
+    end
+    self:setupCharacter(char)
 end
 
 function PlayerData:Destroy()
-	for _, c in ipairs(self.conns) do if typeof(c) == "RBXScriptConnection" then c:Disconnect() end end
-	if self.highlight then self.highlight:Destroy() end
-	if self.streamable then self.streamable:Destroy() end
+    for _, c in ipairs(self.conns) do
+        if typeof(c) == "RBXScriptConnection" then c:Disconnect() end
+    end
+    self.conns = nil
+    if self.highlight then
+        self.highlight:Destroy()
+        self.highlight = nil
+    end
+    if self.PartStreamable then
+        self.PartStreamable:Destroy()
+        self.PartStreamable = nil
+    end
 end
 
-local LimbExtender = {}
-LimbExtender.__index = LimbExtender
-function LimbExtender.new(settings)
-	local self = setmetatable({
-		settings = settings,
-		players = {},
-		limbs = {},
-		running = false,
-	}, LimbExtender)
-	settings.onChange = function() self:restart() end
-	return self
+local function onPlayerAdded(player)
+    limbExtenderData.playerTable[player.Name] = PlayerData.new(player)
 end
 
-function LimbExtender:start()
-	if self.running then return end
-	self.running = true
-	self:terminate()
-	self:indexBypass()
-	self:bindInputToggle()
-	self:initPlayers()
-	self.playerAddedConn = Players.PlayerAdded:Connect(function(p) self:onPlayerAdded(p) end)
-	self.playerRemovingConn = Players.PlayerRemoving:Connect(function(p) self:onPlayerRemoving(p) end)
+local function onPlayerRemoving(player)
+    local pd = limbExtenderData.playerTable[player.Name]
+    if pd then
+        pd:Destroy()
+        limbExtenderData.playerTable[player.Name] = nil
+    end
 end
 
-function LimbExtender:terminate(full)
-	if self.playerAddedConn then self.playerAddedConn:Disconnect() end
-	if self.playerRemovingConn then self.playerRemovingConn:Disconnect() end
+local function terminate(reason)
+    for k,v in pairs(limbExtenderData) do
+        if typeof(v) == "RBXScriptConnection" then
+            v:Disconnect()
+            limbExtenderData[k] = nil
+        end
+    end
 
-	for _, pd in pairs(self.players) do pd:Destroy() end
-	self.players = {}
+    for _, pd in pairs(limbExtenderData.playerTable) do
+        pd:Destroy()
+    end
 
-	for limb, ld in pairs(self.limbs) do ld:restore() end
-	self.limbs = {}
+    limbExtenderData.playerTable = {}
+    for limb in pairs(limbExtenderData.limbs) do
+        restoreLimbProperties(limb)
+    end
 
-	if full or not self.settings.LISTEN_FOR_INPUT then
-		self.settings.CAU:UnbindAction("LimbExtenderToggle")
-	elseif self.settings.MOBILE_BUTTON then
-		self.settings.CAU:SetTitle("LimbExtenderToggle", "On")
-	end
+    if reason == "FullKill" or not rawSettings.LISTEN_FOR_INPUT then
+        limbExtenderData.CAU:UnbindAction("LimbExtenderToggle")
+    elseif rawSettings.MOBILE_BUTTON then
+        CAU:SetTitle("LimbExtenderToggle", "On")
+    end
 end
 
-function LimbExtender:restart()
-	if self.running then self:terminate() self:start() end
+local function initiate()
+    terminate()
+    if not limbExtenderData.running then return end
+
+    indexBypass()
+
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= localPlayer then onPlayerAdded(p) end
+    end
+
+    limbExtenderData.TeamChanged = localPlayer:GetPropertyChangedSignal("Team"):Once(initiate)
+    limbExtenderData.PlayerAdded = Players.PlayerAdded:Connect(onPlayerAdded)
+    limbExtenderData.PlayerRemoving = Players.PlayerRemoving:Connect(onPlayerRemoving)
+	
+    if rawSettings.MOBILE_BUTTON and rawSettings.LISTEN_FOR_INPUT then
+        CAU:SetTitle("LimbExtenderToggle", "Off")
+    end
 end
 
-function LimbExtender:initPlayers()
-	for _, p in ipairs(Players:GetPlayers()) do 
-		if p ~= localPlayer then self:onPlayerAdded(p) end
-	end
+function rawSettings.toggleState(state)
+    limbExtenderData.running = (state == nil and not limbExtenderData.running) or state
+    if limbExtenderData.running then
+        initiate()
+    else
+        terminate()
+    end
 end
 
-function LimbExtender:onPlayerAdded(player)
-	self.players[player.Name] = PlayerData.new(player, self)
+if rawSettings.LISTEN_FOR_INPUT then
+    limbExtenderData.InputBind = CAU:BindAction(
+        "LimbExtenderToggle",
+        function(_, inputState)
+            if inputState == Enum.UserInputState.Begin then
+                rawSettings.toggleState()
+            end
+        end,
+        rawSettings.MOBILE_BUTTON,
+        Enum.KeyCode[rawSettings.TOGGLE]
+    )
 end
 
-function LimbExtender:onPlayerRemoving(player)
-	local pd = self.players[player.Name]
-	if pd then pd:Destroy() self.players[player.Name] = nil end
+limbExtenderData.terminateOldProcess = terminate
+
+if limbExtenderData.running then
+    initiate()
+elseif rawSettings.MOBILE_BUTTON and rawSettings.LISTEN_FOR_INPUT then
+    limbExtenderData.CAU:SetTitle("LimbExtenderToggle", "On")
 end
 
-function LimbExtender:indexBypass()
-	if limbExtenderData.indexBypass then return end
-	limbExtenderData.indexBypass = true
-	pcall(function()
-		for _, obj in ipairs(getgc(true)) do
-			local idx = rawget(obj, "indexInstance")
-			if typeof(idx) == "table" and idx[1] == "kick" then
-				for _, pair in pairs(obj) do pair[2] = function() return false end end
-				break
-			end
-		end
-	end)
-end
-
-function LimbExtender:spoofSize(part)
-	if limbExtenderData[self.settings.TARGET_LIMB] then return end
-	limbExtenderData[self.settings.TARGET_LIMB] = true
-	pcall(function()
-		local mt = getrawmetatable(game)
-		local saved = part.Size
-		setreadonly(mt, false)
-		local old = mt.__index
-		mt.__index = function(selfObj, key)
-			if tostring(selfObj) == self.settings.TARGET_LIMB and key == "Size" then return saved end
-			return old(selfObj, key)
-		end
-		setreadonly(mt, true)
-	end)
-end
-
-function LimbExtender:bindInputToggle()
-	if not self.settings.LISTEN_FOR_INPUT then return end
-	self.settings.InputBind = self.settings.CAU:BindAction(
-		"LimbExtenderToggle",
-		function(_, state) if state == Enum.UserInputState.Begin then self:toggle() end end,
-		self.settings.MOBILE_BUTTON,
-		Enum.KeyCode[self.settings.TOGGLE]
-	)
-end
-
-function LimbExtender:toggle(value)
-	if not self then return end
-	if value then self.running = value end
-	if self.running then self:terminate() self.running = false
-	else self:start() end
-end
-
-function LimbExtender:makeHighlight()
-	local hiFolder = Players:FindFirstChild("Limb Extender Highlights Folder") or Instance.new("Folder")
-	hiFolder.Name = "Limb Extender Highlights Folder"
-	hiFolder.Parent = Players
-	local hi = Instance.new("Highlight")
-	hi.Name = "LimbHighlight"
-	hi.DepthMode = Enum.HighlightDepthMode[self.settings.DEPTH_MODE]
-	hi.FillColor = self.settings.HIGHLIGHT_FILL_COLOR
-	hi.FillTransparency = self.settings.HIGHLIGHT_FILL_TRANSPARENCY
-	hi.OutlineColor = self.settings.HIGHLIGHT_OUTLINE_COLOR
-	hi.OutlineTransparency = self.settings.HIGHLIGHT_OUTLINE_TRANSPARENCY
-	hi.Parent = hiFolder
-	hi.Enabled = true
-	return hi
-end
-
-limbExtenderData.CAU = limbExtenderData.CAU or RunService:IsStudio() and require(game:GetService("ReplicatedStorage"):WaitForChild("Modules"):WaitForChild("ContextActionUtility")) or loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/ContextActionUtility.lua"))()
-limbExtenderData.Streamable = limbExtenderData.Streamable or loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/Streamable.lua"))()
-
-local settings = Settings.new(rawSettings)
-settings.Streamable = limbExtenderData.Streamable
-settings.CAU = limbExtenderData.CAU
-
-local extender = LimbExtender.new(settings)
-if rawSettings.LISTEN_FOR_INPUT then extender:bindInputToggle() end
-
-limbExtenderData.terminateOldProcess = function(reason) extender:terminate(reason == "FullKill") end
-if rawSettings.LISTEN_FOR_INPUT and extender.running then extender:start() end
-
-return extender
+return setmetatable({}, {
+    __index = rawSettings,
+    __newindex = function(_, key, value)
+        if rawSettings[key] ~= value then
+            rawSettings[key] = value
+            initiate()
+        end
+    end,
+})
