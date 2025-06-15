@@ -141,6 +141,7 @@ function PlayerData.new(player)
         player = player,
         conns = {},
         highlight = nil,
+	PartStreamable = nil,
     }, PlayerData)
     table.insert(self.conns, player.CharacterAdded:Connect(function(c) self:onCharacter(c) end))
 
@@ -157,36 +158,34 @@ function PlayerData:setupCharacter(char)
 
     if isTeam(self.player) then return end
 
-    task.spawn(function()
-        local humanoid = char:WaitForChild("Humanoid", 1)
-        if not humanoid or humanoid.Health <= 0 then return end
-
-        if self.PartStreamable then self.PartStreamable:Destroy() end
-        self.PartStreamable = Streamable.new(char, rawSettings.TARGET_LIMB)
-
-        self.PartStreamable:Observe(function(part, trove)
-            spoofSize(part)
-            modifyLimbProperties(part)
-
-            if rawSettings.USE_HIGHLIGHT then
-                if not self.highlight then
-                    self.highlight = makeHighlight()
-                end
-                self.highlight.Adornee = part
-            end
-
-            table.insert(self.conns, self.player.CharacterRemoving:Once(function()
-                restoreLimbProperties(part)
-            end))
-
-            local deathEvent = rawSettings.RESET_LIMB_ON_DEATH2 and humanoid.HealthChanged or humanoid.Died
-            table.insert(self.conns, deathEvent:Connect(function(hp)
-                if hp and hp <= 0 then restoreLimbProperties(part) end
-            end))
-
-            trove:Add(function() restoreLimbProperties(part) end)
-        end)
-    end)
+	local humanoid = char:WaitForChild("Humanoid", 0.3)
+	if not humanoid or humanoid.Health <= 0 then return end
+	
+	if self.PartStreamable then self.PartStreamable:Destroy() end
+	self.PartStreamable = Streamable.new(char, rawSettings.TARGET_LIMB)
+	
+	self.PartStreamable:Observe(function(part, trove)
+	    spoofSize(part)
+	    modifyLimbProperties(part)
+	
+	    if rawSettings.USE_HIGHLIGHT then
+		if not self.highlight then
+		    self.highlight = makeHighlight()
+		end
+		self.highlight.Adornee = part
+	    end
+	
+	    table.insert(self.conns, self.player.CharacterRemoving:Once(function()
+		restoreLimbProperties(part)
+	    end))
+	
+	    local deathEvent = rawSettings.RESET_LIMB_ON_DEATH2 and humanoid.HealthChanged or humanoid.Died
+	    table.insert(self.conns, deathEvent:Connect(function(hp)
+		if hp and hp <= 0 then restoreLimbProperties(part) end
+	    end))
+	
+	    trove:Add(function() restoreLimbProperties(part) end)
+	end)
 end
 
 function PlayerData:onCharacter(char)
