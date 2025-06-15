@@ -130,7 +130,7 @@ local function makeHighlight()
 end
 
 local function isTeam(player)
-	return rawSettings.TEAM_CHECK and localPlayer.Team == nil or player.Team ~= LocalPlayer.Team)) or not rawSettings.TEAM_CHECK
+	return (rawSettings.TEAM_CHECK and (localPlayer.Team == nil or player.Team ~= localPlayer.Team)) or not rawSettings.TEAM_CHECK
 end
 
 local PlayerData = {}
