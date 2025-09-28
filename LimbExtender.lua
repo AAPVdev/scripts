@@ -69,8 +69,10 @@ local function modifyLimbProperties(limb)
     local entry = limbExtenderData.limbs[limb]
     local newSize = Vector3.new(rawSettings.LIMB_SIZE, rawSettings.LIMB_SIZE, rawSettings.LIMB_SIZE)
     local canCollide = rawSettings.LIMB_CAN_COLLIDE
+
     entry.SizeConnection = watchProperty(limb, "Size", function(l) l.Size = newSize end)
     entry.CollisionConnection = watchProperty(limb, "CanCollide", function(l) l.CanCollide = canCollide end)
+
     limb.Size = newSize
     limb.Transparency = rawSettings.LIMB_TRANSPARENCY
     limb.CanCollide = canCollide
@@ -115,6 +117,9 @@ end
 
 local function makeHighlight()
     local hiFolder = Players:FindFirstChild("Limb Extender Highlights Folder") or Instance.new("Folder")
+    hiFolder.Name = "Limb Extender Highlights Folder"
+    hiFolder.Parent = Players
+
     local hi = Instance.new("Highlight")
     hi.Name = "LimbHighlight"
     hi.DepthMode = Enum.HighlightDepthMode[rawSettings.DEPTH_MODE]
@@ -123,8 +128,6 @@ local function makeHighlight()
     hi.OutlineColor = rawSettings.HIGHLIGHT_OUTLINE_COLOR
     hi.OutlineTransparency = rawSettings.HIGHLIGHT_OUTLINE_TRANSPARENCY
     hi.Enabled = true
-    hiFolder.Parent = Players
-    hiFolder.Name = "Limb Extender Highlights Folder"
     hi.Parent = hiFolder
     return hi
 end
@@ -141,7 +144,7 @@ function PlayerData.new(player)
         player = player,
         conns = {},
         highlight = nil,
-	PartStreamable = nil,
+        PartStreamable = nil,
     }, PlayerData)
     table.insert(self.conns, player.CharacterAdded:Connect(function(c) self:onCharacter(c) end))
 
@@ -151,50 +154,55 @@ function PlayerData.new(player)
 end
 
 function PlayerData:setupCharacter(char)
-    table.insert(self.conns, self.player:GetPropertyChangedSignal("Team"):Once(function()
+    table.insert(self.conns, self.player:GetPropertyChangedSignal("Team"):Connect(function()
         self:Destroy()
         limbExtenderData.playerTable[self.player.Name] = PlayerData.new(self.player)
     end))
 
     if isTeam(self.player) then return end
 
-	local humanoid = char:WaitForChild("Humanoid", 0.3)
-	if not humanoid or humanoid.Health <= 0 then return end
-	
-	if self.PartStreamable then self.PartStreamable:Destroy() end
-	self.PartStreamable = Streamable.new(char, rawSettings.TARGET_LIMB)
-	
-	self.PartStreamable:Observe(function(part, trove)
-	    spoofSize(part)
-	    modifyLimbProperties(part)
-	
-	    if rawSettings.USE_HIGHLIGHT then
-		if not self.highlight then
-		    self.highlight = makeHighlight()
-		end
-		self.highlight.Adornee = part
-	    end
-	
-	    table.insert(self.conns, self.player.CharacterRemoving:Once(function()
-		restoreLimbProperties(part)
-	    end))
-	
-	    local deathEvent = rawSettings.RESET_LIMB_ON_DEATH2 and humanoid.HealthChanged or humanoid.Died
-	    table.insert(self.conns, deathEvent:Connect(function(hp)
-		if hp and hp <= 0 then restoreLimbProperties(part) end
-	    end))
-	
-	    trove:Add(function() restoreLimbProperties(part) end)
-	end)
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not humanoid or humanoid.Health <= 0 then return end
+
+    -- cleanup old
+    if self.PartStreamable then self.PartStreamable:Destroy() end
+    self.PartStreamable = Streamable.new(char, rawSettings.TARGET_LIMB)
+
+    self.PartStreamable:Observe(function(part, trove)
+        spoofSize(part)
+        modifyLimbProperties(part)
+
+        if rawSettings.USE_HIGHLIGHT then
+            if not self.highlight then
+                self.highlight = makeHighlight()
+            end
+            self.highlight.Adornee = part
+        end
+
+        table.insert(self.conns, self.player.CharacterRemoving:Connect(function()
+            restoreLimbProperties(part)
+        end))
+
+        local deathEvent = rawSettings.RESET_LIMB_ON_DEATH2 and humanoid.HealthChanged or humanoid.Died
+        table.insert(self.conns, deathEvent:Connect(function(hp)
+            if not hp or hp <= 0 then restoreLimbProperties(part) end
+        end))
+
+        trove:Add(function() restoreLimbProperties(part) end)
+    end)
 end
 
 function PlayerData:onCharacter(char)
     if not char then return end
-    if rawSettings.FORCEFIELD_CHECK and char:FindFirstChildOfClass("ForceField") then
-        table.insert(self.conns, char.ChildRemoved:Once(function(child)
-            if child:IsA("ForceField") then self:setupCharacter(char) end
-        end))
-        return
+    if rawSettings.FORCEFIELD_CHECK then
+        local ff = char:FindFirstChildOfClass("ForceField")
+        if ff then
+
+            table.insert(self.conns, ff.Destroying:Connect(function()
+                self:setupCharacter(char)
+            end))
+            return
+        end
     end
     self:setupCharacter(char)
 end
@@ -203,7 +211,8 @@ function PlayerData:Destroy()
     for _, c in ipairs(self.conns) do
         if typeof(c) == "RBXScriptConnection" then c:Disconnect() end
     end
-    self.conns = nil
+    self.conns = {}
+
     if self.highlight then
         self.highlight:Destroy()
         self.highlight = nil
@@ -215,7 +224,9 @@ function PlayerData:Destroy()
 end
 
 local function onPlayerAdded(player)
-    limbExtenderData.playerTable[player.Name] = PlayerData.new(player)
+    if player ~= localPlayer then
+        limbExtenderData.playerTable[player.Name] = PlayerData.new(player)
+    end
 end
 
 local function onPlayerRemoving(player)
@@ -237,8 +248,8 @@ local function terminate(reason)
     for _, pd in pairs(limbExtenderData.playerTable) do
         pd:Destroy()
     end
-
     limbExtenderData.playerTable = {}
+
     for limb in pairs(limbExtenderData.limbs) do
         restoreLimbProperties(limb)
     end
@@ -257,13 +268,13 @@ local function initiate()
     indexBypass()
 
     for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= localPlayer then onPlayerAdded(p) end
+        onPlayerAdded(p)
     end
 
-    limbExtenderData.TeamChanged = localPlayer:GetPropertyChangedSignal("Team"):Once(initiate)
+    limbExtenderData.TeamChanged = localPlayer:GetPropertyChangedSignal("Team"):Connect(initiate)
     limbExtenderData.PlayerAdded = Players.PlayerAdded:Connect(onPlayerAdded)
     limbExtenderData.PlayerRemoving = Players.PlayerRemoving:Connect(onPlayerRemoving)
-	
+
     if rawSettings.MOBILE_BUTTON and rawSettings.LISTEN_FOR_INPUT then
         CAU:SetTitle("LimbExtenderToggle", "Off")
     end
