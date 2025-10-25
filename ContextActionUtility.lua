@@ -15,9 +15,9 @@ local JumpButton
 
 local isMobile = UserInputService.TouchEnabled
 if isMobile then
-	TouchGui = PlayerGui:WaitForChild("TouchGui")
-	TouchControlFrame = TouchGui:WaitForChild("TouchControlFrame")
-	JumpButton = TouchControlFrame:WaitForChild("JumpButton")
+	TouchGui = PlayerGui:WaitForChild("TouchGui", 0.2)
+	TouchControlFrame = TouchGui:WaitForChild("TouchControlFrame", 0.2)
+	JumpButton = TouchControlFrame:WaitForChild("JumpButton", 0.2)
 end
 
 local Buttons = {}
