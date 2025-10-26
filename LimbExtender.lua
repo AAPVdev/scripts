@@ -280,8 +280,8 @@ end
 
 function PlayerData:onCharacter(char)
 	if not char then return end
-	if rawSettings.FORCEFIELD_CHECK then
-        task.spawn(function()
+	task.spawn(function()
+		if rawSettings.FORCEFIELD_CHECK then
             local ff = char:WaitForChild("ForceField", .3)
             if ff then
                 self.trove:Add(ff.Destroying:Connect(function()
@@ -289,9 +289,9 @@ function PlayerData:onCharacter(char)
                 end))
                 return
             end
-        end)
-	end
+		end
     self:setupCharacter(char)
+	end)
 end
 
 function PlayerData:Destroy()
