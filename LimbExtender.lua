@@ -224,8 +224,8 @@ end
 
 function PlayerData:setupCharacter(char)
 	self.trove:Add(self.player:GetPropertyChangedSignal("Team"):Connect(function()
-		self:Destroy()
 		limbExtenderData.playerTable[self.player.Name] = PlayerData.new(self.player)
+		self:Destroy()
 	end))
 
 	if isTeam(self.player) then return end
