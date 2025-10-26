@@ -222,6 +222,9 @@ function PlayerData.new(player)
 end
 
 function PlayerData:setupCharacter(char)
+	if not self.trove then
+		self.trove = Trove.new()
+	end
 	self.trove:Add(self.player:GetPropertyChangedSignal("Team"):Connect(function()
 		self:Destroy()
 		limbExtenderData.playerTable[self.player.Name] = PlayerData.new(self.player)
