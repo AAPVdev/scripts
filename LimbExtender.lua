@@ -134,7 +134,7 @@ local function restoreLimbProperties(limb, partTrove)
 	local p = limbExtenderData.limbs[limb]
 	if not p then return end
 	
-	partTrove:Destroy()
+	partTrove:Clean()
 	
 	pcall(function()
 		limb.Size = p.OriginalSize
