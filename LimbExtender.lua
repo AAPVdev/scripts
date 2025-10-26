@@ -294,8 +294,9 @@ function PlayerData:onCharacter(char)
 			end))
 			return
 		end
+	else
+		self:setupCharacter(char)
 	end
-	self:setupCharacter(char)
 end
 
 function PlayerData:Destroy()
