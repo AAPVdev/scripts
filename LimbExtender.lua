@@ -53,7 +53,7 @@ if limbExtenderData.terminateOldProcess then
 	limbExtenderData.terminateOldProcess = nil
 else
 	indexBypass()
-	limbExtenderData.HighlightPool = (RS:WaitForChild("HighlightPool", 0.05) and require(RS.HighlightPool)) or loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/modules/refs/heads/main/HighlightPool.lua"))
+	limbExtenderData.HighlightPool = (RS:WaitForChild("HighlightPool", 0.05) and require(RS.HighlightPool)) or loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/modules/refs/heads/main/HighlightPool.lua"))()
 	limbExtenderData.HighlightPool = limbExtenderData.HighlightPool.new()
 end
 
