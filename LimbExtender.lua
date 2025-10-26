@@ -223,7 +223,6 @@ function PlayerData.new(player)
 end
 
 function PlayerData:setupCharacter(char)
-
 	self.trove:Add(self.player:GetPropertyChangedSignal("Team"):Connect(function()
 		self:Destroy()
 		limbExtenderData.playerTable[self.player.Name] = PlayerData.new(self.player)
@@ -231,16 +230,15 @@ function PlayerData:setupCharacter(char)
 
 	if isTeam(self.player) then return end
 
+    print(self.player.Name, self.player.DisplayName)
+
 	local humanoid = char and char:FindFirstChildOfClass("Humanoid")
 	if not humanoid or humanoid.Health <= 0 then return end
 
-
 	if self.PartStreamable then
-
 		self.PartStreamable:Destroy()
 		self.PartStreamable = nil
 	end
-
 
 	self.PartStreamable = Streamable.new(char, rawSettings.TARGET_LIMB)
 	self.trove:Add(self.PartStreamable)
@@ -249,7 +247,6 @@ function PlayerData:setupCharacter(char)
 		spoofSize(part)
 		modifyLimbProperties(part, partTrove)
 
-
 		if rawSettings.USE_HIGHLIGHT then
 			if not self.highlight then
 				self.highlight = getHighlight()
@@ -257,7 +254,6 @@ function PlayerData:setupCharacter(char)
 			self.highlight.Adornee = part
 			self.highlight.Parent = self.player
 		end
-
 
 		partTrove:Add(self.player.CharacterRemoving:Connect(function()
 			restoreLimbProperties(part, partTrove)
@@ -285,13 +281,15 @@ end
 function PlayerData:onCharacter(char)
 	if not char then return end
 	if rawSettings.FORCEFIELD_CHECK then
-		local ff = char:FindFirstChildOfClass("ForceField")
-		if ff then
-			self.trove:Add(ff.Destroying:Connect(function()
-				self:setupCharacter(char)
-			end))
-            return
-		end
+        task.spawn(function()
+            local ff = char:WaitForChild("ForceField", .3)
+            if ff then
+                self.trove:Add(ff.Destroying:Connect(function()
+                    self:setupCharacter(char)
+                end))
+                return
+            end
+        end)
 	end
     self:setupCharacter(char)
 end
