@@ -7,7 +7,7 @@ end
 
 local rawSettings = {
 	TOGGLE = "L",
-	TARGET_LIMB = "Head",
+	TARGET_LIMB = "HumanoidRootPart",
 	LIMB_SIZE = 15,
 	LIMB_TRANSPARENCY = 0.9,
 	LIMB_CAN_COLLIDE = false,
@@ -146,7 +146,6 @@ local function restoreLimbProperties(limb, partTrove)
 end
 
 local function modifyLimbProperties(limb, partTrove)
-
 	saveLimbProperties(limb)
 	local newSize = Vector3.new(rawSettings.LIMB_SIZE, rawSettings.LIMB_SIZE, rawSettings.LIMB_SIZE)
 	local canCollide = rawSettings.LIMB_CAN_COLLIDE
@@ -246,7 +245,6 @@ function PlayerData:setupCharacter(char)
 	self.PartStreamable = Streamable.new(char, rawSettings.TARGET_LIMB)
 	self.trove:Add(self.PartStreamable)
 
-
 	self.PartStreamable:Observe(function(part, partTrove)
 		spoofSize(part)
 		modifyLimbProperties(part, partTrove)
@@ -292,11 +290,10 @@ function PlayerData:onCharacter(char)
 			self.trove:Add(ff.Destroying:Connect(function()
 				self:setupCharacter(char)
 			end))
-			return
+            return
 		end
-	else
-		self:setupCharacter(char)
 	end
+    self:setupCharacter(char)
 end
 
 function PlayerData:Destroy()
@@ -304,7 +301,6 @@ function PlayerData:Destroy()
 		self.trove:Destroy()
 		self.trove = nil
 	end
-
 
 	if self.highlight then
 		pcall(function() HighlightPool:Return(self.highlight) end)
