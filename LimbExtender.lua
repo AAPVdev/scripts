@@ -214,9 +214,6 @@ function PlayerData.new(player)
 		PartStreamable = nil,
 	}, PlayerData)
 
-
-	print(self.trove)
-
 	self.trove:Add(player.CharacterAdded:Connect(function(c) self:onCharacter(c) end))
 
 	local character = player.Character or workspace:FindFirstChild(player.Name)
