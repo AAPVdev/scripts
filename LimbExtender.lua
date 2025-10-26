@@ -230,8 +230,6 @@ function PlayerData:setupCharacter(char)
 
 	if isTeam(self.player) then return end
 
-    print(self.player.Name, self.player.DisplayName)
-
 	local humanoid = char and char:FindFirstChildOfClass("Humanoid")
 	if not humanoid or humanoid.Health <= 0 then return end
 
