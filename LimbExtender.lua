@@ -133,9 +133,9 @@ end
 local function restoreLimbProperties(limb, partTrove)
 	local p = limbExtenderData.limbs[limb]
 	if not p then return end
-	
+
 	partTrove:Clean()
-	
+
 	pcall(function()
 		limb.Size = p.OriginalSize
 		limb.Transparency = p.OriginalTransparency
@@ -214,7 +214,6 @@ function PlayerData.new(player)
 		PartStreamable = nil,
 	}, PlayerData)
 
-
 	self.trove:Add(player.CharacterAdded:Connect(function(c) self:onCharacter(c) end))
 
 	local character = player.Character or workspace:FindFirstChild(player.Name)
@@ -280,15 +279,15 @@ function PlayerData:onCharacter(char)
 	if not char then return end
 	task.spawn(function()
 		if rawSettings.FORCEFIELD_CHECK then
-            local ff = char:WaitForChild("ForceField", .3)
-            if ff then
-                self.trove:Add(ff.Destroying:Connect(function()
-                    self:setupCharacter(char)
-                end))
-                return
-            end
+			local ff = char:WaitForChild("ForceField", .3)
+			if ff then
+				self.trove:Add(ff.Destroying:Connect(function()
+					self:setupCharacter(char)
+				end))
+				return
+			end
 		end
-    	self:setupCharacter(char)
+		self:setupCharacter(char)
 	end)
 end
 
