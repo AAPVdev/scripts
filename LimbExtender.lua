@@ -195,7 +195,7 @@ end
 function PlayerData:onCharacter(char)
     if not char then return end
     local con
-    con = task.spawn(function)
+    con = task.spawn(function()
         if rawSettings.FORCEFIELD_CHECK then
             local con2
             local ff = char:WaitForChild("ForceField", 0.2)
