@@ -29,8 +29,8 @@ if limbExtenderData.terminateOldProcess then
 end
 
 limbExtenderData.running = limbExtenderData.running or false
-limbExtenderData.CAU = limbExtenderData.CAU or loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/ContextActionUtility.lua"))()
-limbExtenderData.Streamable = limbExtenderData.Streamable or loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/Streamable.lua"))()
+limbExtenderData.CAU = limbExtenderData.CAU or loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/modules/refs/heads/main/ContextActionUtility.lua"))()
+limbExtenderData.Streamable = limbExtenderData.Streamable or loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/modules/refs/heads/main/Streamable.lua"))()
 limbExtenderData.playerTable = limbExtenderData.playerTable or {}
 limbExtenderData.limbs = limbExtenderData.limbs or {}
 
@@ -193,24 +193,34 @@ function PlayerData:setupCharacter(char)
 end
 
 function PlayerData:onCharacter(char)
-    if not char then return end
-    local con
-    con = task.spawn(function()
-        if rawSettings.FORCEFIELD_CHECK then
-            local con2
-            local ff = char:WaitForChild("ForceField", 0.2)
-            if ff then
-                con2 = ff.Destroying:Connect(function()
-                    self:setupCharacter(char)
-                end)
-                con:Disconnect()
-                con2:Disconnect()
-                return
-            end
-        end
-        self:setupCharacter(char)
-        con:Disconnect()
-    end)
+	if not char then return end
+
+	if self._charDelay then
+		pcall(function() task.cancel(self._charDelay) end)
+		self._charDelay = nil
+	end
+
+	self._charDelay = task.delay(0.25, function()
+		if not self.player.Character or self.player.Character ~= char then
+			return
+		end
+
+		if rawSettings.FORCEFIELD_CHECK then
+			local ff = char:FindFirstChildOfClass("ForceField")
+			if ff then
+				local conn
+				conn = ff.Destroying:Connect(function()
+					if conn then
+						conn:Disconnect()
+						conn = nil
+					end
+					self:setupCharacter(char)
+				end)
+				return
+			end
+		end
+		self:setupCharacter(char)
+	end)
 end
 
 function PlayerData:Destroy()
