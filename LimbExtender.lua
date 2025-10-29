@@ -1,6 +1,5 @@
 local Players = game:GetService("Players")
 local localPlayer = Players.LocalPlayer
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local DEFAULTS = {
 	TOGGLE = "L",
