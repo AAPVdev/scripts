@@ -251,4 +251,6 @@ function LimbExtender:Restart()
 	if run then self:Start() end
 end
 
+function LimbExtender:Get(key) return self._settings[key] end
+
 return setmetatable({}, { __call = function(_, s) return LimbExtender.new(s) end })
