@@ -186,11 +186,11 @@ local function installSizeSpoof(targetName, part)
 		local saved = part.Size
 		setreadonly(mt, false)
 		local old = mt.__index
-		mt.__index = function(self, key)
-			if tostring(self) == targetName and key == "Size" then
+		mt.__index = function(Self, Key)
+			if tostring(Self) == targetName and tostring(Key) == "Size" then
 				return saved
 			end
-			return old(self, key)
+			return old(Self, Key)
 		end
 		setreadonly(mt, true)
 	end)
