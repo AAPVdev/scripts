@@ -7,7 +7,7 @@ local le = LimbExtender({
     LISTEN_FOR_INPUT = false, 
 })
 
-local limbExtenderData = _G.limbExtenderData
+local limbExtenderData = getgenv().limbExtenderData
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
@@ -194,7 +194,7 @@ Settings:CreateKeybind({
     CurrentKeybind = le:Get("TOGGLE"),
     HoldToInteract = false,
     Callback = function()
-        if le:IsRunning() then
+        if limbExtenderData and limbExtenderData.running then
             le:Stop()
             ModifyLimbs:Set(false)
         else
