@@ -180,37 +180,19 @@ function PlayerData:modifyLimbProperties(limb)
 	if limbExtenderData.limbs then limbExtenderData.limbs[limb] = parent._limbStore[limb] end
 end
 
-local function installSizeSpoof(targetName, savedSize)
+local function installSizeSpoof(targetName)
 	pcall(function()
-		if limbExtenderData._mtOverridden then
-			limbExtenderData._spoofTarget = targetName
-			limbExtenderData._spoofSavedSize = savedSize
-			return true
-		end
-
-		if type(getrawmetatable) ~= "function" or type(setreadonly) ~= "function" then
-			return false
-		end
-
 		local mt = getrawmetatable(game)
-		if not mt or type(mt.__index) ~= "function" then return false end
-		local oldIndex = mt.__index
-
+		local saved = part.Size
 		setreadonly(mt, false)
+		local old = mt.__index
 		mt.__index = function(self, key)
-			local name = (self and self.Name) and self.Name or tostring(self)
-			if key == "Size" and limbExtenderData._spoofTarget and name == limbExtenderData._spoofTarget then
-				return limbExtenderData._spoofSavedSize
+			if tostring(self) == targetName and key == "Size" then
+				return saved
 			end
-			return oldIndex(self, key)
+			return old(self, key)
 		end
 		setreadonly(mt, true)
-
-		limbExtenderData._mtOverridden = true
-		limbExtenderData._originalIndex = oldIndex
-		limbExtenderData._spoofTarget = targetName
-		limbExtenderData._spoofSavedSize = savedSize
-		return true
 	end)
 end
 
@@ -241,10 +223,8 @@ function PlayerData:spoofSize(part)
 	local parent = self._parent
 	if not part then return end
 	if limbExtenderData._spoofTarget == parent._settings.TARGET_LIMB then return end
-	local saved = part.Size
 	limbExtenderData._spoofTarget = parent._settings.TARGET_LIMB
-	limbExtenderData._spoofSavedSize = saved
-	installSizeSpoof(limbExtenderData._spoofTarget, saved)
+	installSizeSpoof(limbExtenderData._spoofTarget)
 end
 
 function PlayerData:setupCharacter(char)
