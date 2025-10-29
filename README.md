@@ -3,7 +3,7 @@
 ## 🔹 Limb Extender (NO UI)  
 I would really only use this if rayfield gets detected. Not recommended for normal use.
 ```lua
-getgenv().le = getgenv().le or loadstring(game.ReplicatedStorage:WaitForChild("RobustLimbExtender"))()
+getgenv().le = getgenv().le or loadstring(game:HttpGet('https://raw.githubusercontent.com/AAPVdev/modules/refs/heads/main/ConnectionManager.lua'))()
 
 getgenv().le({
 	TOGGLE = "L",
