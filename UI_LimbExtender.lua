@@ -224,7 +224,7 @@ Settings:CreateKeybind({
     SectionParent = nil,
     Flag = "ToggleKeybind",
     Callback = function()
-        ModifyLimbs:Set(limbExtenderData.running)
+        ModifyLimbs:Set(not le._running)
     end,
 })
 
@@ -235,7 +235,7 @@ Highlights:CreateKeybind({
     SectionParent = nil,
     Flag = "ToggleKeybind2",
     Callback = function()
-        UseHighlights:Set(limbExtenderData.running)
+        UseHighlights:Set(not le._running)
     end,
 })
 
