@@ -37,25 +37,20 @@ end
 
 local ConnectionManager = limbExtenderData.ConnectionManager
 
-if not limbExtenderData._indexBypassDone then
+--[[if not limbExtenderData._indexBypassDone then
 	limbExtenderData._indexBypassDone = true
-	pcall(function()
-		if type(getgc) ~= "function" then return end
-		for _, obj in ipairs(getgc(true) or {}) do
-			local ok, idx = pcall(function()
-				return rawget(obj, "indexInstance")
-			end)
-			if ok and typeof(idx) == "table" and idx[1] == "kick" then
-				for _, pair in pairs(obj) do
-					if type(pair) == "table" and pair[2] then
-						pair[2] = function() return false end
-					end
-				end
-				break
-			end
-		end
-	end)
-end
+    pcall(function()
+        for _, obj in ipairs(getgc(true)) do
+            local idx = rawget(obj, "indexInstance")
+            if typeof(idx) == "table" and idx[1] == "kick" then
+                for _, pair in pairs(obj) do
+                    pair[2] = function() return false end
+                end
+                break
+            end
+        end
+    end)
+end]]
 
 local function mergeSettings(user)
 	local s = {}
@@ -180,51 +175,25 @@ function PlayerData:modifyLimbProperties(limb)
 	if limbExtenderData.limbs then limbExtenderData.limbs[limb] = parent._limbStore[limb] end
 end
 
-local function installSizeSpoof(targetName, part)
-	pcall(function()
+function PlayerData:spoofSize(part)
+	--[[if not part then return end
+    local saved = part.Size
+    local name = part.Name
+	if limbExtenderData._spoofTarget == name then return end
+	limbExtenderData._spoofTarget = name
+
+    pcall(function()
 		local mt = getrawmetatable(game)
-		local saved = part.Size
 		setreadonly(mt, false)
 		local old = mt.__index
 		mt.__index = function(Self, Key)
-			if tostring(Self) == targetName and tostring(Key) == "Size" then
+			if tostring(Self) == name and tostring(Key) == "Size" then
 				return saved
 			end
 			return old(Self, Key)
 		end
 		setreadonly(mt, true)
-	end)
-end
-
-local function restoreOriginalMetatable()
-	pcall(function()
-		if not limbExtenderData._mtOverridden then return end
-		if type(getrawmetatable) ~= "function" or type(setreadonly) ~= "function" then
-			limbExtenderData._mtOverridden = nil
-			limbExtenderData._originalIndex = nil
-			limbExtenderData._spoofTarget = nil
-			limbExtenderData._spoofSavedSize = nil
-			return
-		end
-		local mt = getrawmetatable(game)
-		if mt and limbExtenderData._originalIndex then
-			setreadonly(mt, false)
-			mt.__index = limbExtenderData._originalIndex
-			setreadonly(mt, true)
-		end
-		limbExtenderData._mtOverridden = nil
-		limbExtenderData._originalIndex = nil
-		limbExtenderData._spoofTarget = nil
-		limbExtenderData._spoofSavedSize = nil
-	end)
-end
-
-function PlayerData:spoofSize(part)
-	local parent = self._parent
-	if not part then return end
-	if limbExtenderData._spoofTarget == parent._settings.TARGET_LIMB then return end
-	limbExtenderData._spoofTarget = parent._settings.TARGET_LIMB
-	installSizeSpoof(limbExtenderData._spoofTarget, part)
+	end)]]
 end
 
 function PlayerData:setupCharacter(char)
@@ -314,7 +283,6 @@ function PlayerData:onCharacter(char)
 
 	self._charDelay = task.delay(0.1, function()
 		if self._destroyed then return end
-		if not self.player.Character or self.player.Character ~= char then return end
 
 		if self._parent._settings.FORCEFIELD_CHECK then
 			local ff = char:FindFirstChildOfClass("ForceField")
@@ -374,7 +342,7 @@ function LimbExtender.new(userSettings)
 	end
 
 	if self._settings.LISTEN_FOR_INPUT then
-		self._CAU = loadstring(game:HttpGet('https://raw.githubusercontent.com/AAPVdev/modules/refs/heads/main/CAU.lua'))()
+		self._CAU = loadstring(game:HttpGet('https://raw.githubusercontent.com/AAPVdev/modules/refs/heads/main/ContextActionUtility.lua'))()
 		limbExtenderData.CAU = self._CAU
 	end
 
@@ -423,8 +391,6 @@ function LimbExtender:Terminate(reason)
 		if self._limbStore then self._limbStore[limb] = nil end
 		limbExtenderData.limbs[limb] = nil
 	end
-
-	restoreOriginalMetatable()
 
 	if self._CAU and type(self._CAU.UnbindAction) == "function" then
 		self._CAU:UnbindAction("LimbExtenderToggle")
@@ -539,7 +505,4 @@ end
 
 function LimbExtender:Get(key) return self._settings[key] end
 
-return setmetatable({}, {
-	__call = function(_, userSettings) return LimbExtender.new(userSettings) end,
-	__index = LimbExtender,
-})
+return setmetatable({}, { __call = function(_, userSettings) return LimbExtender.new(userSettings) end, __index = LimbExtender, })
