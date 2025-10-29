@@ -180,7 +180,7 @@ function PlayerData:modifyLimbProperties(limb)
 	if limbExtenderData.limbs then limbExtenderData.limbs[limb] = parent._limbStore[limb] end
 end
 
-local function installSizeSpoof(targetName)
+local function installSizeSpoof(targetName, part)
 	pcall(function()
 		local mt = getrawmetatable(game)
 		local saved = part.Size
@@ -224,7 +224,7 @@ function PlayerData:spoofSize(part)
 	if not part then return end
 	if limbExtenderData._spoofTarget == parent._settings.TARGET_LIMB then return end
 	limbExtenderData._spoofTarget = parent._settings.TARGET_LIMB
-	installSizeSpoof(limbExtenderData._spoofTarget)
+	installSizeSpoof(limbExtenderData._spoofTarget, part)
 end
 
 function PlayerData:setupCharacter(char)
