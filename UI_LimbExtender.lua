@@ -7,9 +7,11 @@ local le = LimbExtender({
     LISTEN_FOR_INPUT = false, 
 })
 
-local limbExtenderData = getgenv().limbExtenderData
-
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+local limbs = {}
+
+local limbExtenderData = getgenv().limbExtenderData
 
 local Messages = {
     "jejemon!",
@@ -27,15 +29,20 @@ local Messages = {
     "plopyninja is my first account",
     "shawtyy"
 }
+
 local ChosenMessage = Messages[math.random(1, #Messages)]
 
 local Window = Rayfield:CreateWindow({
     Name = "AXIOS",
     Icon = 107904589783906,
+
     LoadingTitle = "AXIOS",
     LoadingSubtitle = ChosenMessage,
+
     Theme = "Default",
+
     DisableRayfieldPrompts = true,
+        
     ConfigurationSaving = {
         Enabled = true,
         FolderName = "LimbExtenderConfigs",
@@ -49,8 +56,9 @@ local Target = Window:CreateTab("Target", "crosshair")
 local Themes = Window:CreateTab("Themes", "palette")
 
 local function createOption(params)
-    local methodName = 'Create' .. params.method
+    local methodName = 'Create' .. params.method  
     local method = params.tab[methodName]
+    
     if type(method) == 'function' then
         method(params.tab, {
             Name = params.name,
@@ -71,20 +79,17 @@ local function createOption(params)
             end,
         })
     else
-        warn("Method " .. methodName .. " not found in tab")
+        warn("Method " .. methodName .. " not found in params.tab")
     end
 end
 
 local ModifyLimbs = Settings:CreateToggle({
     Name = "Modify Limbs",
+    SectionParent = nil,
     CurrentValue = false,
     Flag = "ModifyLimbs",
     Callback = function(Value)
-        if Value then
-            le:Start()
-        else
-            le:Stop()
-        end
+        le:Toggle(Value)
     end,
 })
 
@@ -92,7 +97,8 @@ Settings:CreateDivider()
 
 local UseHighlights = Highlights:CreateToggle({
     Name = "Use Highlights",
-    CurrentValue = le:Get("USE_HIGHLIGHT"),
+    SectionParent = nil,
+    CurrentValue = le.USE_HIGHLIGHT,
     Flag = "USE_HIGHLIGHT",
     Callback = function(Value)
         le:Set("USE_HIGHLIGHT", Value)
@@ -107,21 +113,27 @@ local toggleSettings = {
         name = "Team Check",
         flag = "TEAM_CHECK",
         tab = Settings,
+        section = nil,
         value = le:Get("TEAM_CHECK"),
+        createDivider = false,
     },
     {
         method = "Toggle",
         name = "ForceField Check",
         flag = "FORCEFIELD_CHECK",
         tab = Settings,
+        section = nil,
         value = le:Get("FORCEFIELD_CHECK"),
+        createDivider = false,
     },
     {
         method = "Toggle",
         name = "Limb Collisions",
         flag = "LIMB_CAN_COLLIDE",
         tab = Settings,
+        section = nil,
         value = le:Get("LIMB_CAN_COLLIDE"),
+        createDivider = true,
     },
     {
         method = "Slider",
@@ -130,7 +142,9 @@ local toggleSettings = {
         tab = Settings,
         range = {0, 1},
         increment = 0.1,
+        section = nil,
         value = le:Get("LIMB_TRANSPARENCY"),
+        createDivider = false,
     },
     {
         method = "Slider",
@@ -139,7 +153,9 @@ local toggleSettings = {
         tab = Settings,
         range = {5, 50},
         increment = 0.5,
+        section = nil,
         value = le:Get("LIMB_SIZE"),
+        createDivider = true,
     },
     {
         method = "Dropdown",
@@ -149,20 +165,26 @@ local toggleSettings = {
         currentOption = {le:Get("DEPTH_MODE")},
         multipleOptions = false,
         tab = Highlights,
+        section = nil,
+        createDivider = true,
     },
     {
         method = "ColorPicker",
         name = "Outline Color",
         flag = "HIGHLIGHT_OUTLINE_COLOR",
         tab = Highlights,
+        section = nil,
         color = le:Get("HIGHLIGHT_OUTLINE_COLOR"),
+        createDivider = false,
     },
     {
         method = "ColorPicker",
         name = "Fill Color",
         flag = "HIGHLIGHT_FILL_COLOR",
         tab = Highlights,
+        section = nil,
         color = le:Get("HIGHLIGHT_FILL_COLOR"),
+        createDivider = true,
     },
     {
         method = "Slider",
@@ -171,7 +193,9 @@ local toggleSettings = {
         tab = Highlights,
         range = {0, 1},
         increment = 0.1,
+        section = nil,
         value = le:Get("HIGHLIGHT_FILL_TRANSPARENCY"),
+        createDivider = false,
     },
     {
         method = "Slider",
@@ -180,71 +204,97 @@ local toggleSettings = {
         tab = Highlights,
         range = {0, 1},
         increment = 0.1,
+        section = nil,
         value = le:Get("HIGHLIGHT_OUTLINE_TRANSPARENCY"),
+        createDivider = true,
     },
 }
 
 for _, setting in pairs(toggleSettings) do
     createOption(setting)
-    setting.tab:CreateDivider()
+    if setting.createDivider then
+        setting.tab:CreateDivider()
+    end
 end
 
 Settings:CreateKeybind({
     Name = "Toggle Keybind",
     CurrentKeybind = le:Get("TOGGLE"),
     HoldToInteract = false,
+    SectionParent = nil,
+    Flag = "ToggleKeybind",
     Callback = function()
-        if limbExtenderData and limbExtenderData.running then
-            le:Stop()
-            ModifyLimbs:Set(false)
-        else
-            le:Start()
-            ModifyLimbs:Set(true)
-        end
+        ModifyLimbs:Set(limbExtenderData.running)
+    end,
+})
+
+Highlights:CreateKeybind({
+    Name = "Toggle Keybind",
+    CurrentKeybind = le:Get("TOGGLE"),
+    HoldToInteract = false,
+    SectionParent = nil,
+    Flag = "ToggleKeybind2",
+    Callback = function()
+        UseHighlights:Set(limbExtenderData.running)
     end,
 })
 
 Highlights:CreateButton({
-    Name = "Delete All Game Highlights",
-    Callback = function()
-        for _, v in ipairs(game:GetDescendants()) do
-            if v:IsA("Highlight") and v.Parent.Name ~= "Limb Extender Highlights Folder" then
-                v:Destroy()
-            end
-        end
-    end,
+   Name = "Delete All Game Highlights",
+   Callback = function()
+	for i, v in ipairs(game:GetDescendants()) do
+		if v:IsA("Highlight") and v.Parent.Name ~= "Limb Extender Highlights Folder" then
+			v:Destroy()
+		end
+	end
+   end,
 })
 
-local limbs = {}
 local TargetLimb = Target:CreateDropdown({
-    Name = "Target Limb",
-    Options = {},
-    CurrentOption = {le:Get("TARGET_LIMB")},
-    MultipleOptions = false,
-    Flag = "TARGET_LIMB",
-    Callback = function(Options)
-        le:Set("TARGET_LIMB", Options[1])
-    end,
+   Name = "Target Limb",
+   Options = {},
+   CurrentOption = {le:Get("TARGET_LIMB")},
+   MultipleOptions = false,
+   Flag = "TARGET_LIMB",
+   Callback = function(Options)
+		le:Set("TARGET_LIMB", Options[1])
+   end,
 })
+
+Themes:CreateDropdown({
+   Name = "Current Theme",
+   Options = {"Default", "AmberGlow", "Amethyst", "Bloom", "DarkBlue", "Green", "Light", "Ocean", "Serenity"},
+   CurrentOption = {"Default"},
+   MultipleOptions = false,
+   Flag = "CurrentTheme",
+   Callback = function(Options)
+		Window.ModifyTheme(Options[1])
+   end,
+})
+
+Rayfield:LoadConfiguration()
 
 local function characterAdded(Character)
-    local function addChild(child)
-        if child:IsA("BasePart") and not table.find(limbs, child.Name) then
+    local function onChildChanged(child)
+        if not child:IsA("BasePart") then return end
+        local index = table.find(limbs, child.Name)
+        if not index then
             table.insert(limbs, child.Name)
-            table.sort(limbs)
-            TargetLimb:Refresh(limbs)
+			table.sort(limbs)
+			TargetLimb:Refresh(limbs)
         end
     end
 
-    Character.ChildAdded:Connect(addChild)
-    for _, child in ipairs(Character:GetChildren()) do
-        addChild(child)
-    end
+    Character.ChildAdded:Connect(function(child)
+        onChildChanged(child)
+    end)
+
+	for _, child in ipairs(Character:GetChildren()) do
+		onChildChanged(child)
+	end
 end
 
 LocalPlayer.CharacterAdded:Connect(characterAdded)
 if LocalPlayer.Character then
     characterAdded(LocalPlayer.Character)
 end
-
-Rayfield:LoadConfiguration()
