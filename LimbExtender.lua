@@ -249,15 +249,24 @@ end
 
 function PlayerData:setupCharacter(char)
 	local parent = self._parent
-	if not char then return end
+	if not char or not parent then return end
+	if not self.player then return end
 
-	if self.player and self.player.GetPropertyChangedSignal then
+	if typeof(self.player.GetPropertyChangedSignal) == "function" then
 		local sig = self.player:GetPropertyChangedSignal("Team")
-		if sig and type(sig.Connect) == "function" then
+		if sig and typeof(sig.Connect) == "function" then
 			self.conns:Connect(sig, function()
+				
 				if self._destroyed then return end
+
+				local plr = self.player
+				if not plr then return end
+
 				self:Destroy()
-				parent._playerTable[self.player.Name] = PlayerData.new(parent, self.player)
+
+				if parent and parent._playerTable and typeof(parent._playerTable) == "table" then
+					parent._playerTable[plr.Name] = PlayerData.new(parent, plr)
+				end
 			end, ("Player_%s_TeamChanged"):format(self.player.Name))
 		end
 	end
@@ -267,16 +276,16 @@ function PlayerData:setupCharacter(char)
 	local humanoid = char:FindFirstChildOfClass("Humanoid")
 	if not humanoid or humanoid.Health <= 0 then return end
 
-	if self.PartStreamable and type(self.PartStreamable.Destroy) == "function" then
+	if self.PartStreamable and typeof(self.PartStreamable.Destroy) == "function" then
 		self.PartStreamable:Destroy()
 		self.PartStreamable = nil
 	end
 
-	if parent._Streamable and type(parent._Streamable.new) == "function" then
+	if parent._Streamable and typeof(parent._Streamable.new) == "function" then
 		self.PartStreamable = parent._Streamable.new(char, parent._settings.TARGET_LIMB)
-		if self.PartStreamable and type(self.PartStreamable.Observe) == "function" then
+		if self.PartStreamable and typeof(self.PartStreamable.Observe) == "function" then
 			self.PartStreamable:Observe(function(part, trove)
-				if self._destroyed then return end
+				if self._destroyed or not part then return end
 
 				self:spoofSize(part)
 				self:modifyLimbProperties(part)
@@ -288,21 +297,31 @@ function PlayerData:setupCharacter(char)
 					self.highlight.Adornee = part
 				end
 
-				if self.player and self.player.CharacterRemoving and type(self.player.CharacterRemoving.Connect) == "function" then
+				if self.player and typeof(self.player.CharacterRemoving) == "RBXScriptSignal" then
 					self.conns:Connect(self.player.CharacterRemoving, function()
 						self:restoreLimbProperties(part)
 					end, ("Player_%s_CharacterRemoving_%s"):format(self.player.Name, tostring(part)))
 				end
 
-				local deathEvent = parent._settings.RESET_LIMB_ON_DEATH2 and humanoid.HealthChanged or humanoid.Died
-				if deathEvent and type(deathEvent.Connect) == "function" then
+				local deathEvent
+				if parent._settings.RESET_LIMB_ON_DEATH2 then
+					deathEvent = humanoid.HealthChanged
+				else
+					deathEvent = humanoid.Died
+				end
+
+				if deathEvent and typeof(deathEvent.Connect) == "function" then
 					self.conns:Connect(deathEvent, function(hp)
-						if not hp or hp <= 0 then self:restoreLimbProperties(part) end
+						if not hp or hp <= 0 then
+							self:restoreLimbProperties(part)
+						end
 					end, ("Player_%s_Death_%s"):format(self.player.Name, tostring(part)))
 				end
 
-				if trove and trove.Add and type(trove.Add) == "function" then
-					self.conns:Add(function() self:restoreLimbProperties(part) end, ("Player_%s_TroveRestore_%s"):format(self.player.Name, tostring(part)))
+				if trove and typeof(trove.Add) == "function" then
+					self.conns:Add(function()
+						self:restoreLimbProperties(part)
+					end, ("Player_%s_TroveRestore_%s"):format(self.player.Name, tostring(part)))
 				end
 			end)
 		end
