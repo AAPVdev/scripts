@@ -37,7 +37,7 @@ end
 
 local ConnectionManager = limbExtenderData.ConnectionManager
 
---[[if not limbExtenderData._indexBypassDone then
+if not limbExtenderData._indexBypassDone then
 	limbExtenderData._indexBypassDone = true
     pcall(function()
         for _, obj in ipairs(getgc(true)) do
@@ -50,7 +50,7 @@ local ConnectionManager = limbExtenderData.ConnectionManager
             end
         end
     end)
-end]]
+end
 
 local function mergeSettings(user)
 	local s = {}
@@ -176,7 +176,7 @@ function PlayerData:modifyLimbProperties(limb)
 end
 
 function PlayerData:spoofSize(part)
-	--[[if not part then return end
+	if not part then return end
     local saved = part.Size
     local name = part.Name
 	if limbExtenderData._spoofTarget == name then return end
@@ -193,7 +193,7 @@ function PlayerData:spoofSize(part)
 			return old(Self, Key)
 		end
 		setreadonly(mt, true)
-	end)]]
+	end)
 end
 
 function PlayerData:setupCharacter(char)
