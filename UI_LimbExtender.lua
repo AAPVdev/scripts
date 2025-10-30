@@ -13,8 +13,6 @@ local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local limbs = {}
 
-local limbExtenderData = getgenv().limbExtenderData
-
 local Messages = {
     "jejemon!",
     "i have the highest grades in math",
