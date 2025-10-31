@@ -14,20 +14,18 @@ local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 local limbs = {}
 
 local Messages = {
-    "jejemon!",
-    "i have the highest grades in math",
-    "hi krislyn",
-    "fucking shit up",
-    "not my fault",
-    "what the fuck",
-    "arse anal",
-    "what color is your executor?",
-    "dont say cuss words",
-    "california gurrls",
-    "I HATE EXPLOITERS! 😡",
-    "builderman is my dad",
-    "plopyninja is my first account",
-    "shawtyy"
+	"happy halloween 🎃",
+	"skeleton meme from 2021 💀",
+	"spooky ass message 🕸🕷",
+	"scary fact: there will be no update this halloween 😱",
+	"👻 BOO! JOB APPLICATION 📄",
+	"trick or treat smell my feet 🦶",
+	"santa claus is lowkey a freak 😰",
+	"i will be your devel 😈 or your angle 😇",
+	"itsa spooki month 🕺🕺",
+	"kitkat razerblade edition 🍬",
+	"update: fucking nothing 🎃😨",
+	"follow axiogenesis on roblox 🦴👁",
 }
 
 local ChosenMessage = Messages[math.random(1, #Messages)]
