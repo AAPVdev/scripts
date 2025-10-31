@@ -32,7 +32,6 @@ end
 
 if not limbExtenderData.ConnectionManager then
 	limbExtenderData.ConnectionManager = loadstring(game:HttpGet('https://raw.githubusercontent.com/AAPVdev/modules/refs/heads/main/ConnectionManager.lua'))()
-	assert(type(limbExtenderData.ConnectionManager.new) == "function", "Invalid ConnectionManager module")
 end
 
 local ConnectionManager = limbExtenderData.ConnectionManager
