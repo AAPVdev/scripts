@@ -94,18 +94,6 @@ local ModifyLimbs = Settings:CreateToggle({
 
 Settings:CreateDivider()
 
-local UseHighlights = Highlights:CreateToggle({
-    Name = "Use Highlights",
-    SectionParent = nil,
-    CurrentValue = le.USE_HIGHLIGHT,
-    Flag = "USE_HIGHLIGHT",
-    Callback = function(Value)
-        le:Set("USE_HIGHLIGHT", Value)
-    end,
-})
-
-Highlights:CreateDivider()
-
 local toggleSettings = {
     {
         method = "Toggle",
@@ -225,28 +213,6 @@ Settings:CreateKeybind({
     Callback = function()
         ModifyLimbs:Set(not le._running)
     end,
-})
-
-Highlights:CreateKeybind({
-    Name = "Toggle Keybind",
-    CurrentKeybind = le:Get("TOGGLE"),
-    HoldToInteract = false,
-    SectionParent = nil,
-    Flag = "ToggleKeybind2",
-    Callback = function()
-        UseHighlights:Set(not le._running)
-    end,
-})
-
-Highlights:CreateButton({
-   Name = "Delete All Game Highlights",
-   Callback = function()
-	for i, v in ipairs(game:GetDescendants()) do
-		if v:IsA("Highlight") and v.Parent.Name ~= "Limb Extender Highlights Folder" then
-			v:Destroy()
-		end
-	end
-   end,
 })
 
 local TargetLimb = Target:CreateDropdown({
