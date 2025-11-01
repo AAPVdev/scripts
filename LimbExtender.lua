@@ -148,6 +148,7 @@ function PlayerData:modifyLimbProperties(limb)
 	local parent = self._parent
 	if not limb then return end
 	if parent._limbStore[limb] then return end
+	self:saveLimbProperties(limb)
 	
 	local entry = parent._limbStore[limb]
 	local sizeVal = parent._settings.LIMB_SIZE or DEFAULTS.LIMB_SIZE
