@@ -132,6 +132,7 @@ function PlayerData:restoreLimbProperties(limb)
 	local p = parent._limbStore[limb]
 	if not p then return end
 	if p.SizeConnection and typeof(p.SizeConnection) == "RBXScriptConnection" then p.SizeConnection:Disconnect() end
+	if p.TransparencyConnection and typeof(p.TransparencyConnection) == "RBXScriptConnection" then p.TransparencyConnection:Disconnect() end
 	if p.CollisionConnection and typeof(p.CollisionConnection) == "RBXScriptConnection" then p.CollisionConnection:Disconnect() end
 	if limb and limb.Parent then
 		limb.Size = p.OriginalSize
@@ -160,7 +161,7 @@ function PlayerData:modifyLimbProperties(limb)
 		l.Size = newSize
 	end)
 	
-		entry.TransparencyConnection = watchProperty(limb, "Transparency", function(l)
+	entry.TransparencyConnection = watchProperty(limb, "Transparency", function(l)
 		l.Transparency = transparency
 	end)
 	
