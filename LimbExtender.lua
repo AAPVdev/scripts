@@ -160,7 +160,7 @@ function PlayerData:modifyLimbProperties(limb)
 		l.Size = newSize
 	end)
 	
-		entry.SizeConnection = watchProperty(limb, "Transparency", function(l)
+		entry.TransparencyConnection = watchProperty(limb, "Transparency", function(l)
 		l.Transparency = transparency
 	end)
 	
