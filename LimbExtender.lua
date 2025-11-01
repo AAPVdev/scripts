@@ -193,7 +193,7 @@ function PlayerData:spoofSize(part)
 		setreadonly(mt, false)
 		local old = mt.__index
 		mt.__index = function(Self, Key)
-			if tostring(Self) == name and tostring(Key) == "Size" then
+			if tostring(Self) == name and tostring(Key) == "Size" and not checkcaller() then
 				return saved
 			end
 			return old(Self, Key)
