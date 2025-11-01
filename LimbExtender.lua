@@ -148,18 +148,23 @@ function PlayerData:modifyLimbProperties(limb)
 	local parent = self._parent
 	if not limb then return end
 	if parent._limbStore[limb] then return end
-	self:saveLimbProperties(limb)
-
+	
 	local entry = parent._limbStore[limb]
 	local sizeVal = parent._settings.LIMB_SIZE or DEFAULTS.LIMB_SIZE
 	local newSize = Vector3.new(sizeVal, sizeVal, sizeVal)
 	local canCollide = parent._settings.LIMB_CAN_COLLIDE
+	local transparency = parent._settings.LIMB_TRANSPARENCY
 
 	entry.SizeConnection = watchProperty(limb, "Size", function(l)
-		if l and l.Parent then l.Size = newSize end
+		l.Size = newSize
 	end)
+	
+		entry.SizeConnection = watchProperty(limb, "Transparency", function(l)
+		l.Transparency = transparency
+	end)
+	
 	entry.CollisionConnection = watchProperty(limb, "CanCollide", function(l)
-		if l and l.Parent then l.CanCollide = canCollide end
+		l.CanCollide = canCollide
 	end)
 
 	if limb and limb.Parent then
@@ -186,7 +191,7 @@ function PlayerData:spoofSize(part)
 		setreadonly(mt, false)
 		local old = mt.__index
 		mt.__index = function(Self, Key)
-			if tostring(Self) == name and tostring(Key) == "Size" then
+			if tostring(Self) == name and (tostring(Key) == "Size" or tostring(Key) == "Transparency") then
 				return saved
 			end
 			return old(Self, Key)
