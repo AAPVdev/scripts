@@ -70,11 +70,11 @@ local function watchProperty(instance, prop, callback)
 end
 
 local function makeHighlight(settings)
-	local hiFolder = Players:FindFirstChild("Limb Extender Highlights Folder")
+	local hiFolder =  game:GetService("ReplicatedStorage"):FindFirstChild("Limb Extender Highlights Folder")
 	if not hiFolder then
 		hiFolder = Instance.new("Folder")
 		hiFolder.Name = "Limb Extender Highlights Folder"
-		hiFolder.Parent = Players
+		hiFolder.Parent = game:GetService("ReplicatedStorage")
 	end
 	local hi = Instance.new("Highlight")
 	hi.Name = "LimbHighlight"
