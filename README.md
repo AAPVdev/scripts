@@ -1,4 +1,4 @@
-# hb.lua
+# LimbExtender.lua
 
 A Roblox Lua module that manages **dynamic limb resizing** for selected player characters and NPC models.
 
@@ -33,7 +33,7 @@ The module also keeps original values so it can restore the character cleanly wh
 The file returns a table with these entry points:
 
 ```lua
-local LimbExtender = require(path.to.hb)
+local LimbExtender = loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua")()
 
 local controller1 = LimbExtender.new({
     LIMB_SIZE = 20,
@@ -84,7 +84,7 @@ If optional helpers are unavailable, the module falls back where possible, but s
 Place the module in your project and require it from your script.
 
 ```lua
-local LimbExtender = require(script.Parent.hb)
+local LimbExtender = loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua")()
 
 local controller = LimbExtender.new()
 ```
@@ -94,7 +94,7 @@ local controller = LimbExtender.new()
 ## Quick start
 
 ```lua
-local LimbExtender = require(script.Parent.hb)
+local LimbExtender = loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua")()
 
 local controller = LimbExtender({
     TOGGLE = "L",
@@ -473,7 +473,7 @@ If input listening is enabled, the controller will:
 ## Example: player-only setup
 
 ```lua
-local LimbExtender = require(script.Parent.hb)
+local LimbExtender = loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua")()
 
 local controller = LimbExtender.new({
     PLAYER_ENABLED = true,
@@ -489,7 +489,7 @@ local controller = LimbExtender.new({
 ## Example: NPC-only setup
 
 ```lua
-local LimbExtender = require(script.Parent.hb)
+local LimbExtender = loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua")()
 
 local controller = LimbExtender.new({
     PLAYER_ENABLED = false,
@@ -541,7 +541,7 @@ Changing a setting automatically restarts the controller when needed.
 ## Minimal example
 
 ```lua
-local LimbExtender = require(script.Parent.hb)
+local LimbExtender = loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua")()
 
 local controller = LimbExtender({
     PLAYER_ENABLED = true,
@@ -572,9 +572,3 @@ controller:RemoveDirectory(dir)
 controller:GetDirectories()
 controller:Destroy()
 ```
-
----
-
-## License / usage
-
-No license is defined in the module itself. Add your own licensing terms if you plan to distribute it.
