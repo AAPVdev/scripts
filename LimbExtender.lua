@@ -69,10 +69,10 @@ local DEFAULTS = {
 	TEAM_CHECK          = false,
 	FORCEFIELD_CHECK    = true,
 	RESET_LIMB_ON_DEATH = false,
-	PLAYER_ENABLED      = false,
-	NPC_ENABLED         = true,
+	PLAYER_ENABLED      = true,
+	NPC_ENABLED         = false,
 	NPC_FILTER          = nil,
-	NPC_DIRECTORIES     = {"game:GetService('Workspace').Misc.AI"},
+	NPC_DIRECTORIES     = {},
 }
 
 local function mergeSettings(user)
