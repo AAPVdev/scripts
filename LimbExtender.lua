@@ -64,7 +64,7 @@ local DEFAULTS = {
 	LIMB_SIZE           = 15,
 	LIMB_TRANSPARENCY   = 0.5,
 	LIMB_CAN_COLLIDE    = false,
-	MOBILE_BUTTON       = true,
+	MOBILE_BUTTON       = false,
 	LISTEN_FOR_INPUT    = true,
 	TEAM_CHECK          = false,
 	FORCEFIELD_CHECK    = true,
@@ -108,6 +108,7 @@ local BLOCKED_PROPS = {
 	Massless = true,
 	Mass = true,
 	AssemblyMass = true,
+	AssemblyCenterOfMass = true,
 	CustomPhysicalProperties = true,
 	RootPriority = true,
 }
@@ -148,7 +149,7 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod then
 				if key == "Transparency"             then data.OriginalTransparency  = value return end
 				if key == "CanCollide"               then data.OriginalCanCollide    = value return end
 				if key == "Massless"                 then data.OriginalMassless      = value return end
-				if key == "Mass" or key == "AssemblyMass" then return end
+				if key == "Mass" or key == "AssemblyMass" or key == "AssemblyCenterOfMass" then return end
 				if key == "CustomPhysicalProperties" then data.OriginalPhysProps     = value return end
 				if key == "RootPriority"             then data.OriginalRootPriority  = value return end
 			end
@@ -166,11 +167,16 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod then
 					if key == "Transparency"             then return data.OriginalTransparency  end
 					if key == "CanCollide"               then return data.OriginalCanCollide    end
 					if key == "Massless"                 then return data.OriginalMassless      end
-					if key == "Mass" or key == "AssemblyMass" then return data.OriginalMass    end
+					if key == "Mass"                     then return data.OriginalMass         end
+					if key == "AssemblyMass"             then return data.OriginalAssemblyMass end
+					if key == "AssemblyCenterOfMass"     then return data.OriginalAssemblyCOM  end
 					if key == "CustomPhysicalProperties" then return data.OriginalPhysProps     end
 					if key == "RootPriority"             then return data.OriginalRootPriority  end
 				elseif instType == "Model" then
 					if key == "ExtentsSize"              then return data.OriginalExtents       end
+				elseif instType == "CharPart" then
+					if key == "AssemblyMass"             then return data.OriginalAssemblyMass end
+					if key == "AssemblyCenterOfMass"     then return data.OriginalAssemblyCOM  end
 				end
 			end
 		end
@@ -282,6 +288,13 @@ local function sharedSaveData(parent, cacheKey, char, limb)
 		if entry.Character and entry.Character ~= char then
 			limbData.instanceLookup[entry.Character] = nil
 		end
+		-- Clear stale char-part registrations from a previous apply
+		if entry._charParts then
+			for _, part in ipairs(entry._charParts) do
+				limbData.instanceLookup[part] = nil
+			end
+			entry._charParts = nil
+		end
 	else
 		entry = {}
 		cache[cacheKey] = entry
@@ -294,12 +307,30 @@ local function sharedSaveData(parent, cacheKey, char, limb)
 	entry.OriginalCanCollide   = limb.CanCollide
 	entry.OriginalMassless     = limb.Massless
 	entry.OriginalMass         = limb.Mass
+	-- AssemblyMass/AssemblyCenterOfMass are assembly-wide; save them here before
+	-- any modifications so all character parts can be spoofed correctly.
+	entry.OriginalAssemblyMass = limb.AssemblyMass
+	entry.OriginalAssemblyCOM  = limb.AssemblyCenterOfMass
 	entry.OriginalExtents      = char:GetExtentsSize()
 	entry.OriginalPhysProps    = limb.CustomPhysicalProperties
 	entry.OriginalRootPriority = limb.RootPriority
 
 	limbData.instanceLookup[limb] = { data = entry, type = "Part"  }
 	limbData.instanceLookup[char] = { data = entry, type = "Model" }
+
+	-- Register every other BasePart in the character so that reads of
+	-- AssemblyMass / AssemblyCenterOfMass on those parts are also spoofed.
+	-- All parts in a weld assembly share these values, so without this,
+	-- game code reading e.g. UpperTorso.AssemblyMass would get the real
+	-- (modified) value instead of the original.
+	local charParts = {}
+	for _, part in ipairs(char:GetDescendants()) do
+		if part:IsA("BasePart") and part ~= limb then
+			limbData.instanceLookup[part] = { data = entry, type = "CharPart" }
+			table.insert(charParts, part)
+		end
+	end
+	entry._charParts = charParts
 end
 
 local function sharedRestoreLimb(parent, cacheKey, activeLimb)
@@ -328,6 +359,13 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 		limbData.instanceLookup[activeLimb] = nil
 	end
 	if entry.Character then limbData.instanceLookup[entry.Character] = nil end
+	-- Clean up char-part registrations (assembly-property spoof entries)
+	if entry._charParts then
+		for _, part in ipairs(entry._charParts) do
+			limbData.instanceLookup[part] = nil
+		end
+		entry._charParts = nil
+	end
 
 	cache[cacheKey] = nil
 end
