@@ -7,7 +7,7 @@ local LimbExtender = getgenv().le
 getgenv().uilibray = getgenv().uilibray or loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 local Rayfield = getgenv().uilibray
 
-local controller = LimbExtender({
+local controller = LimbExtender.new({
 	LISTEN_FOR_INPUT = false,
 	MOBILE_BUTTON = false,
 })
