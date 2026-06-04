@@ -850,7 +850,7 @@ function LimbExtender:GetDirectories()
 	if type(dirs) == "table" and #dirs > 0 then
 		return table.clone(dirs)
 	end
-	return nil -- nil means scan all workspace descendants
+	return {}
 end
 
 function LimbExtender:_isValidNPC(model)
@@ -905,7 +905,7 @@ function LimbExtender:_activateDirectory(dir, useDescendants)
 				end
 			end)
 		end)
-		self._connections:Connect(dir.ChildRemoving, function(desc)
+		self._connections:Connect(dir.ChildRemoved, function(desc)
 			local nd = self._npcTable[desc]
 			if nd then nd:Destroy(); self._npcTable[desc] = nil end
 		end)
