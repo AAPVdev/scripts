@@ -1054,4 +1054,4 @@ function LimbExtender:Destroy()
 	setmetatable(self, nil)
 end
 
-return setmetatable({}, { __call = function(_, userSettings) return LimbExtender.new(userSettings) end, __index = LimbExtender, })
+return setmetatable({}, { __call = function(_, userSettings) return LimbExtender(userSettings) end, __index = LimbExtender, })
