@@ -86,7 +86,7 @@ Place the module in your project and require it from your script.
 ```lua
 local LimbExtender = loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua")()
 
-local controller = LimbExtender.new()
+local controller = LimbExtender.new():Start()
 ```
 
 ---
@@ -96,7 +96,7 @@ local controller = LimbExtender.new()
 ```lua
 local LimbExtender = loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua")()
 
-local controller = LimbExtender({
+local controller = LimbExtender.new({
     TOGGLE = "L",
     TARGET_LIMB = "Head",
     LIMB_SIZE = 18,
@@ -106,8 +106,6 @@ local controller = LimbExtender({
 
 controller:Start()
 ```
-
-By default, the controller starts automatically inside `new()`.
 
 ---
 
@@ -482,6 +480,7 @@ local controller = LimbExtender.new({
     LIMB_SIZE = 16,
     TOGGLE = "G",
 })
+controller:Start()
 ```
 
 ---
@@ -502,6 +501,7 @@ local controller = LimbExtender.new({
         return model.Name ~= "Dummy"
     end,
 })
+controller:Start()
 ```
 
 ---
@@ -543,7 +543,7 @@ Changing a setting automatically restarts the controller when needed.
 ```lua
 local LimbExtender = loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua")()
 
-local controller = LimbExtender({
+local controller = LimbExtender.new({
     PLAYER_ENABLED = true,
     NPC_ENABLED = true,
 })
