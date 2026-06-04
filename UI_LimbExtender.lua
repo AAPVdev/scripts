@@ -113,6 +113,21 @@ local settingsList = {
 	{
 		kind = "Toggle",
 		tab = Tabs.Limbs,
+		name = "Players",
+		flag = "PLAYER_ENABLED",
+		default = controller:Get("PLAYER_ENABLED"),
+	},
+    {
+		kind = "Toggle",
+		tab = Tabs.Limbs,
+		name = "NPCs",
+		flag = "NPC_ENABLED",
+		default = controller:Get("NPC_ENABLED"),
+        dividerAfter = true,
+	},
+	{
+		kind = "Toggle",
+		tab = Tabs.Limbs,
 		name = "Team Check",
 		flag = "TEAM_CHECK",
 		default = controller:Get("TEAM_CHECK"),
