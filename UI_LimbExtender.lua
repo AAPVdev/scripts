@@ -1,12 +1,18 @@
+if getgenv().loading then
+	return
+end
+
+getgenv().loading = true
+if getgenv().uilibray then
+	getgenv().uilibray:Destroy()
+	getgenv().uilibray = nil
+end
+
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 
 getgenv().le = getgenv().le or loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua"))()
 local LimbExtender = getgenv().le
-
-if getgenv().uilibray then
-	getgenv().uilibray:Destroy()
-end
 
 getgenv().uilibray = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 local Rayfield = getgenv().uilibray
@@ -264,3 +270,5 @@ LocalPlayer.CharacterAdded:Connect(handleCharacter)
 if LocalPlayer.Character then
 	handleCharacter(LocalPlayer.Character)
 end
+
+getgenv().loading = false
