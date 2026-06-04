@@ -4,7 +4,11 @@ local LocalPlayer = Players.LocalPlayer
 getgenv().le = getgenv().le or loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua"))()
 local LimbExtender = getgenv().le
 
-getgenv().uilibray = getgenv().uilibray or loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
+if getgenv().uilibray then
+	getgenv().uilibray:Destroy()
+end
+
+getgenv().uilibray = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 local Rayfield = getgenv().uilibray
 
 local controller = LimbExtender.new({
