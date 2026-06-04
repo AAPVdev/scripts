@@ -4,7 +4,7 @@ local function missing(t, f, fallback)
 end
 
 local cloneref    = missing("function", cloneref, function(obj) return obj end)
-local checkcaller = checkcaller
+local checkcaller = type(checkcaller) == "function" and checkcaller or function() return true end
 
 local Players          = cloneref(game:GetService("Players"))
 local UserInputService = cloneref(game:GetService("UserInputService"))
@@ -43,6 +43,12 @@ function ConnectionManager:Connect(signal, fn, label)
 	local conn = signal:Connect(fn)
 	self:_register(conn, label)
 	return conn
+end
+
+function ConnectionManager:Prune()
+	for conn in pairs(self._conns) do
+		if not conn.Connected then self._conns[conn] = nil end
+	end
 end
 
 function ConnectionManager:DisconnectAll()
@@ -118,8 +124,9 @@ local BLOCKED_PROPS = {
 local has_newcclosure    = type(newcclosure)    == "function"
 local has_hookmetamethod = type(hookmetamethod) == "function"
 local has_loadstring     = type(loadstring)     == "function"
-local has_httpget, _ = pcall(function()
-	return game.HttpGet
+local has_httpget = pcall(function()
+	local f = game.HttpGet
+	if type(f) ~= "function" then error("not callable") end
 end)
 
 if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod then
@@ -217,29 +224,6 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod then
 					end
 				end
 			end
-
-			if self == Workspace then
-				if method == "Raycast" then
-					local result = oldNamecall(self, ...)
-					if result and result.Instance then
-						local hitData, hitType = getTargetData(result.Instance)
-						if hitData and hitType == "Part" then return nil end
-					end
-					return result
-				elseif method == "GetPartBoundsInBox" or method == "GetPartBoundsInRadius" or method == "GetPartsInPart" then
-					local results = oldNamecall(self, ...)
-					local filtered = {}
-					for _, part in ipairs(results) do
-						local hitData, _ = getTargetData(part)
-						if not hitData then table.insert(filtered, part) end
-					end
-					return filtered
-				end
-			end
-
-			if method == "Connect" and self == limbData.dummyEvent.Event then
-				return oldNamecall(self, ...)
-			end
 		end
 		return oldNamecall(self, ...)
 	end))
@@ -251,9 +235,11 @@ local function watchProperty(instance, prop, callback)
 
 	local lastVal = instance[prop]
 	return instance:GetPropertyChangedSignal(prop):Connect(function()
-		if instance[prop] ~= lastVal then
-			callback(instance)
-			lastVal = instance[prop]
+		local ok, curVal = pcall(function() return instance[prop] end)
+		if ok and curVal ~= lastVal then
+			pcall(callback, instance)
+			local ok2, newVal = pcall(function() return instance[prop] end)
+			if ok2 then lastVal = newVal end
 		end
 	end)
 end
@@ -261,7 +247,8 @@ end
 local function proportionalSize(original, targetMax)
 	local maxAxis = math_max(original.X, original.Y, original.Z)
 	if maxAxis <= 0 then return Vector3.new(targetMax, targetMax, targetMax) end
-	return original * (targetMax / maxAxis)
+	local scaled = original * (targetMax / maxAxis)
+	return Vector3.new(math_max(0.05, scaled.X), math_max(0.05, scaled.Y), math_max(0.05, scaled.Z))
 end
 
 local function getAdjustedPhysicalProperties(limb, origSize, newSize)
@@ -305,8 +292,8 @@ local function sharedSaveData(parent, cacheKey, char, limb)
 		cache[cacheKey] = entry
 	end
 
-	entry.Character            = cloneref(char)
-	entry.Limb                 = cloneref(limb)
+	entry.Character            = char
+	entry.Limb                 = limb
 	entry.OriginalSize         = limb.Size
 	entry.OriginalTransparency = limb.Transparency
 	entry.OriginalCanCollide   = limb.CanCollide
@@ -477,6 +464,14 @@ function PlayerData.new(parent, player)
 	}, PlayerData)
 
 	self.playerConns:Connect(player.CharacterAdded, function(c) self:_setupCharacter(c) end)
+	self.playerConns:Connect(player:GetPropertyChangedSignal("Team"), function()
+		if self._destroyed then return end
+		if self._parent:_isTeam(self.player) then
+			self:_restoreLimb()
+		elseif self.player.Character then
+			self:_setupCharacter(self.player.Character)
+		end
+	end)
 	if player.Character then self:_setupCharacter(player.Character) end
 
 	return self
@@ -530,17 +525,22 @@ function PlayerData:_setupCharacter(char)
 	end
 
 	if self._parent._settings.FORCEFIELD_CHECK then
+		local function onFFAppeared(ff)
+			self:_restoreLimb()
+			self.charConns:Connect(ff.AncestryChanged, function()
+				if not ff:IsDescendantOf(char) then retry() end
+			end)
+		end
+
+		self.charConns:Connect(char.ChildAdded, function(child)
+			if child:IsA("ForceField") then onFFAppeared(child) end
+		end, "FFChildWatch")
+
 		local ff = char:FindFirstChildOfClass("ForceField")
 		if ff then
-			self.charConns:Connect(ff.Destroying, function() retry() end)
+			onFFAppeared(ff)
 			return
 		end
-		self.charConns:Connect(char.ChildAdded, function(child)
-			if child:IsA("ForceField") then
-				self:_restoreLimb()
-				self.charConns:Connect(child.Destroying, function() retry() end)
-			end
-		end)
 	end
 
 	local target = char:FindFirstChild(self._parent._settings.TARGET_LIMB)
@@ -850,7 +850,7 @@ function LimbExtender:GetDirectories()
 	if type(dirs) == "table" and #dirs > 0 then
 		return table.clone(dirs)
 	end
-	return { Workspace }
+	return nil -- nil means scan all workspace descendants
 end
 
 function LimbExtender:_isValidNPC(model)
@@ -879,22 +879,37 @@ function LimbExtender:_registerNPC(model)
 	end
 end
 
-function LimbExtender:_activateDirectory(dir)
+function LimbExtender:_activateDirectory(dir, useDescendants)
 	self:_registerNPC(dir)
-	for _, desc in ipairs(dir:GetDescendants()) do
+	local children = useDescendants and dir:GetDescendants() or dir:GetChildren()
+	for _, desc in ipairs(children) do
 		self:_registerNPC(desc)
 	end
-	self._connections:Connect(dir.DescendantAdded, function(desc)
-		task.defer(function()
-			if self._running and not self._destroyed then
-				self:_registerNPC(desc)
-			end
+	if useDescendants then
+		self._connections:Connect(dir.DescendantAdded, function(desc)
+			task.defer(function()
+				if self._running and not self._destroyed then
+					self:_registerNPC(desc)
+				end
+			end)
 		end)
-	end)
-	self._connections:Connect(dir.DescendantRemoving, function(desc)
-		local nd = self._npcTable[desc]
-		if nd then nd:Destroy(); self._npcTable[desc] = nil end
-	end)
+		self._connections:Connect(dir.DescendantRemoving, function(desc)
+			local nd = self._npcTable[desc]
+			if nd then nd:Destroy(); self._npcTable[desc] = nil end
+		end)
+	else
+		self._connections:Connect(dir.ChildAdded, function(desc)
+			task.defer(function()
+				if self._running and not self._destroyed then
+					self:_registerNPC(desc)
+				end
+			end)
+		end)
+		self._connections:Connect(dir.ChildRemoving, function(desc)
+			local nd = self._npcTable[desc]
+			if nd then nd:Destroy(); self._npcTable[desc] = nil end
+		end)
+	end
 end
 
 function LimbExtender:Start()
@@ -953,17 +968,18 @@ function LimbExtender:Start()
 
 	if self._settings.NPC_ENABLED then
 		local dirs = self._settings.NPC_DIRECTORIES
-		local entries = (type(dirs) == "table" and #dirs > 0) and dirs or { Workspace }
+		local hasUserDirs = type(dirs) == "table" and #dirs > 0
+		local entries = hasUserDirs and dirs or { Workspace }
 
 		for _, entry in ipairs(entries) do
 			if isLiveInstance(entry) then
-				self:_activateDirectory(entry)
+				self:_activateDirectory(entry, not hasUserDirs)
 			elseif type(entry) == "string" then
 				local gen = self._generation
 				task.spawn(function()
 					local resolved = resolvePathAsync(entry)
 					if resolved and self._running and not self._destroyed and self._generation == gen then
-						self:_activateDirectory(resolved)
+						self:_activateDirectory(resolved, not hasUserDirs)
 					end
 				end)
 			end
