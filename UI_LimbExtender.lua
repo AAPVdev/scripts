@@ -1,26 +1,34 @@
-if getgenv().loading then
+getgenv().uiLE = getgenv().uiLE or {}
+
+if getgenv().uiLE.loading then
 	return
 end
 
-getgenv().loading = true
-if getgenv().uilibray then
-	getgenv().uilibray:Destroy()
-	getgenv().uilibray = nil
+getgenv().uiLE.loading = true
+if getgenv().uiLE.uilibray then
+	getgenv().uiLE.uilibray:Destroy()
+	getgenv().uiLE.uilibray = nil
+end
+if getgenv().uiLE.gcontroller then
+	getgenv().uiLE.gcontroller:Destroy()
+	getgenv().uiLE.gcontroller = nil
 end
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 
-getgenv().le = getgenv().le or loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua"))()
-local LimbExtender = getgenv().le
+getgenv().uiLE.le = getgenv().uiLE.le or loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua"))()
+local LimbExtender = getgenv().uiLE.le
 
-getgenv().uilibray = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
-local Rayfield = getgenv().uilibray
+getgenv().uiLE.uilibray = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
+local Rayfield = getgenv().uiLE.uilibray
 
-local controller = LimbExtender.new({
+getgenv().uiLE.gcontroller = LimbExtender.new({
 	LISTEN_FOR_INPUT = false,
 	MOBILE_BUTTON = false,
 })
+
+local controller = getgenv().uiLE.gcontroller
 
 local UI = {
 	Name = "AXIOS",
@@ -271,4 +279,4 @@ if LocalPlayer.Character then
 	handleCharacter(LocalPlayer.Character)
 end
 
-getgenv().loading = false
+getgenv().uiLE.loading = false
