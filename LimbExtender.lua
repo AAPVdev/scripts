@@ -792,8 +792,6 @@ function LimbExtender.new(userSettings)
 			end)
 		end
 	end
-
-	self:Start()
 	return self
 end
 
