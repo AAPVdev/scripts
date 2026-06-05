@@ -563,7 +563,7 @@ function PlayerData:_setupCharacter(char)
 		end)
 
 		local deathEvent
-		if parent._settings.ALT_RESET_LIMB_ON_DEATH then
+		if self._parent._settings.ALT_RESET_LIMB_ON_DEATH then
 			deathEvent = humanoid.HealthChanged
 		else
 			deathEvent = humanoid.Died
@@ -679,7 +679,7 @@ function NPCData:_setup()
 		end)
 
 		local deathEvent
-		if parent._settings.ALT_RESET_LIMB_ON_DEATH then
+		if self._parent._settings.ALT_RESET_LIMB_ON_DEATH then
 			deathEvent = humanoid.HealthChanged
 		else
 			deathEvent = humanoid.Died
