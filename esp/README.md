@@ -1,10 +1,10 @@
-# CharacterOverlay API
+# SIXSEVENESP.lua
 
 A strict character-only overlay module for Roblox character rigs.
 
 ## Overview
 
-`CharacterOverlay` is a client-side renderer/controller that tracks only valid character models and draws:
+`SIXSEVENESP` is a client-side renderer/controller that tracks only valid character models and draws:
 - 2D boxes
 - tracers
 - skeleton lines
@@ -18,14 +18,14 @@ It is designed around a configurable API so you can control what gets drawn, how
 ## Installation
 
 ```lua
-local CharacterOverlay = require(path.To.CharacterOverlay)
+local SIXSEVENESP = require(path.To.SIXSEVENESP)
 ```
 
 ---
 
 ## Constructor
 
-### `CharacterOverlay.new(config?)`
+### `SIXSEVENESP.new(config?)`
 
 Creates a new overlay controller.
 
@@ -33,11 +33,11 @@ Creates a new overlay controller.
 - `config` *(table, optional)*: Configuration overrides.
 
 #### Returns
-- `CharacterOverlay` instance
+- `SIXSEVENESP` instance
 
 #### Example
 ```lua
-local esp = CharacterOverlay.new({
+local esp = SIXSEVENESP.new({
     Enabled = true,
     Color = Color3.fromRGB(255, 50, 50),
 })
@@ -47,7 +47,7 @@ local esp = CharacterOverlay.new({
 
 ## Static Helpers
 
-### `CharacterOverlay.IsCharacterModel(model)`
+### `SIXSEVENESP.IsCharacterModel(model)`
 
 Checks whether a model qualifies as a valid character rig.
 
@@ -454,9 +454,9 @@ Each tracked model also gets internal metadata cached automatically.
 ## Minimal Example
 
 ```lua
-local CharacterOverlay = require(path.To.CharacterOverlay)
+local SIXSEVENESP = require(path.To.SIXSEVENESP)
 
-local overlay = CharacterOverlay.new()
+local overlay = SIXSEVENESP.new()
 overlay:Track(workspace.NPC)
 overlay:Start()
 ```
@@ -466,9 +466,9 @@ overlay:Start()
 ## Custom Example
 
 ```lua
-local CharacterOverlay = require(path.To.CharacterOverlay)
+local SIXSEVENESP = require(path.To.SIXSEVENESP)
 
-local overlay = CharacterOverlay.new({
+local overlay = SIXSEVENESP.new({
     Enabled = true,
     Color = Color3.fromRGB(255, 70, 70),
     TextSize = 18,
