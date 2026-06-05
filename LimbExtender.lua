@@ -65,21 +65,21 @@ function ConnectionManager:Destroy()
 end
 
 local DEFAULTS = {
-	TOGGLE              = "L",
-	TARGET_LIMB         = "Head",
-	LIMB_SIZE           = 15,
-	LIMB_TRANSPARENCY   = 0.5,
-	LIMB_CAN_COLLIDE    = false,
-	MOBILE_BUTTON       = false,
-	LISTEN_FOR_INPUT    = true,
-	TEAM_CHECK          = true,
-	FORCEFIELD_CHECK    = false,
-	RESET_LIMB_ON_DEATH = false,
-	PLAYER_ENABLED      = true,
-	NPC_ENABLED         = false,
-	NPC_FILTER          = nil,
-	NPC_DIRECTORIES     = {},
-	ESP 				= false,
+	TOGGLE              	= "L",
+	TARGET_LIMB         	= "Head",
+	LIMB_SIZE           	= 15,
+	LIMB_TRANSPARENCY   	= 0.5,
+	LIMB_CAN_COLLIDE    	= false,
+	MOBILE_BUTTON       	= false,
+	LISTEN_FOR_INPUT    	= true,
+	TEAM_CHECK          	= true,
+	FORCEFIELD_CHECK    	= false,
+	ALT_RESET_LIMB_ON_DEATH = false,
+	PLAYER_ENABLED      	= true,
+	NPC_ENABLED         	= false,
+	NPC_FILTER          	= nil,
+	NPC_DIRECTORIES    		= {},
+	ESP 					= false,
 }
 
 local function mergeSettings(user)
@@ -562,8 +562,17 @@ function PlayerData:_setupCharacter(char)
 			if not char:IsDescendantOf(game) then self:_restoreLimb() end
 		end)
 
-		self.charConns:Connect(humanoid.Died, function()
-			if self._parent._settings.RESET_LIMB_ON_DEATH then self:_restoreLimb() end
+		local deathEvent
+		if parent._settings.ALT_RESET_LIMB_ON_DEATH then
+			deathEvent = humanoid.HealthChanged
+		else
+			deathEvent = humanoid.Died
+		end
+		
+		self.charConns:Connect(deathEvent, function()
+			if humanoid.Health <= 0 then
+				self:_restoreLimb()
+			end
 		end)
 	end
 end
