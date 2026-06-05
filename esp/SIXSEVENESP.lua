@@ -1,7 +1,4 @@
 -- SIXSEVENESP.lua
--- Strict character-only overlay module.
--- Tracks only real character models (Humanoid + HumanoidRootPart + Head, R6/R15).
--- Customize everything through the config table.
 
 local SIXSEVENESP = {}
 SIXSEVENESP.__index = SIXSEVENESP
