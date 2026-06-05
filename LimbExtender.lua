@@ -678,8 +678,17 @@ function NPCData:_setup()
 			if not char:IsDescendantOf(game) then self:_restoreLimb() end
 		end)
 
-		self.charConns:Connect(humanoid.Died, function()
-			if self._parent._settings.RESET_LIMB_ON_DEATH then self:_restoreLimb() end
+		local deathEvent
+		if parent._settings.ALT_RESET_LIMB_ON_DEATH then
+			deathEvent = humanoid.HealthChanged
+		else
+			deathEvent = humanoid.Died
+		end
+		
+		self.charConns:Connect(deathEvent, function()
+			if humanoid.Health <= 0 then
+				self:_restoreLimb()
+			end
 		end)
 	end
 end
