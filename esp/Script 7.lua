@@ -1,0 +1,735 @@
+-- CharacterOverlay.lua
+-- Strict character-only overlay module.
+-- Tracks only real character models (Humanoid + HumanoidRootPart + Head, R6/R15).
+-- Customize everything through the config table.
+
+local CharacterOverlay = {}
+CharacterOverlay.__index = CharacterOverlay
+
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
+
+local abs = math.abs
+local clamp = math.clamp
+local min = math.min
+local v2 = Vector2.new
+local c3 = Color3.fromRGB
+
+local DEFAULT_LOD = {
+	MaxDistance = 500,
+	NearDistance = 100,
+	MediumDistance = 250,
+	OcclusionFrequency = 4,
+}
+
+local DEFAULT_FLAGS = {
+	Near = { Box = true, Tracer = true, Skeleton = true, Health = true, Label = true },
+	Medium = { Box = true, Tracer = true, Skeleton = false, Health = true, Label = true },
+	Far = { Box = true, Tracer = true, Skeleton = false, Health = false, Label = false },
+}
+
+local DEFAULT_SKELETON_MAPS = {
+	R15 = {
+		{ "Head", "UpperTorso" }, { "UpperTorso", "LowerTorso" },
+		{ "UpperTorso", "LeftUpperArm" },  { "LeftUpperArm", "LeftLowerArm" },   { "LeftLowerArm", "LeftHand" },
+		{ "UpperTorso", "RightUpperArm" }, { "RightUpperArm", "RightLowerArm" }, { "RightLowerArm", "RightHand" },
+		{ "LowerTorso", "LeftUpperLeg" },  { "LeftUpperLeg", "LeftLowerLeg" },   { "LeftLowerLeg", "LeftFoot" },
+		{ "LowerTorso", "RightUpperLeg" }, { "RightUpperLeg", "RightLowerLeg" }, { "RightLowerLeg", "RightFoot" },
+	},
+	R6 = {
+		{ "Head", "Torso" },
+		{ "Torso", "Left Arm" }, { "Torso", "Right Arm" },
+		{ "Torso", "Left Leg" }, { "Torso", "Right Leg" },
+	},
+}
+
+local DEFAULT_OPTIONS = {
+	Enabled = true,
+	Color = c3(255, 50, 50),
+	HealthColor = c3(9, 255, 0),
+	EmptyColor = c3(255, 0, 0),
+	SkeletonColor = c3(255, 157, 0),
+	TextColor = c3(255, 255, 255),
+	TextSize = 16,
+	TracerOrigin = nil, -- Vector2 or function() -> Vector2
+	UseOffscreenPoint = true,
+	FilterLocalCharacter = true,
+	AutoUntrackMissing = true,
+
+	LOD = DEFAULT_LOD,
+	Flags = DEFAULT_FLAGS,
+	SkeletonMaps = DEFAULT_SKELETON_MAPS,
+
+	-- Called before drawing a character. Return false to skip it.
+	CanDraw = nil,
+
+	-- Optional custom text resolver.
+	-- function(model, meta) -> string
+	TextResolver = function(model)
+		return model.Name
+	end,
+}
+
+local function cloneTable(src)
+	local dst = {}
+	for k, v in pairs(src) do
+		if type(v) == "table" then
+			dst[k] = cloneTable(v)
+		else
+			dst[k] = v
+		end
+	end
+	return dst
+end
+
+local function mergeDeep(dst, src)
+	for k, v in pairs(src) do
+		if type(v) == "table" and type(dst[k]) == "table" then
+			mergeDeep(dst[k], v)
+		else
+			dst[k] = v
+		end
+	end
+	return dst
+end
+
+local function newPool()
+	local self = { Objects = {} }
+
+	function self:GetDrawingObject(kind, ctor)
+		local bucket = self.Objects[kind]
+		if not bucket then
+			bucket = { Objects = {}, Counter = 1 }
+			self.Objects[kind] = bucket
+		end
+
+		local idx = bucket.Counter
+		bucket.Counter += 1
+
+		local obj = bucket.Objects[idx]
+		if not obj then
+			obj = ctor(kind)
+			bucket.Objects[idx] = obj
+		end
+
+		return obj
+	end
+
+	function self:Reset()
+		for _, bucket in pairs(self.Objects) do
+			bucket.Counter = 1
+			for i = 1, #bucket.Objects do
+				local obj = bucket.Objects[i]
+				if obj then
+					obj.Visible = false
+				end
+			end
+		end
+	end
+
+	return self
+end
+
+function CharacterOverlay.IsCharacterModel(model)
+	if typeof(model) ~= "Instance" or not model:IsA("Model") then
+		return false
+	end
+
+	local hum = model:FindFirstChildOfClass("Humanoid")
+	if not hum then
+		return false
+	end
+
+	if hum.RigType ~= Enum.HumanoidRigType.R6 and hum.RigType ~= Enum.HumanoidRigType.R15 then
+		return false
+	end
+
+	if not model:FindFirstChild("HumanoidRootPart") then
+		return false
+	end
+
+	if not model:FindFirstChild("Head") then
+		return false
+	end
+
+	return true
+end
+
+function CharacterOverlay.new(config)
+	local self = setmetatable({}, CharacterOverlay)
+
+	self.Config = cloneTable(DEFAULT_OPTIONS)
+	if config then
+		mergeDeep(self.Config, config)
+	end
+
+	self.Enabled = self.Config.Enabled ~= false
+	self._tracked = {}
+	self._meta = {}
+	self._frameCache = {}
+	self._camCache = nil
+	self._drawCreators = {}
+	self._pool = newPool()
+	self._connections = {}
+	self._running = false
+	self._frameCount = 0
+
+	return self
+end
+
+function CharacterOverlay:SetOptions(options)
+	if not options then
+		return
+	end
+	mergeDeep(self.Config, options)
+	self.Enabled = self.Config.Enabled ~= false
+end
+
+function CharacterOverlay:GetCamera()
+	if not self._camCache then
+		self._camCache = Workspace.CurrentCamera
+	end
+	return self._camCache
+end
+
+function CharacterOverlay:FlushCache()
+	table.clear(self._frameCache)
+	self._camCache = nil
+end
+
+function CharacterOverlay:GetObject(kind)
+	local creator = self._drawCreators[kind]
+	if not creator then
+		creator = function()
+			return Drawing.new(kind)
+		end
+		self._drawCreators[kind] = creator
+	end
+
+	return self._pool:GetDrawingObject(kind, creator)
+end
+
+function CharacterOverlay:GetMousePosition()
+	return UserInputService:GetMouseLocation()
+end
+
+function CharacterOverlay:Track(model)
+	if not self.IsCharacterModel(model) then
+		return false, "Model is not a valid character rig"
+	end
+	self._tracked[model] = true
+	return true
+end
+
+function CharacterOverlay:Untrack(model)
+	self._tracked[model] = nil
+	self._meta[model] = nil
+	self._frameCache[model] = nil
+end
+
+function CharacterOverlay:ClearCharacters()
+	table.clear(self._tracked)
+	table.clear(self._meta)
+	table.clear(self._frameCache)
+end
+
+function CharacterOverlay:SetCharacters(list)
+	self:ClearCharacters()
+	for _, model in ipairs(list or {}) do
+		self:Track(model)
+	end
+end
+
+function CharacterOverlay:GetMeta(model)
+	local meta = self._meta[model]
+	if meta then
+		return meta
+	end
+
+	local hum = model:FindFirstChildOfClass("Humanoid")
+	if not hum then
+		return nil
+	end
+
+	local rigName = hum.RigType.Name
+	local map = self.Config.SkeletonMaps[rigName]
+	local bones = {}
+
+	if map then
+		for _, pair in ipairs(map) do
+			local a = model:FindFirstChild(pair[1])
+			local b = model:FindFirstChild(pair[2])
+			if a and b then
+				bones[#bones + 1] = { a, b }
+			end
+		end
+	end
+
+	meta = {
+		hum = hum,
+		head = model:FindFirstChild("Head"),
+		bones = bones,
+		pts = { false, false, false, false },
+		rayParams = nil,
+		occluded = false,
+		occludeAt = -self.Config.LOD.OcclusionFrequency,
+	}
+
+	self._meta[model] = meta
+
+	model.AncestryChanged:Connect(function()
+		if self.Config.AutoUntrackMissing and not model:IsDescendantOf(Workspace) then
+			self:Untrack(model)
+		end
+	end)
+
+	return meta
+end
+
+function CharacterOverlay:GetOffscreenPoint(pos)
+	local cam = self:GetCamera()
+	if not cam then
+		return nil
+	end
+
+	local vp = cam.ViewportSize
+	local center = vp * 0.5
+	local vec = pos - cam.CFrame.Position
+	if vec.Magnitude == 0 then
+		return center
+	end
+
+	local dir = vec.Unit
+	local dx = dir:Dot(cam.CFrame.RightVector)
+	local dy = dir:Dot(cam.CFrame.UpVector)
+	local flat = v2(dx, -dy)
+	if flat.Magnitude == 0 then
+		return center
+	end
+
+	flat = flat.Unit
+	local sx = flat.X ~= 0 and abs(center.X / flat.X) or math.huge
+	local sy = flat.Y ~= 0 and abs(center.Y / flat.Y) or math.huge
+	return center + flat * min(sx, sy)
+end
+
+function CharacterOverlay:ToScreenPoint(pos, allowOffscreen)
+	local cam = self:GetCamera()
+	if not cam then
+		return nil, false
+	end
+
+	if typeof(pos) == "CFrame" then
+		pos = pos.Position
+	end
+
+	local p, onScreen = cam:WorldToViewportPoint(pos)
+	if not onScreen and allowOffscreen and self.Config.UseOffscreenPoint then
+		local edge = self:GetOffscreenPoint(pos)
+		if edge then
+			return edge, false
+		end
+	end
+
+	return v2(p.X, p.Y), onScreen
+end
+
+function CharacterOverlay:Get2DBoxPoints(model, meta)
+	local cached = self._frameCache[model]
+	if cached ~= nil then
+		return cached
+	end
+
+	local cam = self:GetCamera()
+	if not cam then
+		self._frameCache[model] = false
+		return nil
+	end
+
+	local cframe, size = model:GetBoundingBox()
+	local cfPos = cframe.Position
+
+	local pos, onScreen = cam:WorldToViewportPoint(cfPos)
+	if not onScreen or pos.Z <= 0 then
+		self._frameCache[model] = false
+		return nil
+	end
+
+	local halfH = size.Y * 0.5
+	local up = cframe.UpVector
+	local topRaw = cam:WorldToViewportPoint(cfPos + up * halfH)
+	local botRaw = cam:WorldToViewportPoint(cfPos - up * halfH)
+
+	if topRaw.Z <= 0 or botRaw.Z <= 0 then
+		self._frameCache[model] = false
+		return nil
+	end
+
+	local height = abs(topRaw.Y - botRaw.Y)
+	local hw, hh = height * 0.325, height * 0.5
+	local cx, cy = pos.X, pos.Y
+
+	local pts = meta.pts
+	pts[1] = v2(cx - hw, cy - hh)
+	pts[2] = v2(cx + hw, cy - hh)
+	pts[3] = v2(cx - hw, cy + hh)
+	pts[4] = v2(cx + hw, cy + hh)
+
+	self._frameCache[model] = pts
+	return pts
+end
+
+function CharacterOverlay:IsObstructedThrottled(pivot, ignoreList, meta, frame)
+	local freq = self.Config.LOD.OcclusionFrequency
+	if frame - meta.occludeAt < freq then
+		return meta.occluded
+	end
+	meta.occludeAt = frame
+
+	local cam = self:GetCamera()
+	if not cam then
+		meta.occluded = false
+		return false
+	end
+
+	local dir = pivot - cam.CFrame.Position
+	if dir.Magnitude < 0.001 then
+		meta.occluded = false
+		return false
+	end
+
+	if not meta.rayParams then
+		local rp = RaycastParams.new()
+		rp.FilterType = Enum.RaycastFilterType.Exclude
+		meta.rayParams = rp
+	end
+	meta.rayParams.FilterDescendantsInstances = ignoreList
+
+	local result = Workspace:Raycast(cam.CFrame.Position, dir, meta.rayParams)
+	local solid = false
+	if result and result.Instance then
+		local hit = result.Instance
+		solid = hit:IsA("BasePart") and hit.Transparency < 0.7
+	end
+
+	meta.occluded = solid
+	return solid
+end
+
+function CharacterOverlay:Draw2DBox(pts, opts)
+	local color = opts.Color or self.Config.Color
+	local tl, tr, bl, br = pts[1], pts[2], pts[3], pts[4]
+
+	local top = self:GetObject("Line")
+	top.Color = color
+	top.From = tl
+	top.To = tr
+	top.Visible = true
+
+	local bot = self:GetObject("Line")
+	bot.Color = color
+	bot.From = bl
+	bot.To = br
+	bot.Visible = true
+
+	local lft = self:GetObject("Line")
+	lft.Color = color
+	lft.From = tl
+	lft.To = bl
+	lft.Visible = true
+
+	local rgt = self:GetObject("Line")
+	rgt.Color = color
+	rgt.From = tr
+	rgt.To = br
+	rgt.Visible = true
+end
+
+function CharacterOverlay:DrawTracer(model, pts, opts)
+	local cam = self:GetCamera()
+	if not cam then
+		return
+	end
+
+	local target
+	if pts then
+		target = (pts[3] + pts[4]) * 0.5
+	else
+		local sp, onScr = self:ToScreenPoint(model:GetPivot().Position, true)
+		if not onScr and not sp then
+			return
+		end
+		target = sp
+	end
+
+	local origin = opts.Origin
+	if origin == nil then
+		local tracerOrigin = self.Config.TracerOrigin
+		if type(tracerOrigin) == "function" then
+			origin = tracerOrigin()
+		else
+			origin = tracerOrigin or v2(cam.ViewportSize.X * 0.5, cam.ViewportSize.Y - 10)
+		end
+	end
+
+	local l = self:GetObject("Line")
+	l.Color = opts.Color or self.Config.Color
+	l.From = origin
+	l.To = target
+	l.Visible = true
+end
+
+function CharacterOverlay:DrawSkeleton(opts, meta)
+	local cam = self:GetCamera()
+	if not cam then
+		return
+	end
+
+	local color = opts.SkeletonColor or opts.Color or self.Config.SkeletonColor
+	for _, pair in ipairs(meta.bones) do
+		local partA, partB = pair[1], pair[2]
+		if not partA.Parent or not partB.Parent then
+			continue
+		end
+
+		local pA, okA = cam:WorldToViewportPoint(partA.Position)
+		local pB, okB = cam:WorldToViewportPoint(partB.Position)
+		if okA and okB then
+			local line = self:GetObject("Line")
+			line.From = v2(pA.X, pA.Y)
+			line.To = v2(pB.X, pB.Y)
+			line.Color = color
+			line.Visible = true
+		end
+	end
+end
+
+function CharacterOverlay:DrawHealth(pts, opts, meta)
+	local hum = meta.hum
+	if not hum or hum.MaxHealth <= 0 then
+		return
+	end
+
+	local tl, bl = pts[1], pts[3]
+	local wX = bl.X - tl.X
+	local wY = bl.Y - tl.Y
+	if wX == 0 and wY == 0 then
+		return
+	end
+
+	local nudge = v2(wY * 0.1, -wX * 0.1)
+	local pct = clamp(hum.Health / hum.MaxHealth, 0, 1)
+	local tip = tl:Lerp(bl, 1 - pct)
+
+	if pct < 1 then
+		local bg = self:GetObject("Line")
+		bg.From = tl - nudge
+		bg.To = bl - nudge
+		bg.Color = opts.EmptyColor or self.Config.EmptyColor
+		bg.Visible = true
+	end
+
+	if pct > 0 then
+		local bar = self:GetObject("Line")
+		bar.From = tip - nudge
+		bar.To = bl - nudge
+		bar.Color = opts.HealthColor or self.Config.HealthColor
+		bar.Visible = true
+	end
+end
+
+function CharacterOverlay:DrawLabel(pts, opts)
+	local size = opts.Size or self.Config.TextSize
+	local tl, tr = pts[1], pts[2]
+	local cx = (tl.X + tr.X) * 0.5
+	local anchorY = tl.Y
+
+	local t = self:GetObject("Text")
+	t.Text = opts.Text or "?"
+	t.Color = opts.Color or self.Config.TextColor
+	t.Size = size
+	t.Center = false
+	t.Outline = true
+	t.Visible = true
+	t.Position = v2(cx - (t.TextBounds.X * 0.5), anchorY - size - 2)
+end
+
+function CharacterOverlay:DrawModel(model, flags, opts, meta)
+	local pts = self:Get2DBoxPoints(model, meta)
+
+	if flags.Box and pts then
+		self:Draw2DBox(pts, opts)
+	end
+
+	if flags.Tracer then
+		self:DrawTracer(model, pts, opts)
+	end
+
+	if not pts then
+		return
+	end
+
+	if flags.Skeleton then
+		self:DrawSkeleton(opts, meta)
+	end
+
+	if flags.Health then
+		self:DrawHealth(pts, opts, meta)
+	end
+
+	if flags.Label then
+		self:DrawLabel(pts, opts)
+	end
+end
+
+function CharacterOverlay:GetLODFlags(distSq)
+	local lod = self.Config.LOD
+	local flags = self.Config.Flags
+
+	if distSq <= lod.NearDistance * lod.NearDistance then
+		return flags.Near
+	elseif distSq <= lod.MediumDistance * lod.MediumDistance then
+		return flags.Medium
+	else
+		return flags.Far
+	end
+end
+
+function CharacterOverlay:RenderStep()
+	self._frameCount += 1
+	self._pool:Reset()
+	self:FlushCache()
+
+	local cam = self:GetCamera()
+	if not cam then
+		return
+	end
+
+	local camCF = cam.CFrame
+	local camPos = camCF.Position
+	local camFwd = camCF.LookVector
+
+	for model in pairs(self._tracked) do
+		if not model or not model.Parent then
+			if self.Config.AutoUntrackMissing then
+				self:Untrack(model)
+			end
+			continue
+		end
+
+		if self.Config.FilterLocalCharacter and model == lpChar then
+			continue
+		end
+
+		if not self.IsCharacterModel(model) then
+			if self.Config.AutoUntrackMissing then
+				self:Untrack(model)
+			end
+			continue
+		end
+
+		if self.Config.CanDraw then
+			local ok = self.Config.CanDraw(model)
+			if ok == false then
+				continue
+			end
+		end
+
+		local pivot = model:GetPivot().Position
+		local dx = pivot.X - camPos.X
+		local dy = pivot.Y - camPos.Y
+		local dz = pivot.Z - camPos.Z
+		local distSq = dx * dx + dy * dy + dz * dz
+
+		if distSq > self.Config.LOD.MaxDistance * self.Config.LOD.MaxDistance then
+			continue
+		end
+
+		if camFwd.X * dx + camFwd.Y * dy + camFwd.Z * dz < 0 then
+			continue
+		end
+
+		local flags = self:GetLODFlags(distSq)
+		local meta = self:GetMeta(model)
+		if not meta then
+			continue
+		end
+
+		local ignoreList
+		if lpChar then
+			ignoreList = { lpChar, model }
+		else
+			ignoreList = { model }
+		end
+
+		if self:IsObstructedThrottled(pivot, ignoreList, meta, self._frameCount) then
+			continue
+		end
+
+		local opts = {
+			Color = self.Config.Color,
+			HealthColor = self.Config.HealthColor,
+			EmptyColor = self.Config.EmptyColor,
+			SkeletonColor = self.Config.SkeletonColor,
+			TextColor = self.Config.TextColor,
+			Size = self.Config.TextSize,
+			Text = self.Config.TextResolver(model, meta),
+			Origin = nil,
+		}
+
+		self:DrawModel(model, flags, opts, meta)
+	end
+end
+
+function CharacterOverlay:Start()
+	if self._running then
+		return
+	end
+	self._running = true
+
+	self._connections.Render = RunService.PreRender:Connect(function()
+		if self.Enabled then
+			self:RenderStep()
+		end
+	end)
+end
+
+function CharacterOverlay:Stop()
+	self._running = false
+	for _, conn in pairs(self._connections) do
+		if conn then
+			conn:Disconnect()
+		end
+	end
+	table.clear(self._connections)
+end
+
+function CharacterOverlay:Destroy()
+	self:Stop()
+	self:ClearCharacters()
+	table.clear(self._meta)
+	table.clear(self._frameCache)
+	table.clear(self._drawCreators)
+end
+
+local esp = CharacterOverlay.new({
+	Enabled = true,
+	Color = Color3.fromRGB(255, 70, 70),
+	TextSize = 16,
+	LOD = {
+		MaxDistance = 600,
+		NearDistance = 120,
+		MediumDistance = 280,
+		OcclusionFrequency = 4,
+	},
+	Flags = {
+		Near = { Box = true, Tracer = true, Skeleton = true, Health = true, Label = true },
+		Medium = { Box = true, Tracer = true, Skeleton = false, Health = true, Label = true },
+		Far = { Box = true, Tracer = true, Skeleton = false, Health = false, Label = false },
+	},
+})
+
+esp:Track(workspace.Anderson_5O351)
+esp:Track(workspace.Rig)
+esp:Start()
