@@ -1,10 +1,10 @@
--- CharacterOverlay.lua
+-- SIXSEVENESP.lua
 -- Strict character-only overlay module.
 -- Tracks only real character models (Humanoid + HumanoidRootPart + Head, R6/R15).
 -- Customize everything through the config table.
 
-local CharacterOverlay = {}
-CharacterOverlay.__index = CharacterOverlay
+local SIXSEVENESP = {}
+SIXSEVENESP.__index = SIXSEVENESP
 
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -131,7 +131,7 @@ local function newPool()
 	return self
 end
 
-function CharacterOverlay.IsCharacterModel(model)
+function SIXSEVENESP.IsCharacterModel(model)
 	if typeof(model) ~= "Instance" or not model:IsA("Model") then
 		return false
 	end
@@ -156,8 +156,8 @@ function CharacterOverlay.IsCharacterModel(model)
 	return true
 end
 
-function CharacterOverlay.new(config)
-	local self = setmetatable({}, CharacterOverlay)
+function SIXSEVENESP.new(config)
+	local self = setmetatable({}, SIXSEVENESP)
 
 	self.Config = cloneTable(DEFAULT_OPTIONS)
 	if config then
@@ -178,7 +178,7 @@ function CharacterOverlay.new(config)
 	return self
 end
 
-function CharacterOverlay:SetOptions(options)
+function SIXSEVENESP:SetOptions(options)
 	if not options then
 		return
 	end
@@ -186,19 +186,19 @@ function CharacterOverlay:SetOptions(options)
 	self.Enabled = self.Config.Enabled ~= false
 end
 
-function CharacterOverlay:GetCamera()
+function SIXSEVENESP:GetCamera()
 	if not self._camCache then
 		self._camCache = Workspace.CurrentCamera
 	end
 	return self._camCache
 end
 
-function CharacterOverlay:FlushCache()
+function SIXSEVENESP:FlushCache()
 	table.clear(self._frameCache)
 	self._camCache = nil
 end
 
-function CharacterOverlay:GetObject(kind)
+function SIXSEVENESP:GetObject(kind)
 	local creator = self._drawCreators[kind]
 	if not creator then
 		creator = function()
@@ -210,11 +210,11 @@ function CharacterOverlay:GetObject(kind)
 	return self._pool:GetDrawingObject(kind, creator)
 end
 
-function CharacterOverlay:GetMousePosition()
+function SIXSEVENESP:GetMousePosition()
 	return UserInputService:GetMouseLocation()
 end
 
-function CharacterOverlay:Track(model)
+function SIXSEVENESP:Track(model)
 	if not self.IsCharacterModel(model) then
 		return false, "Model is not a valid character rig"
 	end
@@ -222,26 +222,26 @@ function CharacterOverlay:Track(model)
 	return true
 end
 
-function CharacterOverlay:Untrack(model)
+function SIXSEVENESP:Untrack(model)
 	self._tracked[model] = nil
 	self._meta[model] = nil
 	self._frameCache[model] = nil
 end
 
-function CharacterOverlay:ClearCharacters()
+function SIXSEVENESP:ClearCharacters()
 	table.clear(self._tracked)
 	table.clear(self._meta)
 	table.clear(self._frameCache)
 end
 
-function CharacterOverlay:SetCharacters(list)
+function SIXSEVENESP:SetCharacters(list)
 	self:ClearCharacters()
 	for _, model in ipairs(list or {}) do
 		self:Track(model)
 	end
 end
 
-function CharacterOverlay:GetMeta(model)
+function SIXSEVENESP:GetMeta(model)
 	local meta = self._meta[model]
 	if meta then
 		return meta
@@ -287,7 +287,7 @@ function CharacterOverlay:GetMeta(model)
 	return meta
 end
 
-function CharacterOverlay:GetOffscreenPoint(pos)
+function SIXSEVENESP:GetOffscreenPoint(pos)
 	local cam = self:GetCamera()
 	if not cam then
 		return nil
@@ -314,7 +314,7 @@ function CharacterOverlay:GetOffscreenPoint(pos)
 	return center + flat * min(sx, sy)
 end
 
-function CharacterOverlay:ToScreenPoint(pos, allowOffscreen)
+function SIXSEVENESP:ToScreenPoint(pos, allowOffscreen)
 	local cam = self:GetCamera()
 	if not cam then
 		return nil, false
@@ -335,7 +335,7 @@ function CharacterOverlay:ToScreenPoint(pos, allowOffscreen)
 	return v2(p.X, p.Y), onScreen
 end
 
-function CharacterOverlay:Get2DBoxPoints(model, meta)
+function SIXSEVENESP:Get2DBoxPoints(model, meta)
 	local cached = self._frameCache[model]
 	if cached ~= nil then
 		return cached
@@ -380,7 +380,7 @@ function CharacterOverlay:Get2DBoxPoints(model, meta)
 	return pts
 end
 
-function CharacterOverlay:IsObstructedThrottled(pivot, ignoreList, meta, frame)
+function SIXSEVENESP:IsObstructedThrottled(pivot, ignoreList, meta, frame)
 	local freq = self.Config.LOD.OcclusionFrequency
 	if frame - meta.occludeAt < freq then
 		return meta.occluded
@@ -417,7 +417,7 @@ function CharacterOverlay:IsObstructedThrottled(pivot, ignoreList, meta, frame)
 	return solid
 end
 
-function CharacterOverlay:Draw2DBox(pts, opts)
+function SIXSEVENESP:Draw2DBox(pts, opts)
 	local color = opts.Color or self.Config.Color
 	local tl, tr, bl, br = pts[1], pts[2], pts[3], pts[4]
 
@@ -446,7 +446,7 @@ function CharacterOverlay:Draw2DBox(pts, opts)
 	rgt.Visible = true
 end
 
-function CharacterOverlay:DrawTracer(model, pts, opts)
+function SIXSEVENESP:DrawTracer(model, pts, opts)
 	local cam = self:GetCamera()
 	if not cam then
 		return
@@ -480,7 +480,7 @@ function CharacterOverlay:DrawTracer(model, pts, opts)
 	l.Visible = true
 end
 
-function CharacterOverlay:DrawSkeleton(opts, meta)
+function SIXSEVENESP:DrawSkeleton(opts, meta)
 	local cam = self:GetCamera()
 	if not cam then
 		return
@@ -505,7 +505,7 @@ function CharacterOverlay:DrawSkeleton(opts, meta)
 	end
 end
 
-function CharacterOverlay:DrawHealth(pts, opts, meta)
+function SIXSEVENESP:DrawHealth(pts, opts, meta)
 	local hum = meta.hum
 	if not hum or hum.MaxHealth <= 0 then
 		return
@@ -539,7 +539,7 @@ function CharacterOverlay:DrawHealth(pts, opts, meta)
 	end
 end
 
-function CharacterOverlay:DrawLabel(pts, opts)
+function SIXSEVENESP:DrawLabel(pts, opts)
 	local size = opts.Size or self.Config.TextSize
 	local tl, tr = pts[1], pts[2]
 	local cx = (tl.X + tr.X) * 0.5
@@ -555,7 +555,7 @@ function CharacterOverlay:DrawLabel(pts, opts)
 	t.Position = v2(cx - (t.TextBounds.X * 0.5), anchorY - size - 2)
 end
 
-function CharacterOverlay:DrawModel(model, flags, opts, meta)
+function SIXSEVENESP:DrawModel(model, flags, opts, meta)
 	local pts = self:Get2DBoxPoints(model, meta)
 
 	if flags.Box and pts then
@@ -583,7 +583,7 @@ function CharacterOverlay:DrawModel(model, flags, opts, meta)
 	end
 end
 
-function CharacterOverlay:GetLODFlags(distSq)
+function SIXSEVENESP:GetLODFlags(distSq)
 	local lod = self.Config.LOD
 	local flags = self.Config.Flags
 
@@ -596,7 +596,7 @@ function CharacterOverlay:GetLODFlags(distSq)
 	end
 end
 
-function CharacterOverlay:RenderStep()
+function SIXSEVENESP:RenderStep()
 	self._frameCount += 1
 	self._pool:Reset()
 	self:FlushCache()
@@ -682,7 +682,7 @@ function CharacterOverlay:RenderStep()
 	end
 end
 
-function CharacterOverlay:Start()
+function SIXSEVENESP:Start()
 	if self._running then
 		return
 	end
@@ -695,7 +695,7 @@ function CharacterOverlay:Start()
 	end)
 end
 
-function CharacterOverlay:Stop()
+function SIXSEVENESP:Stop()
 	self._running = false
 	for _, conn in pairs(self._connections) do
 		if conn then
@@ -705,7 +705,7 @@ function CharacterOverlay:Stop()
 	table.clear(self._connections)
 end
 
-function CharacterOverlay:Destroy()
+function SIXSEVENESP:Destroy()
 	self:Stop()
 	self:ClearCharacters()
 	table.clear(self._meta)
@@ -713,23 +713,4 @@ function CharacterOverlay:Destroy()
 	table.clear(self._drawCreators)
 end
 
-local esp = CharacterOverlay.new({
-	Enabled = true,
-	Color = Color3.fromRGB(255, 70, 70),
-	TextSize = 16,
-	LOD = {
-		MaxDistance = 600,
-		NearDistance = 120,
-		MediumDistance = 280,
-		OcclusionFrequency = 4,
-	},
-	Flags = {
-		Near = { Box = true, Tracer = true, Skeleton = true, Health = true, Label = true },
-		Medium = { Box = true, Tracer = true, Skeleton = false, Health = true, Label = true },
-		Far = { Box = true, Tracer = true, Skeleton = false, Health = false, Label = false },
-	},
-})
-
-esp:Track(workspace.Anderson_5O351)
-esp:Track(workspace.Rig)
-esp:Start()
+return SIXSEVENESP
