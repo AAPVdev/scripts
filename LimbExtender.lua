@@ -79,6 +79,7 @@ local DEFAULTS = {
 	NPC_ENABLED         = false,
 	NPC_FILTER          = nil,
 	NPC_DIRECTORIES     = {},
+	ESP 				= false,
 }
 
 local function mergeSettings(user)
@@ -762,6 +763,7 @@ function LimbExtender.new(userSettings)
 		_connections = ConnectionManager.new(),
 		_inputConn   = nil,
 		_CAU         = nil,
+		_ESP         = nil,
 		_running     = false,
 		_destroyed   = false,
 		_generation  = 0,
@@ -770,26 +772,37 @@ function LimbExtender.new(userSettings)
 
 	limbData.terminate = function() self:Destroy() end
 
-	if self._settings.LISTEN_FOR_INPUT then
-		if not limbData.CAU and has_loadstring and has_httpget then
-			local ok, res = pcall(function()
-				return loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/modules/refs/heads/main/ContextActionUtility.lua"))()
-			end)
-			if ok then limbData.CAU = res end
+	if has_loadstring and has_httpget then
+		if self._settings.LISTEN_FOR_INPUT then
+			if not limbData.CAU then
+				local ok, res = pcall(function()
+					return loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/modules/refs/heads/main/ContextActionUtility.lua"))()
+				end)
+				if ok then limbData.CAU = res end
+			end
+	
+			self._CAU = limbData.CAU
+	
+			if self._CAU then
+				self._CAU:BindAction("LimbExtenderToggle", function(_, inputState)
+					if inputState == Enum.UserInputState.Begin then self:Toggle() end
+				end, self._settings.MOBILE_BUTTON, Enum.KeyCode[self._settings.TOGGLE])
+			else
+				self._inputConn = UserInputService.InputBegan:Connect(function(input, processed)
+					if not processed and input.KeyCode == Enum.KeyCode[self._settings.TOGGLE] then
+						self:Toggle()
+					end
+				end)
+			end
 		end
-
-		self._CAU = limbData.CAU
-
-		if self._CAU then
-			self._CAU:BindAction("LimbExtenderToggle", function(_, inputState)
-				if inputState == Enum.UserInputState.Begin then self:Toggle() end
-			end, self._settings.MOBILE_BUTTON, Enum.KeyCode[self._settings.TOGGLE])
-		else
-			self._inputConn = UserInputService.InputBegan:Connect(function(input, processed)
-				if not processed and input.KeyCode == Enum.KeyCode[self._settings.TOGGLE] then
-					self:Toggle()
-				end
-			end)
+		if self._settings.ESP then
+			if not limbData.ESP then
+				local ok, res = pcall(function()
+					return loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/esp/SIXSEVENESP.lua"))()
+				end)
+				if ok then limbData.ESP = res end
+			end
+			self.ESP = limbData.ESP
 		end
 	end
 	return self
