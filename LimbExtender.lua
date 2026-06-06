@@ -65,21 +65,21 @@ function ConnectionManager:Destroy()
 end
 
 local DEFAULTS = {
-	TOGGLE              	= "L",
-	TARGET_LIMB         	= "Head",
-	LIMB_SIZE           	= 15,
-	LIMB_TRANSPARENCY   	= 0.5,
-	LIMB_CAN_COLLIDE    	= false,
-	MOBILE_BUTTON       	= false,
-	LISTEN_FOR_INPUT    	= true,
-	TEAM_CHECK          	= true,
-	FORCEFIELD_CHECK    	= false,
+	TOGGLE                  = "L",
+	TARGET_LIMB             = "Head",
+	LIMB_SIZE               = 15,
+	LIMB_TRANSPARENCY       = 0.5,
+	LIMB_CAN_COLLIDE        = false,
+	MOBILE_BUTTON           = false,
+	LISTEN_FOR_INPUT        = true,
+	TEAM_CHECK              = true,
+	FORCEFIELD_CHECK        = false,
 	ALT_RESET_LIMB_ON_DEATH = false,
-	PLAYER_ENABLED      	= true,
-	NPC_ENABLED         	= false,
-	NPC_FILTER          	= nil,
-	NPC_DIRECTORIES    		= {},
-	ESP 					= false,
+	PLAYER_ENABLED          = true,
+	NPC_ENABLED             = false,
+	NPC_FILTER              = nil,
+	NPC_DIRECTORIES         = {},
+	ESP                     = false,
 }
 
 local function mergeSettings(user)
@@ -181,16 +181,16 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod then
 					if key == "Transparency"             then return data.OriginalTransparency  end
 					if key == "CanCollide"               then return data.OriginalCanCollide    end
 					if key == "Massless"                 then return data.OriginalMassless      end
-					if key == "Mass"                     then return data.OriginalMass         end
-					if key == "AssemblyMass"             then return data.OriginalAssemblyMass end
-					if key == "AssemblyCenterOfMass"     then return data.OriginalAssemblyCOM  end
+					if key == "Mass"                     then return data.OriginalMass          end
+					if key == "AssemblyMass"             then return data.OriginalAssemblyMass  end
+					if key == "AssemblyCenterOfMass"     then return data.OriginalAssemblyCOM   end
 					if key == "CustomPhysicalProperties" then return data.OriginalPhysProps     end
 					if key == "RootPriority"             then return data.OriginalRootPriority  end
 				elseif instType == "Model" then
 					if key == "ExtentsSize"              then return data.OriginalExtents       end
 				elseif instType == "CharPart" then
-					if key == "AssemblyMass"             then return data.OriginalAssemblyMass end
-					if key == "AssemblyCenterOfMass"     then return data.OriginalAssemblyCOM  end
+					if key == "AssemblyMass"             then return data.OriginalAssemblyMass  end
+					if key == "AssemblyCenterOfMass"     then return data.OriginalAssemblyCOM   end
 				end
 			end
 		end
@@ -300,7 +300,6 @@ local function sharedSaveData(parent, cacheKey, char, limb)
 	entry.OriginalCanCollide   = limb.CanCollide
 	entry.OriginalMassless     = limb.Massless
 	entry.OriginalMass         = limb.Mass
-
 	entry.OriginalAssemblyMass = limb.AssemblyMass
 	entry.OriginalAssemblyCOM  = limb.AssemblyCenterOfMass
 	entry.OriginalExtents      = char:GetExtentsSize()
@@ -346,6 +345,40 @@ local function sharedSaveData(parent, cacheKey, char, limb)
 		end
 		proxy.filter.enabled = true
 	end
+
+	if type(getconnections) == "function" then
+		if entry._gpcRedirects then
+			for _, r in ipairs(entry._gpcRedirects) do
+				if r.dummyConn and r.dummyConn.Connected then
+					r.dummyConn:Disconnect()
+				end
+			end
+		end
+		entry._gpcRedirects = {}
+
+		for prop in pairs(BLOCKED_PROPS) do
+			pcall(function()
+				local realSig = limb:GetPropertyChangedSignal(prop)
+				local existing = getconnections(realSig)
+				for _, conn in ipairs(existing) do
+					local fn
+					pcall(function() fn = conn.Function end)
+					if fn then
+						pcall(function() conn:Disconnect() end)
+						local ok, dummyConn = pcall(function()
+							return limbData.dummyEvent.Event:Connect(fn)
+						end)
+						table.insert(entry._gpcRedirects, {
+							prop      = prop,
+							fn        = fn,
+							dummyConn = ok and dummyConn or nil,
+						})
+					end
+				end
+			end)
+		end
+	end
+
 	local charParts = {}
 	for _, part in ipairs(char:GetDescendants()) do
 		if part:IsA("BasePart") and part ~= limb then
@@ -375,6 +408,18 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 			activeLimb.CustomPhysicalProperties = entry.OriginalPhysProps
 			activeLimb.RootPriority             = entry.OriginalRootPriority
 		end)
+	end
+
+	if entry._gpcRedirects and entry.Limb and entry.Limb.Parent then
+		for _, r in ipairs(entry._gpcRedirects) do
+			if r.dummyConn and r.dummyConn.Connected then
+				r.dummyConn:Disconnect()
+			end
+			pcall(function()
+				entry.Limb:GetPropertyChangedSignal(r.prop):Connect(r.fn)
+			end)
+		end
+		entry._gpcRedirects = nil
 	end
 
 	if entry.Limb then limbData.instanceLookup[entry.Limb] = nil end
@@ -439,7 +484,7 @@ local function sharedApplyLimb(parent, cacheKey, char, limb)
 	entry.CollConn  = watchProperty(limb, "CanCollide",   function(l) l.CanCollide   = colide end)
 
 	if not isHRP then
-		entry.MasslessConn = watchProperty(limb, "Massless", function(l) l.Massless = true end)
+		entry.MasslessConn     = watchProperty(limb, "Massless",     function(l) l.Massless     = true end)
 		entry.RootPriorityConn = watchProperty(limb, "RootPriority", function(l) l.RootPriority = -127 end)
 	else
 		if newPhys then
@@ -568,7 +613,7 @@ function PlayerData:_setupCharacter(char)
 		else
 			deathEvent = humanoid.Died
 		end
-		
+
 		self.charConns:Connect(deathEvent, function()
 			if humanoid.Health <= 0 then
 				self:_restoreLimb()
@@ -684,7 +729,7 @@ function NPCData:_setup()
 		else
 			deathEvent = humanoid.Died
 		end
-		
+
 		self.charConns:Connect(deathEvent, function()
 			if humanoid.Health <= 0 then
 				self:_restoreLimb()
@@ -709,9 +754,7 @@ end
 local function normalizeDirectoryPath(path)
 	path = tostring(path or "")
 	path = path:gsub("^%s+", ""):gsub("%s+$", "")
-
 	path = path:gsub("^game:GetService%(%s*['\"]([^'\"]+)['\"]%s*%)", "%1")
-
 	path = path:gsub("^game%.", "")
 
 	if path:sub(1, 9):lower() == "workspace" then
@@ -720,9 +763,7 @@ local function normalizeDirectoryPath(path)
 
 	path = path:gsub(":%s*WaitForChild%(%s*['\"]([^'\"]+)['\"]%s*%)", ".%1")
 	path = path:gsub(":%s*FindFirstChild%(%s*['\"]([^'\"]+)['\"]%s*%)", ".%1")
-
 	path = path:gsub("%[%s*['\"]([^'\"]+)['\"]%s*%]", ".%1")
-
 	path = path:gsub("%.+", ".")
 	path = path:gsub("^%.", ""):gsub("%.$", "")
 
@@ -774,17 +815,17 @@ LimbExtender.__index = LimbExtender
 
 function LimbExtender.new(userSettings)
 	local self = setmetatable({
-		_settings    = mergeSettings(userSettings),
-		_playerCache = limbData.playerCache,
-		_playerTable = {},
-		_npcTable    = {},
-		_connections = ConnectionManager.new(),
-		_inputConn   = nil,
-		_CAU         = nil,
-		_ESP         = nil,
-		_running     = false,
-		_destroyed   = false,
-		_generation  = 0,
+		_settings         = mergeSettings(userSettings),
+		_playerCache      = limbData.playerCache,
+		_playerTable      = {},
+		_npcTable         = {},
+		_connections      = ConnectionManager.new(),
+		_inputConn        = nil,
+		_CAU              = nil,
+		_ESP              = nil,
+		_running          = false,
+		_destroyed        = false,
+		_generation       = 0,
 		_playerCharacters = {},
 	}, LimbExtender)
 
@@ -798,9 +839,9 @@ function LimbExtender.new(userSettings)
 				end)
 				if ok then limbData.CAU = res end
 			end
-	
+
 			self._CAU = limbData.CAU
-	
+
 			if self._CAU then
 				self._CAU:BindAction("LimbExtenderToggle", function(_, inputState)
 					if inputState == Enum.UserInputState.Begin then self:Toggle() end
