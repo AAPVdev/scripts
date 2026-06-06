@@ -281,19 +281,19 @@ local function createControl(def)
     end
 
     if def.type == "section" then
-        Tab:CreateSection(def.name or "")
+        Tabs.Sense:CreateSection(def.name or "")
         return
     elseif def.type == "label" then
-        Tab:CreateLabel(def.name or "")
+        Tabs.Sense:CreateLabel(def.name or "")
         return
     elseif def.type == "toggle" then
-        return Tab:CreateToggle({ Name = def.name, CurrentValue = def.default or false, Flag = def.flag or "", Callback = controlCallback })
+        return Tabs.Sense:CreateToggle({ Name = def.name, CurrentValue = def.default or false, Flag = def.flag or "", Callback = controlCallback })
     elseif def.type == "color" then
-        return Tab:CreateColorPicker({ Name = def.name, Color = def.color or Color3.fromRGB(255,255,255), Flag = def.flag or "", Callback = controlCallback })
+        return Tabs.Sense:CreateColorPicker({ Name = def.name, Color = def.color or Color3.fromRGB(255,255,255), Flag = def.flag or "", Callback = controlCallback })
     elseif def.type == "dropdown" then
-        return Tab:CreateDropdown({ Name = def.name, Options = def.options or {}, CurrentOption = def.current, Flag = def.flag or "", Callback = controlCallback })
+        return Tabs.Sense:CreateDropdown({ Name = def.name, Options = def.options or {}, CurrentOption = def.current, Flag = def.flag or "", Callback = controlCallback })
     elseif def.type == "slider" then
-        return Tab:CreateSlider({ Name = def.name, Range = def.range or {0,100}, CurrentValue = (def.default ~= nil and def.default) or ((def.range and def.range[1]) or 0), Increment = def.increment or 1, Suffix = def.suffix or "", Flag = def.flag or "", Callback = controlCallback })
+        return Tabs.Sense:CreateSlider({ Name = def.name, Range = def.range or {0,100}, CurrentValue = (def.default ~= nil and def.default) or ((def.range and def.range[1]) or 0), Increment = def.increment or 1, Suffix = def.suffix or "", Flag = def.flag or "", Callback = controlCallback })
     end
 end
 
