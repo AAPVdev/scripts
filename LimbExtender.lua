@@ -119,6 +119,7 @@ local BLOCKED_PROPS = {
 	AssemblyMass = true,
 	AssemblyCenterOfMass = true,
 	CustomPhysicalProperties = true,
+	CurrentPhysicalProperties = true,
 	RootPriority = true,
 }
 
