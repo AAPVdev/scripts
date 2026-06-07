@@ -1035,6 +1035,23 @@ function LimbExtender:Start()
 		for _, p in ipairs(Players:GetPlayers()) do
 			if p ~= localPlayer then self._playerTable[p.Name] = PlayerData.new(self, p) end
 		end
+
+		-- Re-evaluate all players when the LOCAL player changes teams, since
+		-- _isTeam compares against localPlayer.Team. Without this, switching
+		-- our own team leaves every existing PlayerData stale until a restart.
+		if self._settings.TEAM_CHECK then
+			self._connections:Connect(localPlayer:GetPropertyChangedSignal("Team"), function()
+				if self._destroyed then return end
+				for _, pd in pairs(self._playerTable) do
+					if pd._destroyed then continue end
+					if self:_isTeam(pd.player) then
+						pd:_restoreLimb()
+					elseif pd.player.Character then
+						pd:_setupCharacter(pd.player.Character)
+					end
+				end
+			end)
+		end
 	end
 
 	if self._settings.NPC_ENABLED then
