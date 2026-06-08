@@ -1,10 +1,17 @@
 local SIXSEVENESP = {}
 SIXSEVENESP.__index = SIXSEVENESP
 
-local RunService        = game:GetService("RunService")
-local UserInputService  = game:GetService("UserInputService")
-local Players           = game:GetService("Players")
-local Workspace         = game:GetService("Workspace")
+local function missing(t, f, fallback)
+	if type(f) == t then return f end
+	return fallback
+end
+
+local cloneref    = missing("function", cloneref, function(obj) return obj end)
+
+local RunService        = cloneref(game:GetService("RunService"))
+local UserInputService  = cloneref(game:GetService("UserInputService"))
+local Players           = cloneref(game:GetService("Players"))
+local Workspace         = cloneref(gamegame:GetService("Workspace"))
 
 local lp     = Players.LocalPlayer
 local lpChar = lp and lp.Character
