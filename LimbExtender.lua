@@ -277,13 +277,6 @@ local function watchProperty(instance, prop, callback)
 	end)
 end
 
-local function proportionalSize(original, targetMax)
-	local maxAxis = math_max(original.X, original.Y, original.Z)
-	if maxAxis <= 0 then return Vector3.new(targetMax, targetMax, targetMax) end
-	local scaled = original * (targetMax / maxAxis)
-	return Vector3.new(math_max(0.05, scaled.X), math_max(0.05, scaled.Y), math_max(0.05, scaled.Z))
-end
-
 local function getAdjustedPhysicalProperties(limb, origSize, newSize)
 	local origPhys = limb.CustomPhysicalProperties or PhysicalProperties.new(limb.Material)
 
@@ -489,7 +482,7 @@ local function sharedApplyLimb(parent, cacheKey, char, limb)
 		entry[k] = nil
 	end
 
-	local newVec = proportionalSize(entry.OriginalSize, cfg.LIMB_SIZE)
+	local newVec = Vector3.new(cfg.LIMB_SIZE, cfg.LIMB_SIZE, cfg.LIMB_SIZE)
 	local trans  = cfg.LIMB_TRANSPARENCY
 	local colide = cfg.LIMB_CAN_COLLIDE
 	local isHRP  = (limb.Name == "HumanoidRootPart")
