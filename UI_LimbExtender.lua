@@ -5,6 +5,7 @@ if getgenv().uiLE.loading then
 end
 
 getgenv().uiLE.loading = true
+
 if getgenv().uiLE.uilibray then
 	getgenv().uiLE.uilibray:Destroy()
 	getgenv().uiLE.uilibray = nil
@@ -14,10 +15,11 @@ if getgenv().uiLE.gcontroller then
 	getgenv().uiLE.gcontroller = nil
 end
 
-local Players = game:GetService("Players")
+local Players    = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 
-getgenv().uiLE.le = getgenv().uiLE.le or loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua"))()
+getgenv().uiLE.le = getgenv().uiLE.le
+	or loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua"))()
 local LimbExtender = getgenv().uiLE.le
 
 getgenv().uiLE.uilibray = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
@@ -25,15 +27,16 @@ local Rayfield = getgenv().uiLE.uilibray
 
 getgenv().uiLE.gcontroller = LimbExtender.new({
 	LISTEN_FOR_INPUT = false,
-	MOBILE_BUTTON = false,
+	MOBILE_BUTTON    = false,
 })
 
 local controller = getgenv().uiLE.gcontroller
 
+-- ── Window ─────────────────────────────────────────────────────────────────────
+
 local UI = {
-	Name = "AXIOS",
-	Icon = 107904589783906,
-	LoadingTitle = "AXIOS",
+	Name    = "AXIOS",
+	Icon    = 107904589783906,
 	LoadingSubtitles = {
 		"wtf update? in this economy?",
 		"the chatgpt special",
@@ -43,334 +46,277 @@ local UI = {
 	Theme = "Default",
 }
 
-local function pickRandom(list)
-	return list[math.random(1, #list)]
+local function pickRandom(t)
+	return t[math.random(1, #t)]
 end
 
 local Window = Rayfield:CreateWindow({
-	Name = UI.Name,
-	Icon = UI.Icon,
-	LoadingTitle = UI.LoadingTitle,
-	LoadingSubtitle = pickRandom(UI.LoadingSubtitles),
-	Theme = UI.Theme,
+	Name                 = UI.Name,
+	Icon                 = UI.Icon,
+	LoadingTitle         = UI.Name,
+	LoadingSubtitle      = pickRandom(UI.LoadingSubtitles),
+	Theme                = UI.Theme,
 	DisableRayfieldPrompts = true,
-	ConfigurationSaving = {
-		Enabled = true,
+	ConfigurationSaving  = {
+		Enabled    = true,
 		FolderName = "LimbExtenderConfigs",
-		FileName = "Configuration",
+		FileName   = "Configuration",
 	},
 })
 
 local Tabs = {
-	Limbs = Window:CreateTab("Limbs", "scale-3d"),
-	Sense = Window:CreateTab("Sense", "eye"),
+	Limbs  = Window:CreateTab("Limbs",  "scale-3d"),
+	Sense  = Window:CreateTab("Sense",  "eye"),
 	Target = Window:CreateTab("Target", "crosshair"),
 	Themes = Window:CreateTab("Themes", "palette"),
 }
 
-local function createControl(tab, kind, props, callback)
-	local methodName = "Create" .. kind
-	local method = tab[methodName]
+-- ── Generic helpers ────────────────────────────────────────────────────────────
 
-	if type(method) ~= "function" then
-		warn(("Method %s not found on tab %s"):format(methodName, tostring(tab)))
-		return nil
+local function createToggle(tab, name, flag, default, cb)
+	return tab:CreateToggle({
+		Name         = name,
+		CurrentValue = default,
+		Flag         = flag,
+		Callback     = cb or function() end,
+	})
+end
+
+local function createSlider(tab, name, flag, default, range, increment, suffix, cb)
+	return tab:CreateSlider({
+		Name         = name,
+		CurrentValue = default,
+		Flag         = flag,
+		Range        = range,
+		Increment    = increment,
+		Suffix       = suffix or "",
+		Callback     = cb or function() end,
+	})
+end
+
+local function createDropdown(tab, name, flag, options, current, multi, cb)
+	return tab:CreateDropdown({
+		Name            = name,
+		Options         = options,
+		CurrentOption   = current,
+		MultipleOptions = multi,
+		Flag            = flag,
+		Callback        = cb or function() end,
+	})
+end
+
+local function createColorPicker(tab, name, flag, default, cb)
+	return tab:CreateColorPicker({
+		Name     = name,
+		Color    = default,
+		Flag     = flag,
+		Callback = cb or function() end,
+	})
+end
+
+-- LOD flag table helpers (ESP_NEAR_FLAGS / ESP_MEDIUM_FLAGS / ESP_FAR_FLAGS are
+-- plain tables stored in the controller settings, not flat scalars).
+local function getLODFlag(settingKey, field)
+	local t = controller:Get(settingKey)
+	return type(t) == "table" and t[field] or false
+end
+
+local function setLODFlag(settingKey, field, value)
+	local t = controller:Get(settingKey)
+	if type(t) == "table" then
+		t[field] = value
+		controller:Set(settingKey, t)
 	end
-
-	props = props or {}
-	props.Callback = function(value)
-		if callback then
-			callback(value)
-		end
-	end
-
-	return method(tab, props)
 end
 
-local function createToggle(tab, name, flag, defaultValue, callback)
-	return createControl(tab, "Toggle", {
-		Name = name,
-		CurrentValue = defaultValue,
-		Flag = flag,
-	}, callback)
-end
-
-local function createSlider(tab, name, flag, defaultValue, range, increment, callback)
-	return createControl(tab, "Slider", {
-		Name = name,
-		CurrentValue = defaultValue,
-		Flag = flag,
-		Range = range,
-		Increment = increment,
-	}, callback)
-end
-
-local function createDropdown(tab, name, flag, options, currentOption, multipleOptions, callback)
-	return createControl(tab, "Dropdown", {
-		Name = name,
-		Options = options,
-		CurrentOption = currentOption,
-		MultipleOptions = multipleOptions,
-		Flag = flag,
-	}, callback)
-end
+-- ── Limbs Tab ──────────────────────────────────────────────────────────────────
 
 local modifyLimbsToggle = createToggle(
-	Tabs.Limbs,
-	"Modify Limbs",
-	"ModifyLimbs",
-	false,
-	function(value)
-		controller:Toggle(value)
-	end
+	Tabs.Limbs, "Modify Limbs", "ModifyLimbs", false,
+	function(v) controller:Toggle(v) end
 )
 
 Tabs.Limbs:CreateDivider()
 
-local settingsList = {
-	{
-		kind = "Toggle",
-		tab = Tabs.Limbs,
-		name = "Players",
-		flag = "PLAYER_ENABLED",
-		default = controller:Get("PLAYER_ENABLED"),
-	},
-    {
-		kind = "Toggle",
-		tab = Tabs.Limbs,
-		name = "NPCs",
-		flag = "NPC_ENABLED",
-		default = controller:Get("NPC_ENABLED"),
-        dividerAfter = true,
-	},
-	{
-		kind = "Toggle",
-		tab = Tabs.Limbs,
-		name = "Team Check",
-		flag = "TEAM_CHECK",
-		default = controller:Get("TEAM_CHECK"),
-	},
-	{
-		kind = "Toggle",
-		tab = Tabs.Limbs,
-		name = "ForceField Check",
-		flag = "FORCEFIELD_CHECK",
-		default = controller:Get("FORCEFIELD_CHECK"),
-	},
-	{
-		kind = "Toggle",
-		tab = Tabs.Limbs,
-		name = "Limb Collisions",
-		flag = "LIMB_CAN_COLLIDE",
-		default = controller:Get("LIMB_CAN_COLLIDE"),
-		dividerAfter = true,
-	},
-	{
-		kind = "Slider",
-		tab = Tabs.Limbs,
-		name = "Limb Transparency",
-		flag = "LIMB_TRANSPARENCY",
-		default = controller:Get("LIMB_TRANSPARENCY"),
-		range = { 0, 1 },
-		increment = 0.1,
-	},
-	{
-		kind = "Slider",
-		tab = Tabs.Limbs,
-		name = "Limb Size",
-		flag = "LIMB_SIZE",
-		default = controller:Get("LIMB_SIZE"),
-		range = { 5, 50 },
-		increment = 0.5,
-		dividerAfter = true,
-	},
+local limbSettings = {
+	{ kind="Toggle", name="Players",          flag="PLAYER_ENABLED",  default=controller:Get("PLAYER_ENABLED") },
+	{ kind="Toggle", name="NPCs",             flag="NPC_ENABLED",     default=controller:Get("NPC_ENABLED"),     dividerAfter=true },
+	{ kind="Toggle", name="Team Check",       flag="TEAM_CHECK",      default=controller:Get("TEAM_CHECK") },
+	{ kind="Toggle", name="ForceField Check", flag="FORCEFIELD_CHECK",default=controller:Get("FORCEFIELD_CHECK") },
+	{ kind="Toggle", name="Limb Collisions",  flag="LIMB_CAN_COLLIDE",default=controller:Get("LIMB_CAN_COLLIDE"),dividerAfter=true },
+	{ kind="Slider", name="Limb Transparency",flag="LIMB_TRANSPARENCY",default=controller:Get("LIMB_TRANSPARENCY"),range={0,1},   increment=0.1 },
+	{ kind="Slider", name="Limb Size",        flag="LIMB_SIZE",       default=controller:Get("LIMB_SIZE"),       range={5,50},  increment=0.5, dividerAfter=true },
 }
 
-for _, setting in ipairs(settingsList) do
-	if setting.kind == "Toggle" then
-		createToggle(setting.tab, setting.name, setting.flag, setting.default, function(value)
-			controller:Set(setting.flag, value)
-		end)
-	elseif setting.kind == "Slider" then
-		createSlider(setting.tab, setting.name, setting.flag, setting.default, setting.range, setting.increment, function(value)
-			controller:Set(setting.flag, value)
-		end)
+for _, s in ipairs(limbSettings) do
+	if s.kind == "Toggle" then
+		createToggle(Tabs.Limbs, s.name, s.flag, s.default, function(v) controller:Set(s.flag, v) end)
+	elseif s.kind == "Slider" then
+		createSlider(Tabs.Limbs, s.name, s.flag, s.default, s.range, s.increment, nil, function(v) controller:Set(s.flag, v) end)
 	end
-
-	if setting.dividerAfter then
-		setting.tab:CreateDivider()
-	end
+	if s.dividerAfter then Tabs.Limbs:CreateDivider() end
 end
 
 Tabs.Limbs:CreateKeybind({
-	Name = "Toggle Keybind",
+	Name           = "Toggle Keybind",
 	CurrentKeybind = controller:Get("TOGGLE"),
 	HoldToInteract = false,
-	Flag = "ToggleKeybind",
+	Flag           = "ToggleKeybind",
 	Callback = function()
 		modifyLimbsToggle:Set(not controller._running)
 	end,
 })
 
-local targetLimbDropdown = createDropdown(
-	Tabs.Target,
-	"Target Limb",
-	"TARGET_LIMB",
-	{},
-	{ controller:Get("TARGET_LIMB") },
-	false,
-	function(options)
-		controller:Set("TARGET_LIMB", options[1])
-	end
-)
+-- ── Sense Tab ──────────────────────────────────────────────────────────────────
 
-Tabs.Themes:CreateDropdown({
-	Name = "Current Theme",
-	Options = { "Default", "AmberGlow", "Amethyst", "Bloom", "DarkBlue", "Green", "Light", "Ocean", "Serenity" },
-	CurrentOption = { "Default" },
-	MultipleOptions = false,
-	Flag = "CurrentTheme",
-	Callback = function(options)
-		Window.ModifyTheme(options[1])
-	end,
-})
+-- ╔══════════════════════════════╗
+-- ║  Hitbox ESP                  ║
+-- ╚══════════════════════════════╝
+Tabs.Sense:CreateSection("Hitbox ESP")
 
-local Sense = loadstring(game:HttpGet('https://sirius.menu/sense'))()
-Sense.teamSettings.enemy.enabled = true
-Sense.teamSettings.friendly.enabled = true
+createToggle(Tabs.Sense, "Enabled", "ESPEnabled", controller:Get("ESP"),
+	function(v) controller:Set("ESP", v) end)
 
-local function setBoth(settingName, value)
-    if Sense and Sense.teamSettings then
-        Sense.teamSettings.enemy[settingName] = value
-        Sense.teamSettings.friendly[settingName] = value
-    end
-end
+createToggle(Tabs.Sense, "Filter Local Player", "ESP_FILTER_LOCAL",
+	controller:Get("ESP_FILTER_LOCAL"),
+	function(v) controller:Set("ESP_FILTER_LOCAL", v) end)
 
-local function createControl(def)
-    if not def or not def.type then return end
+-- ╔══════════════════════════════╗
+-- ║  Elements                    ║
+-- ╚══════════════════════════════╝
+Tabs.Sense:CreateSection("Elements")
 
-    local function applyPropsToTeams(value)
-        if not def.props then return end
-        local function wrapColor(c)
-            if def.alpha ~= nil then
-                return {c, def.alpha}
-            end
-            return c
-        end
-
-        if def.props.friendly then
-            local target = Sense.teamSettings.friendly
-            for _, propName in ipairs(def.props.friendly) do
-                target[propName] = (def.type == "color") and wrapColor(value) or value
-            end
-        end
-        if def.props.enemy then
-            local target = Sense.teamSettings.enemy
-            for _, propName in ipairs(def.props.enemy) do
-                target[propName] = (def.type == "color") and wrapColor(value) or value
-            end
-        end
-    end
-
-    local function controlCallback(v)
-        if def.setting then
-            setBoth(def.setting, v)
-        end
-        applyPropsToTeams(v)
-        if def.onChange then def.onChange(v) end
-    end
-
-    if def.type == "section" then
-        Tabs.Sense:CreateSection(def.name or "")
-        return
-    elseif def.type == "label" then
-        Tabs.Sense:CreateLabel(def.name or "")
-        return
-    elseif def.type == "toggle" then
-        return Tabs.Sense:CreateToggle({ Name = def.name, CurrentValue = def.default or false, Flag = def.flag or "", Callback = controlCallback })
-    elseif def.type == "color" then
-        return Tabs.Sense:CreateColorPicker({ Name = def.name, Color = def.color or Color3.fromRGB(255,255,255), Flag = def.flag or "", Callback = controlCallback })
-    elseif def.type == "dropdown" then
-        return Tabs.Sense:CreateDropdown({ Name = def.name, Options = def.options or {}, CurrentOption = def.current, Flag = def.flag or "", Callback = controlCallback })
-    elseif def.type == "slider" then
-        return Tabs.Sense:CreateSlider({ Name = def.name, Range = def.range or {0,100}, CurrentValue = (def.default ~= nil and def.default) or ((def.range and def.range[1]) or 0), Increment = def.increment or 1, Suffix = def.suffix or "", Flag = def.flag or "", Callback = controlCallback })
-    end
-end
-
-local function colorBoth(name, flag, propertiesList, defaultColor, alpha)
-    return { type = "color", name = name, flag = flag, color = defaultColor, alpha = alpha or 1, props = { friendly = propertiesList, enemy = propertiesList } }
-end
-local function colorFriendly(name, flag, friendlyProps, defaultColor, alpha)
-    return { type = "color", name = name, flag = flag, color = defaultColor, alpha = alpha or 1, props = { friendly = friendlyProps } }
-end
-local function colorEnemy(name, flag, enemyProps, defaultColor, alpha)
-    return { type = "color", name = name, flag = flag, color = defaultColor, alpha = alpha or 1, props = { enemy = enemyProps } }
-end
-local function toggle(name, flag, setting, default)
-    return { type = "toggle", name = name, flag = flag, setting = setting, default = default }
-end
-local function slider(name, flag, range, default, inc, setting)
-    return { type = "slider", name = name, flag = flag, range = range, default = default, increment = inc, setting = setting }
-end
-
-local ui = {
-    { type = "section", name = "Team Settings" },
-    { type = "toggle", name = "Hide Team", flag = "HideTeam", default = false, onChange = function(v) Sense.teamSettings.friendly.enabled = not v end },
-
-    colorBoth("Team Color",  "TeamColor", {"boxColor","box3dColor","offScreenArrowColor","tracerColor"}, Color3.fromRGB(0,255,0), 1),
-    colorBoth("Enemy Color", "EnemyColor", {"boxColor","box3dColor","offScreenArrowColor","tracerColor"}, Color3.fromRGB(255,0,0), 1),
-
-    { type = "section", name = "Box" },
-    toggle("Enabled", "Boxes", "box", false),
-    toggle("Outline", "BoxesOutlined", "boxOutline", true),
-    toggle("Fill", "BoxesFilled", "boxFill", false),
-    colorFriendly("Team Fill Color", "TeamFillColor", {"boxFillColor"}, Color3.fromRGB(0,255,0), 0.5),
-    colorEnemy("Enemy Fill Color", "EnemyFillColor", {"boxFillColor"}, Color3.fromRGB(255,0,0), 0.5),
-    toggle("3D Boxes", "3DBoxes", "box3d", false),
-
-    { type = "section", name = "Health" },
-    toggle("Enabled", "HealthBar", "healthBar", false),
-    { type = "color", name = "Health Color", flag = "HealthColor", color = Color3.fromRGB(0,255,0), onChange = function(c) setBoth("healthyColor", c) end },
-    { type = "color", name = "Dying Color", flag = "DyingColor", color = Color3.fromRGB(255,0,0), onChange = function(c) setBoth("dyingColor", c) end },
-    toggle("Outline", "HBsOutlined", "healthBarOutline", true),
-
-    { type = "section", name = "Tracer" },
-    toggle("Enabled", "Tracers", "tracer", false),
-    toggle("Outline", "TracersOutlined", "tracerOutline", true),
-    { type = "dropdown", name = "Origin", flag = "TracerOrigin", options = {"Bottom","Top","Mouse"}, current = "Bottom", onChange = function(v) setBoth("tracerOrigin", v) end },
-
-    { type = "section", name = "Tag" },
-    toggle("Name", "Names", "name", false),
-    toggle("Name Outlined", "NamesOutlined", "nameOutline", true),
-    toggle("Distance", "Distances", "distance", false),
-    toggle("Distance Outlined", "DistancesOutlined", "distanceOutline", true),
-    toggle("Health", "Health", "healthText", false),
-    toggle("Health Outlined", "HealthsOutlined", "healthOutline", true),
-
-    { type = "section", name = "Chams" },
-    toggle("Enabled", "Chams", "chams", false),
-    toggle("Visible Only", "ChamsVisOnly", "chamsVisibleOnly", false),
-    colorFriendly("Team Fill Color", "TeamFillColorChams", {"chamsFillColor"}, Color3.new(0.2,0.2,0.2), 0.5),
-    colorFriendly("Team Outline Color", "TeamOutlineColorChams", {"chamsOutlineColor"}, Color3.new(0,1,0), 0),
-    colorEnemy("Enemy Fill Color", "EnemyFillColorChams", {"chamsFillColor"}, Color3.new(0.2,0.2,0.2), 0.5),
-    colorEnemy("Enemy Outline Color", "EnemyOutlineColorChams", {"chamsOutlineColor"}, Color3.new(1,0,0), 0),
-
-    { type = "section", name = "Off Screen Arrow" },
-    toggle("Enabled", "OSA", "offScreenArrow", false),
-    slider("Size", "OSASize", {15,50}, 15, 1, "offScreenArrowSize"),
-    slider("Radius", "OSARadius", {150,360}, 150, 1, "offScreenArrowRadius"),
-    toggle("Outline", "OSAOutlined", "offScreenArrowOutline", true),
-
-    { type = "section", name = "Weapon" },
-    toggle("Enabled", "Weapons", "weapon", false),
-    toggle("Outline", "WeaponOutlined", "weaponOutline", true),
+local elementDefs = {
+	{ name="2D Box",           key="ESP_BOX"             },
+	{ name="3D Box",           key="ESP_BOX3D"           },
+	{ name="Tracer",           key="ESP_TRACER"          },
+	{ name="Skeleton",         key="ESP_SKELETON"        },
+	{ name="Health Bar",       key="ESP_HEALTH"          },
+	{ name="Label",            key="ESP_LABEL"           },
+	{ name="Off-Screen Arrow", key="ESP_OFFSCREEN_POINT" },
 }
 
-for _, entry in ipairs(ui) do
-    createControl(entry)
+for _, def in ipairs(elementDefs) do
+	createToggle(Tabs.Sense, def.name, def.key, controller:Get(def.key),
+		function(v) controller:Set(def.key, v) end)
 end
 
-Sense.Load()
+-- ╔══════════════════════════════╗
+-- ║  Colors                      ║
+-- ╚══════════════════════════════╝
+Tabs.Sense:CreateSection("Colors")
+
+local colorDefs = {
+	{ name="Box / Tracer",   key="ESP_COLOR"          },
+	{ name="3D Box",         key="ESP_BOX3D_COLOR"    },
+	{ name="Skeleton",       key="ESP_SKELETON_COLOR" },
+	{ name="Health (Full)",  key="ESP_HEALTH_COLOR"   },
+	{ name="Health (Empty)", key="ESP_EMPTY_COLOR"    },
+	{ name="Text",           key="ESP_TEXT_COLOR"     },
+}
+
+for _, def in ipairs(colorDefs) do
+	createColorPicker(Tabs.Sense, def.name, "ESPColor_"..def.key,
+		controller:Get(def.key),
+		function(v) controller:Set(def.key, v) end)
+end
+
+-- ╔══════════════════════════════╗
+-- ║  Text                        ║
+-- ╚══════════════════════════════╝
+Tabs.Sense:CreateSection("Text")
+
+createSlider(Tabs.Sense, "Text Size", "ESP_TEXT_SIZE",
+	controller:Get("ESP_TEXT_SIZE"), {8, 32}, 1, "px",
+	function(v) controller:Set("ESP_TEXT_SIZE", v) end)
+
+-- ╔══════════════════════════════╗
+-- ║  Distance Thresholds         ║
+-- ╚══════════════════════════════╝
+Tabs.Sense:CreateSection("Distance Thresholds")
+
+Tabs.Sense:CreateParagraph({
+	Title   = "Level of Detail (LOD)",
+	Content = "Targets within Near Distance use the Near feature set. "
+	        .. "Between Near and Medium uses the Medium set. "
+	        .. "Beyond Medium up to Max Distance uses the Far set. "
+	        .. "Configure each set in the sections below.",
+})
+
+createSlider(Tabs.Sense, "Near Distance", "ESP_NEAR_DISTANCE",
+	controller:Get("ESP_NEAR_DISTANCE"), {50, 500}, 10, "st",
+	function(v) controller:Set("ESP_NEAR_DISTANCE", v) end)
+
+createSlider(Tabs.Sense, "Medium Distance", "ESP_MEDIUM_DISTANCE",
+	controller:Get("ESP_MEDIUM_DISTANCE"), {100, 1000}, 10, "st",
+	function(v) controller:Set("ESP_MEDIUM_DISTANCE", v) end)
+
+createSlider(Tabs.Sense, "Max Distance", "ESP_MAX_DISTANCE",
+	controller:Get("ESP_MAX_DISTANCE"), {100, 2000}, 50, "st",
+	function(v) controller:Set("ESP_MAX_DISTANCE", v) end)
+
+-- ╔══════════════════════════════╗
+-- ║  LOD Feature Flags           ║
+-- ╚══════════════════════════════╝
+-- Each tier controls which elements are rendered for targets at that range.
+
+local lodFeatures = {
+	{ name="2D Box",     field="Box"      },
+	{ name="3D Box",     field="Box3D"    },
+	{ name="Tracer",     field="Tracer"   },
+	{ name="Skeleton",   field="Skeleton" },
+	{ name="Health Bar", field="Health"   },
+	{ name="Label",      field="Label"    },
+}
+
+local lodTiers = {
+	{ section="Near Range Features",   key="ESP_NEAR_FLAGS"   },
+	{ section="Medium Range Features", key="ESP_MEDIUM_FLAGS" },
+	{ section="Far Range Features",    key="ESP_FAR_FLAGS"    },
+}
+
+for _, tier in ipairs(lodTiers) do
+	Tabs.Sense:CreateSection(tier.section)
+	for _, feat in ipairs(lodFeatures) do
+		local flagId = tier.key .. "_" .. feat.field
+		createToggle(Tabs.Sense, feat.name, flagId,
+			getLODFlag(tier.key, feat.field),
+			function(v) setLODFlag(tier.key, feat.field, v) end)
+	end
+end
+
+-- ╔══════════════════════════════╗
+-- ║  Performance                 ║
+-- ╚══════════════════════════════╝
+Tabs.Sense:CreateSection("Performance")
+
+createToggle(Tabs.Sense, "Occlusion Checking", "ESP_OCCLUSION",
+	controller:Get("ESP_OCCLUSION"),
+	function(v) controller:Set("ESP_OCCLUSION", v) end)
+
+createSlider(Tabs.Sense, "Occlusion Frequency", "ESP_OCCLUSION_FREQUENCY",
+	controller:Get("ESP_OCCLUSION_FREQUENCY"), {1, 20}, 1, "frames",
+	function(v) controller:Set("ESP_OCCLUSION_FREQUENCY", v) end)
+
+-- ── Target Tab ─────────────────────────────────────────────────────────────────
+
+local targetLimbDropdown = createDropdown(
+	Tabs.Target, "Target Limb", "TARGET_LIMB",
+	{}, { controller:Get("TARGET_LIMB") }, false,
+	function(opts) controller:Set("TARGET_LIMB", opts[1]) end
+)
+
+-- ── Themes Tab ─────────────────────────────────────────────────────────────────
+
+createDropdown(
+	Tabs.Themes, "Current Theme", "CurrentTheme",
+	{ "Default","AmberGlow","Amethyst","Bloom","DarkBlue","Green","Light","Ocean","Serenity" },
+	{ "Default" }, false,
+	function(opts) Window.ModifyTheme(opts[1]) end
+)
+
+-- ── Config load & limb scanner ─────────────────────────────────────────────────
+
 Rayfield:LoadConfiguration()
 
 local limbNames = {}
@@ -381,38 +327,24 @@ local function refreshTargetLimbDropdown()
 end
 
 local function addLimbIfNew(name)
-	if not name then
-		return
-	end
-
+	if not name then return end
 	if not table.find(limbNames, name) then
 		table.insert(limbNames, name)
 		refreshTargetLimbDropdown()
 	end
 end
 
-local function handleCharacter(character)
-	if not character then
-		return
-	end
-
-	local function onChildAdded(child)
-		if child and child:IsA("BasePart") then
-			addLimbIfNew(child.Name)
-		end
-	end
-
-	character.ChildAdded:Connect(onChildAdded)
-
-	for _, child in ipairs(character:GetChildren()) do
-		onChildAdded(child)
+local function handleCharacter(char)
+	if not char then return end
+	char.ChildAdded:Connect(function(child)
+		if child:IsA("BasePart") then addLimbIfNew(child.Name) end
+	end)
+	for _, child in ipairs(char:GetChildren()) do
+		if child:IsA("BasePart") then addLimbIfNew(child.Name) end
 	end
 end
 
 LocalPlayer.CharacterAdded:Connect(handleCharacter)
-
-if LocalPlayer.Character then
-	handleCharacter(LocalPlayer.Character)
-end
+if LocalPlayer.Character then handleCharacter(LocalPlayer.Character) end
 
 getgenv().uiLE.loading = false
