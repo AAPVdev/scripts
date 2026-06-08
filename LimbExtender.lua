@@ -1237,6 +1237,14 @@ function LimbExtender:Set(key, value)
         elseif self._ESP and type(key) == "string" and key:sub(1, 4) == "ESP_" then
             self._ESP:SetOptions(self:_buildESPConfig())
 
+            if key == "ESP_CAN_DRAW" then
+                self._ESP.Config.CanDraw = value
+            elseif key == "ESP_TEXT_RESOLVER" then
+                self._ESP.Config.TextResolver = value
+            elseif key == "ESP_TRACER_ORIGIN" then
+                self._ESP.Config.TracerOrigin = value
+            end
+
         else
             self:Restart()
         end
