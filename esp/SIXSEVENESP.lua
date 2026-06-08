@@ -36,6 +36,7 @@ local DEFAULT_LOD = {
 	MaxDistance        = 500,
 	NearDistance       = 100,
 	MediumDistance     = 250,
+	OcclusionEnabled   = true,
 	OcclusionFrequency = 4,
 }
 
@@ -444,6 +445,10 @@ function SIXSEVENESP:Get3DBoxCorners(model)
 end
 
 function SIXSEVENESP:IsObstructedThrottled(pivot, ignoreList, meta, frame)
+	if self.Config.LOD.OcclusionEnabled == false then
+		meta.occluded = false
+		return false
+	end
 	local freq = self.Config.LOD.OcclusionFrequency
 	if frame - meta.occludeAt < freq then
 		return meta.occluded
