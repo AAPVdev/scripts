@@ -556,8 +556,12 @@ function PlayerData.new(parent, player)
 end
 
 function PlayerData:_restoreLimb()
-	sharedRestoreLimb(self._parent, self._cacheKey, self._activeLimb)
-	self._activeLimb = nil
+    local char = self._activeLimb and self._activeLimb.Parent
+    sharedRestoreLimb(self._parent, self._cacheKey, self._activeLimb)
+    if self._parent._ESP and char then
+        self._parent._ESP:Untrack(char)
+    end
+    self._activeLimb = nil
 end
 
 function PlayerData:_applyLimb(char, limb)
@@ -685,8 +689,12 @@ function NPCData.new(parent, char)
 end
 
 function NPCData:_restoreLimb()
-	sharedRestoreLimb(self._parent, self._cacheKey, self._activeLimb)
-	self._activeLimb = nil
+    local char = self._activeLimb and self._activeLimb.Parent
+    sharedRestoreLimb(self._parent, self._cacheKey, self._activeLimb)
+    if self._parent._ESP and char then
+        self._parent._ESP:Untrack(char)
+    end
+    self._activeLimb = nil
 end
 
 function NPCData:_applyLimb(char, limb)
@@ -958,49 +966,6 @@ function LimbExtender:_buildESPConfig()
 	}
 end
 
-function LimbExtender:Set(key, value)
-    if self._settings[key] ~= value then
-        self._settings[key] = value
-
-        if key == "ESP" then
-            if value then
-                if not limbData.ESP and has_loadstring and has_httpget then
-                    local ok, res = pcall(function()
-                        return loadstring(game:HttpGet(
-                            "https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/esp/SIXSEVENESP.lua"
-                        ))()
-                    end)
-                    if ok then limbData.ESP = res end
-                end
-                self.ESP = limbData.ESP
-                if self.ESP and not self._ESP then
-                    self._ESP = self.ESP.new(self:_buildESPConfig())
-                    if self._running then self._ESP:Start() end
-                end
-            else
-                if self._ESP then
-                    self._ESP:Destroy()
-                    self._ESP = nil
-                end
-            end
-
-        elseif self._ESP and type(key) == "string" and key:sub(1, 4) == "ESP_" then
-            self._ESP:SetOptions(self:_buildESPConfig())
-
-            if key == "ESP_CAN_DRAW" then
-                self._ESP.Config.CanDraw = value
-            elseif key == "ESP_TEXT_RESOLVER" then
-                self._ESP.Config.TextResolver = value
-            elseif key == "ESP_TRACER_ORIGIN" then
-                self._ESP.Config.TracerOrigin = value
-            end
-
-        else
-            self:Restart()
-        end
-    end
-end
-
 function LimbExtender:AddDirectory(dir)
 	if not isLiveInstance(dir) and type(dir) ~= "string" then return end
 	local dirs = self._settings.NPC_DIRECTORIES
@@ -1103,6 +1068,10 @@ function LimbExtender:Start()
 		self._connections = ConnectionManager.new()
 	end
 
+	if self._ESP then
+        self._ESP:Start()
+    end
+	
 	if self._settings.NPC_ENABLED then
 		table.clear(self._playerCharacters)
 
@@ -1148,9 +1117,6 @@ function LimbExtender:Start()
 			if p ~= localPlayer then self._playerTable[p.Name] = PlayerData.new(self, p) end
 		end
 
-		-- Re-evaluate all players when the LOCAL player changes teams, since
-		-- _isTeam compares against localPlayer.Team. Without this, switching
-		-- our own team leaves every existing PlayerData stale until a restart.
 		if self._settings.TEAM_CHECK then
 			self._connections:Connect(localPlayer:GetPropertyChangedSignal("Team"), function()
 				if self._destroyed then return end
@@ -1188,10 +1154,6 @@ function LimbExtender:Start()
 
 	if self._CAU and self._settings.MOBILE_BUTTON then
 		self._CAU:SetTitle("LimbExtenderToggle", "Hitbox: ON")
-	end
-
-	if self._ESP then
-		self._ESP:Start()
 	end
 end
 
