@@ -1209,14 +1209,38 @@ function LimbExtender:Restart()
 end
 
 function LimbExtender:Set(key, value)
-	if self._settings[key] ~= value then
-		self._settings[key] = value
-		if self._ESP and type(key) == "string" and key:sub(1, 4) == "ESP_" then
-			self._ESP:SetOptions(self:_buildESPConfig())
-		else
-			self:Restart()
-		end
-	end
+    if self._settings[key] ~= value then
+        self._settings[key] = value
+
+        if key == "ESP" then
+            if value then
+                if not limbData.ESP and has_loadstring and has_httpget then
+                    local ok, res = pcall(function()
+                        return loadstring(game:HttpGet(
+                            "https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/esp/SIXSEVENESP.lua"
+                        ))()
+                    end)
+                    if ok then limbData.ESP = res end
+                end
+                self.ESP = limbData.ESP
+                if self.ESP and not self._ESP then
+                    self._ESP = self.ESP.new(self:_buildESPConfig())
+                    if self._running then self._ESP:Start() end
+                end
+            else
+                if self._ESP then
+                    self._ESP:Destroy()
+                    self._ESP = nil
+                end
+            end
+
+        elseif self._ESP and type(key) == "string" and key:sub(1, 4) == "ESP_" then
+            self._ESP:SetOptions(self:_buildESPConfig())
+
+        else
+            self:Restart()
+        end
+    end
 end
 
 function LimbExtender:Get(key)
