@@ -1,11 +1,3 @@
--- ============================================================
---  AXIOS  ·  LimbExtender GUI
--- ============================================================
-
--- ── Singleton guard ──────────────────────────────────────────
--- Prevents multiple simultaneous loads and tears down any
--- previous instance before building a fresh one.
-
 getgenv().uiLE = getgenv().uiLE or {}
 if getgenv().uiLE.loading then return end
 getgenv().uiLE.loading = true
