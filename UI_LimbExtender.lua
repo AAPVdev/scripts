@@ -161,7 +161,7 @@ end
 
 Tabs.Limbs:CreateKeybind({
 	Name           = "Toggle Keybind",
-	CurrentKeybind = controller:Get("TOGGLE"),
+	CurrentKeybind = "L",
 	HoldToInteract = false,
 	Flag           = "ToggleKeybind",
 	Callback = function()
