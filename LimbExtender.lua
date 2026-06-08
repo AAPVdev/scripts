@@ -80,6 +80,37 @@ local DEFAULTS = {
 	NPC_FILTER              = nil,
 	NPC_DIRECTORIES         = {},
 	ESP                     = false,
+
+	ESP_COLOR               = Color3.fromRGB(255, 50, 50),
+	ESP_BOX3D_COLOR         = Color3.fromRGB(255, 50, 50),
+	ESP_HEALTH_COLOR        = Color3.fromRGB(9, 255, 0),
+	ESP_EMPTY_COLOR         = Color3.fromRGB(255, 0, 0),
+	ESP_SKELETON_COLOR      = Color3.fromRGB(255, 157, 0),
+	ESP_TEXT_COLOR          = Color3.fromRGB(255, 255, 255),
+	ESP_TEXT_SIZE           = 16,
+	ESP_OFFSCREEN_POINT     = true,
+	ESP_FILTER_LOCAL        = true,
+
+	ESP_MAX_DISTANCE        = 500,
+	ESP_NEAR_DISTANCE       = 100,
+	ESP_MEDIUM_DISTANCE     = 250,
+	ESP_OCCLUSION           = false,
+	ESP_OCCLUSION_FREQUENCY = 4,
+
+	ESP_BOX      = true,
+	ESP_BOX3D    = false,
+	ESP_TRACER   = true,
+	ESP_SKELETON = true,
+	ESP_HEALTH   = true,
+	ESP_LABEL    = true,
+
+	ESP_NEAR_FLAGS   = { Box = true,  Tracer = true,  Skeleton = true,  Health = true,  Label = true,  Box3D = false },
+	ESP_MEDIUM_FLAGS = { Box = true,  Tracer = true,  Skeleton = false, Health = true,  Label = true,  Box3D = false },
+	ESP_FAR_FLAGS    = { Box = true,  Tracer = true,  Skeleton = false, Health = false, Label = false, Box3D = false },
+
+	ESP_TEXT_RESOLVER = nil,  
+	ESP_CAN_DRAW      = nil, 
+	ESP_TRACER_ORIGIN = nil,  
 }
 
 local function mergeSettings(user)
@@ -604,6 +635,10 @@ function PlayerData:_setupCharacter(char)
 	if not self._destroyed then
 		self:_applyLimb(char, target)
 
+		if self._parent._ESP then
+			self._parent._ESP:Track(char)
+		end
+
 		self.charConns:Connect(char.AncestryChanged, function()
 			if not char:IsDescendantOf(game) then self:_restoreLimb() end
 		end)
@@ -719,6 +754,10 @@ function NPCData:_setup()
 
 	if not self._destroyed then
 		self:_applyLimb(char, target)
+
+		if self._parent._ESP then
+			self._parent._ESP:Track(char)
+		end
 
 		self.charConns:Connect(char.AncestryChanged, function()
 			if not char:IsDescendantOf(game) then self:_restoreLimb() end
@@ -863,6 +902,9 @@ function LimbExtender.new(userSettings)
 				if ok then limbData.ESP = res end
 			end
 			self.ESP = limbData.ESP
+			if self.ESP then
+				self._ESP = self.ESP.new(self:_buildESPConfig())
+			end
 		end
 	end
 	return self
@@ -872,6 +914,48 @@ function LimbExtender:_isTeam(player)
 	if not self._settings.TEAM_CHECK then return false end
 	local myTeam = localPlayer and localPlayer.Team
 	return myTeam ~= nil and player.Team == myTeam
+end
+
+function LimbExtender:_buildESPConfig()
+	local s = self._settings
+
+	local function applyToggles(flags)
+		return {
+			Box      = s.ESP_BOX      and flags.Box,
+			Box3D    = s.ESP_BOX3D    and flags.Box3D,
+			Tracer   = s.ESP_TRACER   and flags.Tracer,
+			Skeleton = s.ESP_SKELETON and flags.Skeleton,
+			Health   = s.ESP_HEALTH   and flags.Health,
+			Label    = s.ESP_LABEL    and flags.Label,
+		}
+	end
+
+	return {
+		Color                = s.ESP_COLOR,
+		Box3DColor           = s.ESP_BOX3D_COLOR,
+		HealthColor          = s.ESP_HEALTH_COLOR,
+		EmptyColor           = s.ESP_EMPTY_COLOR,
+		SkeletonColor        = s.ESP_SKELETON_COLOR,
+		TextColor            = s.ESP_TEXT_COLOR,
+		TextSize             = s.ESP_TEXT_SIZE,
+		UseOffscreenPoint    = s.ESP_OFFSCREEN_POINT,
+		FilterLocalCharacter = s.ESP_FILTER_LOCAL,
+		LOD = {
+			MaxDistance        = s.ESP_MAX_DISTANCE,
+			NearDistance       = s.ESP_NEAR_DISTANCE,
+			MediumDistance     = s.ESP_MEDIUM_DISTANCE,
+			OcclusionEnabled   = s.ESP_OCCLUSION,
+			OcclusionFrequency = s.ESP_OCCLUSION_FREQUENCY,
+		},
+		Flags = {
+			Near   = applyToggles(s.ESP_NEAR_FLAGS),
+			Medium = applyToggles(s.ESP_MEDIUM_FLAGS),
+			Far    = applyToggles(s.ESP_FAR_FLAGS),
+		},
+		TextResolver = s.ESP_TEXT_RESOLVER,
+		CanDraw      = s.ESP_CAN_DRAW,
+		TracerOrigin = s.ESP_TRACER_ORIGIN,
+	}
 end
 
 function LimbExtender:SetDirectories(dirs)
@@ -1077,6 +1161,10 @@ function LimbExtender:Start()
 	if self._CAU and self._settings.MOBILE_BUTTON then
 		self._CAU:SetTitle("LimbExtenderToggle", "Hitbox: ON")
 	end
+
+	if self._ESP then
+		self._ESP:Start()
+	end
 end
 
 function LimbExtender:Stop()
@@ -1100,6 +1188,10 @@ function LimbExtender:Stop()
 	if self._CAU and self._settings.MOBILE_BUTTON then
 		self._CAU:SetTitle("LimbExtenderToggle", "Hitbox: OFF")
 	end
+
+	if self._ESP then
+		self._ESP:Stop()
+	end
 end
 
 function LimbExtender:Toggle(state)
@@ -1119,7 +1211,11 @@ end
 function LimbExtender:Set(key, value)
 	if self._settings[key] ~= value then
 		self._settings[key] = value
-		self:Restart()
+		if self._ESP and type(key) == "string" and key:sub(1, 4) == "ESP_" then
+			self._ESP:SetOptions(self:_buildESPConfig())
+		else
+			self:Restart()
+		end
 	end
 end
 
@@ -1142,6 +1238,10 @@ function LimbExtender:Destroy()
 	end
 	if self._CAU then
 		self._CAU:UnbindAction("LimbExtenderToggle")
+	end
+	if self._ESP then
+		self._ESP:Destroy()
+		self._ESP = nil
 	end
 	limbData.terminate = nil
 	setmetatable(self, nil)
