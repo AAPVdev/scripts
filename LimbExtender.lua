@@ -1271,11 +1271,9 @@ function LimbExtender:Set(key, value)
                 self._ESP.Config.TextResolver = value
             elseif key == "ESP_TRACER_ORIGIN" then
                 self._ESP.Config.TracerOrigin = value
-            end
-
-        else
-            self:Restart()
+            end 
         end
+		self:Restart()
     end
 end
 
