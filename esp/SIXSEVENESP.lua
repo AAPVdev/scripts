@@ -108,13 +108,20 @@ local function mergeDeep(dst, src)
 	return dst
 end
 
+-- FIX: replaced the old single Reset() approach with BeginFrame / EndFrame.
+-- Old behaviour: all Drawing objects were set Visible=false at the TOP of
+-- RenderStep, leaving a window where the renderer could capture a fully-dark
+-- frame before the redraws completed.
+-- New behaviour: counters are reset at the start (objects stay visible from
+-- the previous frame), drawing proceeds normally, then only the surplus
+-- objects that weren't used this frame are hidden at the very END.
 local function newPool()
 	local self = { Objects = {} }
 
 	function self:GetDrawingObject(kind, ctor)
 		local bucket = self.Objects[kind]
 		if not bucket then
-			bucket = { Objects = {}, Counter = 1 }
+			bucket = { Objects = {}, Counter = 1, PrevHighWater = 0 }
 			self.Objects[kind] = bucket
 		end
 
@@ -130,9 +137,33 @@ local function newPool()
 		return obj
 	end
 
+	-- Call at the START of a frame: reset counters only, leave objects visible.
+	function self:BeginFrame()
+		for _, bucket in pairs(self.Objects) do
+			bucket.PrevHighWater = bucket.Counter - 1
+			bucket.Counter = 1
+		end
+	end
+
+	-- Call at the END of a frame: hide only objects not used this frame.
+	function self:EndFrame()
+		for _, bucket in pairs(self.Objects) do
+			local used = bucket.Counter - 1
+			local prev = bucket.PrevHighWater
+			for i = used + 1, prev do
+				local obj = bucket.Objects[i]
+				if obj then
+					obj.Visible = false
+				end
+			end
+		end
+	end
+
+	-- Full reset kept for Stop() / Destroy() calls.
 	function self:Reset()
 		for _, bucket in pairs(self.Objects) do
 			bucket.Counter = 1
+			bucket.PrevHighWater = 0
 			for i = 1, #bucket.Objects do
 				local obj = bucket.Objects[i]
 				if obj then
@@ -229,7 +260,6 @@ function SIXSEVENESP:Track(model)
 end
 
 function SIXSEVENESP:Untrack(model)
-
 	local meta = self._meta[model]
 	if meta and meta._ancestryConn then
 		meta._ancestryConn:Disconnect()
@@ -242,7 +272,6 @@ function SIXSEVENESP:Untrack(model)
 end
 
 function SIXSEVENESP:ClearCharacters()
-
 	for _, meta in pairs(self._meta) do
 		if meta._ancestryConn then
 			meta._ancestryConn:Disconnect()
@@ -341,7 +370,7 @@ function SIXSEVENESP:GetOffscreenPoint(pos)
 	end
 
 	flat = flat.Unit
-	
+
 	local sx = flat.X ~= 0 and abs(center.X / flat.X) or huge
 	local sy = flat.Y ~= 0 and abs(center.Y / flat.Y) or huge
 	return center + flat * min(sx, sy)
@@ -557,7 +586,6 @@ function SIXSEVENESP:DrawTracer(model, pts, opts)
 	if pts then
 		target = (pts[3] + pts[4]) * 0.5
 	else
-
 		local sp, onScr = self:ToScreenPoint(opts.Pivot, true)
 		if not sp then return end
 		target = sp
@@ -660,7 +688,6 @@ function SIXSEVENESP:DrawModel(model, flags, opts, meta)
 	if flags.Box3D then
 		local corners, valid = self:Get3DBoxCorners(model)
 		if corners then
-			
 			self:Draw3DBox(corners, valid, opts)
 		end
 	end
@@ -698,11 +725,18 @@ end
 
 function SIXSEVENESP:RenderStep()
 	self._frameCount += 1
-	self._pool:Reset()
+
+	-- FIX: BeginFrame resets counters only — objects remain visible from
+	-- the previous frame, eliminating the blank-frame flicker caused by
+	-- the old Reset() call that set everything Visible=false up front.
+	self._pool:BeginFrame()
 	self:FlushCache()
 
 	local cam = self:GetCamera()
-	if not cam then return end
+	if not cam then
+		self._pool:EndFrame()
+		return
+	end
 
 	local camCF  = cam.CFrame
 	local camPos = camCF.Position
@@ -785,9 +819,14 @@ function SIXSEVENESP:RenderStep()
 
 		self:DrawModel(model, flags, opts, meta)
 	end
+
 	for _, m in ipairs(toUntrack) do
 		self:Untrack(m)
 	end
+
+	-- FIX: Hide surplus Drawing objects AFTER drawing is complete, not before.
+	-- Only objects with indices above this frame's high-water mark are hidden.
+	self._pool:EndFrame()
 end
 
 function SIXSEVENESP:Start()
