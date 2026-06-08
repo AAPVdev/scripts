@@ -958,19 +958,47 @@ function LimbExtender:_buildESPConfig()
 	}
 end
 
-function LimbExtender:SetDirectories(dirs)
-	if type(dirs) == "table" and #dirs > 0 then
-		local valid = {}
-		for _, d in ipairs(dirs) do
-			if isLiveInstance(d) or type(d) == "string" then
-				table.insert(valid, d)
-			end
-		end
-		self._settings.NPC_DIRECTORIES = #valid > 0 and valid or nil
-	else
-		self._settings.NPC_DIRECTORIES = nil
-	end
-	self:Restart()
+function LimbExtender:Set(key, value)
+    if self._settings[key] ~= value then
+        self._settings[key] = value
+
+        if key == "ESP" then
+            if value then
+                if not limbData.ESP and has_loadstring and has_httpget then
+                    local ok, res = pcall(function()
+                        return loadstring(game:HttpGet(
+                            "https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/esp/SIXSEVENESP.lua"
+                        ))()
+                    end)
+                    if ok then limbData.ESP = res end
+                end
+                self.ESP = limbData.ESP
+                if self.ESP and not self._ESP then
+                    self._ESP = self.ESP.new(self:_buildESPConfig())
+                    if self._running then self._ESP:Start() end
+                end
+            else
+                if self._ESP then
+                    self._ESP:Destroy()
+                    self._ESP = nil
+                end
+            end
+
+        elseif self._ESP and type(key) == "string" and key:sub(1, 4) == "ESP_" then
+            self._ESP:SetOptions(self:_buildESPConfig())
+
+            if key == "ESP_CAN_DRAW" then
+                self._ESP.Config.CanDraw = value
+            elseif key == "ESP_TEXT_RESOLVER" then
+                self._ESP.Config.TextResolver = value
+            elseif key == "ESP_TRACER_ORIGIN" then
+                self._ESP.Config.TracerOrigin = value
+            end
+
+        else
+            self:Restart()
+        end
+    end
 end
 
 function LimbExtender:AddDirectory(dir)
