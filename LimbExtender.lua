@@ -6,9 +6,8 @@ end
 local cloneref    = missing("function", cloneref, function(obj) return obj end)
 local checkcaller = type(checkcaller) == "function" and checkcaller or function() return true end
 
-local Players          = cloneref(game:GetService("Players"))
-local UserInputService = cloneref(game:GetService("UserInputService"))
-local Workspace        = cloneref(game:GetService("Workspace"))
+local Players   = cloneref(game:GetService("Players"))
+local Workspace = cloneref(game:GetService("Workspace"))
 
 local localPlayer = Players.LocalPlayer
 if not localPlayer then
@@ -65,13 +64,10 @@ function ConnectionManager:Destroy()
 end
 
 local DEFAULTS = {
-	TOGGLE                  = "L",
 	TARGET_LIMB             = "Head",
 	LIMB_SIZE               = 15,
 	LIMB_TRANSPARENCY       = 0.5,
 	LIMB_CAN_COLLIDE        = false,
-	MOBILE_BUTTON           = false,
-	LISTEN_FOR_INPUT        = true,
 	TEAM_CHECK              = true,
 	FORCEFIELD_CHECK        = false,
 	ALT_RESET_LIMB_ON_DEATH = false,
@@ -108,9 +104,9 @@ local DEFAULTS = {
 	ESP_MEDIUM_FLAGS = { Box = true,  Tracer = true,  Skeleton = false, Health = true,  Label = true,  Box3D = false },
 	ESP_FAR_FLAGS    = { Box = true,  Tracer = true,  Skeleton = false, Health = false, Label = false, Box3D = false },
 
-	ESP_TEXT_RESOLVER = nil,  
-	ESP_CAN_DRAW      = nil, 
-	ESP_TRACER_ORIGIN = nil,  
+	ESP_TEXT_RESOLVER = nil,
+	ESP_CAN_DRAW      = nil,
+	ESP_TRACER_ORIGIN = nil,
 }
 
 local function mergeSettings(user)
@@ -549,12 +545,12 @@ function PlayerData.new(parent, player)
 end
 
 function PlayerData:_restoreLimb()
-    local char = self._activeLimb and self._activeLimb.Parent
-    sharedRestoreLimb(self._parent, self._cacheKey, self._activeLimb)
-    if self._parent._ESP and char then
-        self._parent._ESP:Untrack(char)
-    end
-    self._activeLimb = nil
+	local char = self._activeLimb and self._activeLimb.Parent
+	sharedRestoreLimb(self._parent, self._cacheKey, self._activeLimb)
+	if self._parent._ESP and char then
+		self._parent._ESP:Untrack(char)
+	end
+	self._activeLimb = nil
 end
 
 function PlayerData:_applyLimb(char, limb)
@@ -682,12 +678,12 @@ function NPCData.new(parent, char)
 end
 
 function NPCData:_restoreLimb()
-    local char = self._activeLimb and self._activeLimb.Parent
-    sharedRestoreLimb(self._parent, self._cacheKey, self._activeLimb)
-    if self._parent._ESP and char then
-        self._parent._ESP:Untrack(char)
-    end
-    self._activeLimb = nil
+	local char = self._activeLimb and self._activeLimb.Parent
+	sharedRestoreLimb(self._parent, self._cacheKey, self._activeLimb)
+	if self._parent._ESP and char then
+		self._parent._ESP:Untrack(char)
+	end
+	self._activeLimb = nil
 end
 
 function NPCData:_applyLimb(char, limb)
@@ -861,8 +857,6 @@ function LimbExtender.new(userSettings)
 		_playerTable      = {},
 		_npcTable         = {},
 		_connections      = ConnectionManager.new(),
-		_inputConn        = nil,
-		_CAU              = nil,
 		_ESP              = nil,
 		_running          = false,
 		_destroyed        = false,
@@ -873,28 +867,6 @@ function LimbExtender.new(userSettings)
 	limbData.terminate = function() self:Destroy() end
 
 	if has_loadstring and has_httpget then
-		if self._settings.LISTEN_FOR_INPUT then
-			if not limbData.CAU then
-				local ok, res = pcall(function()
-					return loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/modules/refs/heads/main/ContextActionUtility.lua"))()
-				end)
-				if ok then limbData.CAU = res end
-			end
-
-			self._CAU = limbData.CAU
-
-			if self._CAU then
-				self._CAU:BindAction("LimbExtenderToggle", function(_, inputState)
-					if inputState == Enum.UserInputState.Begin then self:Toggle() end
-				end, self._settings.MOBILE_BUTTON, Enum.KeyCode[self._settings.TOGGLE])
-			else
-				self._inputConn = UserInputService.InputBegan:Connect(function(input, processed)
-					if not processed and input.KeyCode == Enum.KeyCode[self._settings.TOGGLE] then
-						self:Toggle()
-					end
-				end)
-			end
-		end
 		if self._settings.ESP then
 			if not limbData.ESP then
 				local ok, res = pcall(function()
@@ -908,6 +880,7 @@ function LimbExtender.new(userSettings)
 			end
 		end
 	end
+
 	return self
 end
 
@@ -1062,9 +1035,9 @@ function LimbExtender:Start()
 	end
 
 	if self._ESP then
-        self._ESP:Start()
-    end
-	
+		self._ESP:Start()
+	end
+
 	if self._settings.NPC_ENABLED then
 		table.clear(self._playerCharacters)
 
@@ -1144,10 +1117,6 @@ function LimbExtender:Start()
 			end
 		end
 	end
-
-	if self._CAU and self._settings.MOBILE_BUTTON then
-		self._CAU:SetTitle("LimbExtenderToggle", "Hitbox: ON")
-	end
 end
 
 function LimbExtender:Stop()
@@ -1167,10 +1136,6 @@ function LimbExtender:Stop()
 	table.clear(self._npcTable)
 
 	table.clear(self._playerCharacters)
-
-	if self._CAU and self._settings.MOBILE_BUTTON then
-		self._CAU:SetTitle("LimbExtenderToggle", "Hitbox: OFF")
-	end
 
 	if self._ESP then
 		self._ESP:Stop()
@@ -1192,44 +1157,44 @@ function LimbExtender:Restart()
 end
 
 function LimbExtender:Set(key, value)
-    if self._settings[key] ~= value then
-        self._settings[key] = value
+	if self._settings[key] ~= value then
+		self._settings[key] = value
 
-        if key == "ESP" then
-            if value then
-                if not limbData.ESP and has_loadstring and has_httpget then
-                    local ok, res = pcall(function()
-                        return loadstring(game:HttpGet(
-                            "https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/esp/SIXSEVENESP.lua"
-                        ))()
-                    end)
-                    if ok then limbData.ESP = res end
-                end
-                self.ESP = limbData.ESP
-                if self.ESP and not self._ESP then
-                    self._ESP = self.ESP.new(self:_buildESPConfig())
-                    if self._running then self._ESP:Start() end
-                end
-            else
-                if self._ESP then
-                    self._ESP:Destroy()
-                    self._ESP = nil
-                end
-            end
+		if key == "ESP" then
+			if value then
+				if not limbData.ESP and has_loadstring and has_httpget then
+					local ok, res = pcall(function()
+						return loadstring(game:HttpGet(
+							"https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/esp/SIXSEVENESP.lua"
+						))()
+					end)
+					if ok then limbData.ESP = res end
+				end
+				self.ESP = limbData.ESP
+				if self.ESP and not self._ESP then
+					self._ESP = self.ESP.new(self:_buildESPConfig())
+					if self._running then self._ESP:Start() end
+				end
+			else
+				if self._ESP then
+					self._ESP:Destroy()
+					self._ESP = nil
+				end
+			end
 
-        elseif self._ESP and type(key) == "string" and key:sub(1, 4) == "ESP_" then
-            self._ESP:SetOptions(self:_buildESPConfig())
+		elseif self._ESP and type(key) == "string" and key:sub(1, 4) == "ESP_" then
+			self._ESP:SetOptions(self:_buildESPConfig())
 
-            if key == "ESP_CAN_DRAW" then
-                self._ESP.Config.CanDraw = value
-            elseif key == "ESP_TEXT_RESOLVER" then
-                self._ESP.Config.TextResolver = value
-            elseif key == "ESP_TRACER_ORIGIN" then
-                self._ESP.Config.TracerOrigin = value
-            end 
-        end
+			if key == "ESP_CAN_DRAW" then
+				self._ESP.Config.CanDraw = value
+			elseif key == "ESP_TEXT_RESOLVER" then
+				self._ESP.Config.TextResolver = value
+			elseif key == "ESP_TRACER_ORIGIN" then
+				self._ESP.Config.TracerOrigin = value
+			end
+		end
 		self:Restart()
-    end
+	end
 end
 
 function LimbExtender:Get(key)
@@ -1245,13 +1210,6 @@ function LimbExtender:Destroy()
 		self._connections = nil
 	end
 
-	if self._inputConn then
-		self._inputConn:Disconnect()
-		self._inputConn = nil
-	end
-	if self._CAU then
-		self._CAU:UnbindAction("LimbExtenderToggle")
-	end
 	if self._ESP then
 		self._ESP:Destroy()
 		self._ESP = nil
