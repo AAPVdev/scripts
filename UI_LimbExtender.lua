@@ -22,6 +22,8 @@ getgenv().uiLE.le = getgenv().uiLE.le
 	or loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua"))()
 local LimbExtender = getgenv().uiLE.le
 
+getgenv().RAYFIELD_SECURE = true
+getgenv().RAYFIELD_ASSET_ID = 123456789
 getgenv().uiLE.uilibray = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 local Rayfield = getgenv().uiLE.uilibray
 
@@ -66,7 +68,7 @@ local Window = Rayfield:CreateWindow({
 
 local Tabs = {
 	Limbs  = Window:CreateTab("Limbs",  "scale-3d"),
-	Sense  = Window:CreateTab("Sense",  "eye"),
+	Sense  = Window:CreateTab("ESP",  "eye"),
 	Target = Window:CreateTab("Target", "crosshair"),
 	Themes = Window:CreateTab("Themes", "palette"),
 }
