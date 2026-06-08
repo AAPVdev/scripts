@@ -19,21 +19,15 @@ end
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 
-getgenv().uiLE.le = getgenv().uiLE.le
-	or loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua"))()
-
+getgenv().uiLE.le = getgenv().uiLE.le or loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua"))()
 local LimbExtender = getgenv().uiLE.le
 
 getgenv().RAYFIELD_SECURE = true
 getgenv().RAYFIELD_ASSET_ID = 84895246331982
 getgenv().uiLE.uilibray = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
-
 local Rayfield = getgenv().uiLE.uilibray
 
-getgenv().uiLE.gcontroller = LimbExtender.new({
-	LISTEN_FOR_INPUT = false,
-	MOBILE_BUTTON = false,
-})
+getgenv().uiLE.gcontroller = LimbExtender.new()
 
 local controller = getgenv().uiLE.gcontroller
 
@@ -94,26 +88,26 @@ local function createColorPicker(tab, name, flag, defaultColor, callback)
 	})
 end
 
-local function bindToggle(tab, label, flag, controllerKey)
-	createToggle(tab, label, flag, controller:Get(controllerKey), function(value)
+local function bindToggle(tab, label, uiFlag, controllerKey)
+	createToggle(tab, label, uiFlag, controller:Get(controllerKey), function(value)
 		controller:Set(controllerKey, value)
 	end)
 end
 
-local function bindSlider(tab, label, flag, controllerKey, range, increment, suffix)
-	createSlider(tab, label, flag, controller:Get(controllerKey), range, increment, suffix, function(value)
+local function bindSlider(tab, label, uiFlag, controllerKey, range, increment, suffix)
+	createSlider(tab, label, uiFlag, controller:Get(controllerKey), range, increment, suffix, function(value)
 		controller:Set(controllerKey, value)
 	end)
 end
 
-local function bindColor(tab, label, flag, controllerKey)
-	createColorPicker(tab, label, flag, controller:Get(controllerKey), function(value)
+local function bindColor(tab, label, uiFlag, controllerKey)
+	createColorPicker(tab, label, uiFlag, controller:Get(controllerKey), function(value)
 		controller:Set(controllerKey, value)
 	end)
 end
 
-local function bindDropdown(tab, label, flag, currentValue, options, callback)
-	return createDropdown(tab, label, flag, options, { currentValue }, false, callback)
+local function bindDropdown(tab, label, uiFlag, currentValue, options, callback)
+	return createDropdown(tab, label, uiFlag, options, { currentValue }, false, callback)
 end
 
 local function getLODFlag(settingKey, field)
@@ -150,15 +144,9 @@ local Tabs = {
 	Themes = Window:CreateTab("Themes", "palette"),
 }
 
-local modifyLimbsToggle = createToggle(
-	Tabs.Limbs,
-	"Modify Limbs",
-	"ModifyLimbs",
-	false,
-	function(value)
-		controller:Toggle(value)
-	end
-)
+local modifyLimbsToggle = createToggle(Tabs.Limbs, "Modify Limbs", "ModifyLimbs", false, function(value)
+	controller:Toggle(value)
+end)
 
 Tabs.Limbs:CreateDivider()
 
@@ -201,7 +189,7 @@ bindToggle(Tabs.Sense, "Filter Local Player", "ESP_FILTER_LOCAL", "ESP_FILTER_LO
 
 Tabs.Sense:CreateSection("Elements")
 
-local espElementDefs = {
+local espElements = {
 	{ label = "2D Box", flag = "ESP_BOX" },
 	{ label = "3D Box", flag = "ESP_BOX3D" },
 	{ label = "Tracer", flag = "ESP_TRACER" },
@@ -211,13 +199,13 @@ local espElementDefs = {
 	{ label = "Off-Screen Arrow", flag = "ESP_OFFSCREEN_POINT" },
 }
 
-for _, def in ipairs(espElementDefs) do
-	bindToggle(Tabs.Sense, def.label, def.flag, def.flag)
+for _, item in ipairs(espElements) do
+	bindToggle(Tabs.Sense, item.label, item.flag, item.flag)
 end
 
 Tabs.Sense:CreateSection("Colors")
 
-local espColorDefs = {
+local espColors = {
 	{ label = "Box / Tracer", key = "ESP_COLOR" },
 	{ label = "3D Box", key = "ESP_BOX3D_COLOR" },
 	{ label = "Skeleton", key = "ESP_SKELETON_COLOR" },
@@ -226,8 +214,8 @@ local espColorDefs = {
 	{ label = "Text", key = "ESP_TEXT_COLOR" },
 }
 
-for _, def in ipairs(espColorDefs) do
-	bindColor(Tabs.Sense, def.label, "ESPColor_" .. def.key, def.key)
+for _, item in ipairs(espColors) do
+	bindColor(Tabs.Sense, item.label, "ESPColor_" .. item.key, item.key)
 end
 
 Tabs.Sense:CreateSection("Text")
@@ -264,7 +252,6 @@ local lodTiers = {
 
 for _, tier in ipairs(lodTiers) do
 	Tabs.Sense:CreateSection(tier.section)
-
 	for _, feature in ipairs(lodFeatures) do
 		local flagId = tier.key .. "_" .. feature.field
 		createToggle(Tabs.Sense, feature.label, flagId, getLODFlag(tier.key, feature.field), function(value)
@@ -278,28 +265,13 @@ Tabs.Sense:CreateSection("Performance")
 bindToggle(Tabs.Sense, "Occlusion Checking", "ESP_OCCLUSION", "ESP_OCCLUSION")
 bindSlider(Tabs.Sense, "Occlusion Frequency", "ESP_OCCLUSION_FREQUENCY", "ESP_OCCLUSION_FREQUENCY", { 1, 20 }, 1, "frames")
 
-local targetLimbDropdown = bindDropdown(
-	Tabs.Target,
-	"Target Limb",
-	"TARGET_LIMB",
-	controller:Get("TARGET_LIMB"),
-	{},
-	function(options)
-		controller:Set("TARGET_LIMB", options[1])
-	end
-)
+local targetLimbDropdown = bindDropdown(Tabs.Target, "Target Limb", "TARGET_LIMB", controller:Get("TARGET_LIMB"), {}, function(options)
+	controller:Set("TARGET_LIMB", options[1])
+end)
 
-createDropdown(
-	Tabs.Themes,
-	"Current Theme",
-	"CurrentTheme",
-	{ "Default", "AmberGlow", "Amethyst", "Bloom", "DarkBlue", "Green", "Light", "Ocean", "Serenity" },
-	{ "Default" },
-	false,
-	function(options)
-		Window.ModifyTheme(options[1])
-	end
-)
+createDropdown(Tabs.Themes, "Current Theme", "CurrentTheme", { "Default", "AmberGlow", "Amethyst", "Bloom", "DarkBlue", "Green", "Light", "Ocean", "Serenity" }, { "Default" }, false, function(options)
+	Window.ModifyTheme(options[1])
+end)
 
 Rayfield:LoadConfiguration()
 
