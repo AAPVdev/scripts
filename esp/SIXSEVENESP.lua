@@ -1,10 +1,17 @@
 local SIXSEVENESP = {}
 SIXSEVENESP.__index = SIXSEVENESP
 
-local RunService        = game:GetService("RunService")
-local UserInputService  = game:GetService("UserInputService")
-local Players           = game:GetService("Players")
-local Workspace         = gamegame:GetService("Workspace")
+local function missing(t, f, fallback)
+	if type(f) == t then return f end
+	return fallback
+end
+
+local cloneref    = missing("function", cloneref, function(obj) return obj end)
+
+local RunService        = cloneref(game:GetService("RunService"))
+local UserInputService  = cloneref(game:GetService("UserInputService"))
+local Players           = cloneref(game:GetService("Players"))
+local Workspace         = cloneref(game:GetService("Workspace"))
 
 local lp     = Players.LocalPlayer
 local lpChar = lp and lp.Character
@@ -726,9 +733,6 @@ end
 function SIXSEVENESP:RenderStep()
 	self._frameCount += 1
 
-	-- FIX: BeginFrame resets counters only — objects remain visible from
-	-- the previous frame, eliminating the blank-frame flicker caused by
-	-- the old Reset() call that set everything Visible=false up front.
 	self._pool:BeginFrame()
 	self:FlushCache()
 
@@ -759,7 +763,6 @@ function SIXSEVENESP:RenderStep()
 			continue
 		end
 
-		-- lightweight transient-state guard; full validation already done in Track()
 		if not model:FindFirstChildOfClass("Humanoid")
 			or not model:FindFirstChild("HumanoidRootPart") then
 			continue
@@ -824,8 +827,6 @@ function SIXSEVENESP:RenderStep()
 		self:Untrack(m)
 	end
 
-	-- FIX: Hide surplus Drawing objects AFTER drawing is complete, not before.
-	-- Only objects with indices above this frame's high-water mark are hidden.
 	self._pool:EndFrame()
 end
 
