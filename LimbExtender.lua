@@ -531,6 +531,8 @@ function PlayerData.new(parent, player)
 	}, PlayerData)
 
 	self.playerConns:Connect(player.CharacterAdded, function(c) self:_setupCharacter(c) end)
+	self.playerConns:Connect(player.CharacterRemoving, function(c) self:_restoreLimb(c) end)
+	
 	self.playerConns:Connect(player:GetPropertyChangedSignal("Team"), function()
 		if self._destroyed then return end
 		if self._parent:_isTeam(self.player) then
@@ -626,10 +628,10 @@ function PlayerData:_setupCharacter(char)
 	end
 
 	if not self._destroyed then
-		self:_applyLimb(char, target)
-
+		
+		pcall(function() self:_applyLimb(char, target) end)
 		if self._parent._ESP then
-			self._parent._ESP:Track(char)
+		    self._parent._ESP:Track(char)
 		end
 
 		self.charConns:Connect(char.AncestryChanged, function()
