@@ -228,7 +228,7 @@ Tabs.Themes:CreateDropdown({
     MultipleOptions = false,
     Options         = THEMES,
     CurrentOption   = { "Default" },
-    Callback        = function(opts) Window:ModifyTheme(opts[1]) end,
+    Callback        = function(opts) Window.ModifyTheme(opts[1]) end,
 })
 
 Rayfield:LoadConfiguration()
