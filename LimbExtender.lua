@@ -15,8 +15,27 @@ if not localPlayer then
 	localPlayer = Players.LocalPlayer
 end
 
-local type, typeof = type, typeof
-local pcall, math_max = pcall, math.max
+local type, typeof            = type, typeof
+local pcall                   = pcall
+local pairs, ipairs           = pairs, ipairs
+local tostring, setmetatable  = tostring, setmetatable
+local math_max                = math.max
+local task_spawn              = task.spawn
+local task_defer              = task.defer
+local task_wait               = task.wait
+local task_delay              = task.delay   
+local table_clear             = table.clear
+local table_insert            = table.insert
+local table_remove            = table.remove
+local table_clone             = table.clone
+local string_split            = string.split
+local string_gsub             = string.gsub
+local Instance_new            = Instance.new
+local Vector3_new             = Vector3.new
+local PhysProps_new           = PhysicalProperties.new
+
+local function _safeGet(obj, key) return obj[key] end
+local function _disconnect(conn) conn:Disconnect() end
 
 local ConnectionManager = {}
 ConnectionManager.__index = ConnectionManager
@@ -54,8 +73,8 @@ function ConnectionManager:DisconnectAll()
 	for conn in pairs(self._conns) do
 		if conn.Connected then conn:Disconnect() end
 	end
-	table.clear(self._conns)
-	table.clear(self._labels)
+	table_clear(self._conns)
+	table_clear(self._labels)
 end
 
 function ConnectionManager:Destroy()
@@ -110,7 +129,7 @@ local DEFAULTS = {
 }
 
 local function mergeSettings(user)
-	local s = table.clone(DEFAULTS)
+	local s = table_clone(DEFAULTS)
 	if type(user) == "table" then
 		for k, v in pairs(user) do s[k] = v end
 	end
@@ -126,7 +145,7 @@ limbData.instanceLookup = limbData.instanceLookup or setmetatable({}, { __mode =
 limbData.npcIdCounter   = limbData.npcIdCounter   or 0
 
 if not limbData.dummyEvent then
-	limbData.dummyEvent = Instance.new("BindableEvent")
+	limbData.dummyEvent = Instance_new("BindableEvent")
 end
 
 limbData.changedProxies = limbData.changedProxies or setmetatable({}, { __mode = "k" })
@@ -165,17 +184,20 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod then
 		loadstring(game:HttpGet("https://raw.githubusercontent.com/Pixeluted/adoniscries/main/Source.lua"))()
 	end
 
+	local _instanceLookup = limbData.instanceLookup
+	local _playerCache    = limbData.playerCache
+
 	local function getTargetData(instance)
 		if typeof(instance) ~= "Instance" then return nil, nil end
-		local cached = limbData.instanceLookup[instance]
+		local cached = _instanceLookup[instance]
 		if cached then return cached.data, cached.type end
 
-		for _, cache in pairs(limbData.playerCache) do
+		for _, cache in pairs(_playerCache) do
 			if cache.Limb == instance then
-				limbData.instanceLookup[instance] = { data = cache, type = "Part" }
+				_instanceLookup[instance] = { data = cache, type = "Part" }
 				return cache, "Part"
 			elseif cache.Character == instance then
-				limbData.instanceLookup[instance] = { data = cache, type = "Model" }
+				_instanceLookup[instance] = { data = cache, type = "Model" }
 				return cache, "Model"
 			end
 		end
@@ -260,21 +282,21 @@ end
 
 local function watchProperty(instance, prop, callback)
 	if not instance then return end
-	if not pcall(function() return instance[prop] end) then return end
+	if not pcall(_safeGet, instance, prop) then return end
 
 	local lastVal = instance[prop]
 	return instance:GetPropertyChangedSignal(prop):Connect(function()
-		local ok, curVal = pcall(function() return instance[prop] end)
+		local ok, curVal = pcall(_safeGet, instance, prop)
 		if ok and curVal ~= lastVal then
 			pcall(callback, instance)
-			local ok2, newVal = pcall(function() return instance[prop] end)
+			local ok2, newVal = pcall(_safeGet, instance, prop)
 			if ok2 then lastVal = newVal end
 		end
 	end)
 end
 
 local function getAdjustedPhysicalProperties(limb, origSize, newSize)
-	local origPhys = limb.CustomPhysicalProperties or PhysicalProperties.new(limb.Material)
+	local origPhys = limb.CustomPhysicalProperties or PhysProps_new(limb.Material)
 
 	local origVol = origSize.X * origSize.Y * origSize.Z
 	local newVol  = newSize.X  * newSize.Y  * newSize.Z
@@ -283,7 +305,7 @@ local function getAdjustedPhysicalProperties(limb, origSize, newSize)
 	local ratio      = origVol / newVol
 	local newDensity = math_max(0.01, origPhys.Density * ratio)
 
-	return PhysicalProperties.new(
+	return PhysProps_new(
 		newDensity,
 		origPhys.Friction,
 		origPhys.Elasticity,
@@ -337,14 +359,14 @@ local function sharedSaveData(parent, cacheKey, char, limb)
 		if type(getconnections) == "function" then
 			pcall(function()
 				for _, conn in ipairs(getconnections(realChanged)) do
-					table.insert(preExistingConns, conn)
+					table_insert(preExistingConns, conn)
 				end
 			end)
 		end
 
 		local proxy = limbData.changedProxies[limb]
 		if not proxy then
-			local proxyBE  = Instance.new("BindableEvent")
+			local proxyBE  = Instance_new("BindableEvent")
 			local filter   = { enabled = false }
 			local filterFn = function(prop)
 				if not filter.enabled or not BLOCKED_PROPS[prop] then
@@ -357,10 +379,10 @@ local function sharedSaveData(parent, cacheKey, char, limb)
 		end
 
 		for _, conn in ipairs(preExistingConns) do
-			local fn
-			pcall(function() fn = conn.Function end)
-			if fn and fn ~= proxy.filterFn then
-				pcall(function() conn:Disconnect() end)
+
+			local fnOk, fn = pcall(_safeGet, conn, "Function")
+			if fnOk and fn and fn ~= proxy.filterFn then
+				pcall(_disconnect, conn)
 				pcall(function() proxy.be.Event:Connect(fn) end)
 			end
 		end
@@ -375,21 +397,23 @@ local function sharedSaveData(parent, cacheKey, char, limb)
 				end
 			end
 		end
-		entry._gpcRedirects = {}
 
+		local redirects = {}
+		entry._gpcRedirects = redirects
+
+		local dummyEventEvent = limbData.dummyEvent.Event
 		for prop in pairs(BLOCKED_PROPS) do
 			pcall(function()
 				local realSig = limb:GetPropertyChangedSignal(prop)
 				local existing = getconnections(realSig)
 				for _, conn in ipairs(existing) do
-					local fn
-					pcall(function() fn = conn.Function end)
-					if fn then
-						pcall(function() conn:Disconnect() end)
+					local fnOk, fn = pcall(_safeGet, conn, "Function")
+					if fnOk and fn then
+						pcall(_disconnect, conn)
 						local ok, dummyConn = pcall(function()
-							return limbData.dummyEvent.Event:Connect(fn)
+							return dummyEventEvent:Connect(fn)
 						end)
-						table.insert(entry._gpcRedirects, {
+						table_insert(redirects, {
 							prop      = prop,
 							fn        = fn,
 							dummyConn = ok and dummyConn or nil,
@@ -400,11 +424,12 @@ local function sharedSaveData(parent, cacheKey, char, limb)
 		end
 	end
 
-	local charParts = {}
+	local charParts     = {}
+	local charPartEntry = { data = entry, type = "CharPart" }
 	for _, part in ipairs(char:GetDescendants()) do
 		if part:IsA("BasePart") and part ~= limb then
-			limbData.instanceLookup[part] = { data = entry, type = "CharPart" }
-			table.insert(charParts, part)
+			limbData.instanceLookup[part] = charPartEntry
+			table_insert(charParts, part)
 		end
 	end
 	entry._charParts = charParts
@@ -478,7 +503,7 @@ local function sharedApplyLimb(parent, cacheKey, char, limb)
 		entry[k] = nil
 	end
 
-	local newVec = Vector3.new(cfg.LIMB_SIZE, cfg.LIMB_SIZE, cfg.LIMB_SIZE)
+	local newVec = Vector3_new(cfg.LIMB_SIZE, cfg.LIMB_SIZE, cfg.LIMB_SIZE)
 	local trans  = cfg.LIMB_TRANSPARENCY
 	local colide = cfg.LIMB_CAN_COLLIDE
 	local isHRP  = (limb.Name == "HumanoidRootPart")
@@ -530,8 +555,8 @@ function PlayerData.new(parent, player)
 		_destroyed  = false,
 	}, PlayerData)
 
-	self.playerConns:Connect(player.CharacterAdded, function(c) self:_setupCharacter(c) end)
-	self.playerConns:Connect(player.CharacterRemoving, function(c) self:_restoreLimb(c) end)
+	self.playerConns:Connect(player.CharacterAdded,    function(c) self:_setupCharacter(c) end)
+	self.playerConns:Connect(player.CharacterRemoving, function(c) self:_restoreLimb(c)    end)
 
 	self.playerConns:Connect(player:GetPropertyChangedSignal("Team"), function()
 		if self._destroyed then return end
@@ -542,6 +567,22 @@ function PlayerData.new(parent, player)
 		end
 	end)
 	if player.Character then self:_setupCharacter(player.Character) end
+
+	task_spawn(function()
+		while not self._destroyed do
+			task_wait(2)
+			if self._destroyed then break end
+			if not self._activeLimb and not self._parent:_isTeam(self.player) then
+				local char = self.player and self.player.Character
+				if char and char:IsDescendantOf(game) then
+					local target = char:FindFirstChild(self._parent._settings.TARGET_LIMB)
+					if target and target:IsDescendantOf(char) then
+						pcall(function() self:_setupCharacter(char) end)
+					end
+				end
+			end
+		end
+	end)
 
 	return self
 end
@@ -568,7 +609,7 @@ function PlayerData:_setupCharacter(char)
 
 	local function retry()
 		if not self._destroyed and char:IsDescendantOf(game) then
-			task.defer(function()
+			task_defer(function()
 				if not self._destroyed and char:IsDescendantOf(game) then
 					self:_setupCharacter(char)
 				end
@@ -584,6 +625,7 @@ function PlayerData:_setupCharacter(char)
 		self.charConns:Connect(char.AncestryChanged, function()
 			if not char:IsDescendantOf(game) then self:_restoreLimb() end
 		end)
+		if char:FindFirstChildOfClass("Humanoid") then retry() end
 		return
 	end
 
@@ -594,6 +636,7 @@ function PlayerData:_setupCharacter(char)
 		self.charConns:Connect(char.ChildAdded, function(child)
 			if child:IsA("Humanoid") then retry() end
 		end)
+		if not self._destroyed and humanoid.Health > 0 then retry() end
 		return
 	end
 
@@ -624,6 +667,7 @@ function PlayerData:_setupCharacter(char)
 		self.charConns:Connect(char.AncestryChanged, function()
 			if not char:IsDescendantOf(game) then self:_restoreLimb() end
 		end)
+		if char:FindFirstChild(self._parent._settings.TARGET_LIMB) then retry() end
 		return
 	end
 
@@ -639,16 +683,14 @@ function PlayerData:_setupCharacter(char)
 
 		self.charConns:Connect(target.AncestryChanged, function()
 			if target:IsDescendantOf(char) then return end
-			
 			sharedRestoreLimb(self._parent, self._cacheKey, self._activeLimb)
 			if self._parent._ESP then
 				self._parent._ESP:Untrack(char)
 			end
 			self._activeLimb = nil
-			
 			self.charConns:Connect(char.ChildAdded, function(child)
 				if child.Name == self._parent._settings.TARGET_LIMB then
-					task.defer(function()
+					task_defer(function()
 						if not self._destroyed and char:IsDescendantOf(game) then
 							self:_setupCharacter(char)
 						end
@@ -675,7 +717,7 @@ end
 function PlayerData:Destroy()
 	self._destroyed = true
 	self:_restoreLimb()
-	if self.charConns then self.charConns:Destroy() end
+	if self.charConns   then self.charConns:Destroy()   end
 	if self.playerConns then self.playerConns:Destroy() end
 	setmetatable(self, nil)
 end
@@ -695,6 +737,23 @@ function NPCData.new(parent, char)
 	}, NPCData)
 
 	self:_setup()
+
+	task_spawn(function()
+		while not self._destroyed do
+			task_wait(2)
+			if self._destroyed then break end
+			if not self._activeLimb then
+				local char = self.char
+				if char and char:IsDescendantOf(game) then
+					local target = char:FindFirstChild(self._parent._settings.TARGET_LIMB)
+					if target and target:IsDescendantOf(char) then
+						pcall(function() self:_setup() end)
+					end
+				end
+			end
+		end
+	end)
+
 	return self
 end
 
@@ -722,7 +781,7 @@ function NPCData:_setup()
 
 	local function retry()
 		if not self._destroyed and char:IsDescendantOf(game) then
-			task.defer(function()
+			task_defer(function()
 				if not self._destroyed and char:IsDescendantOf(game) then
 					self:_setup()
 				end
@@ -735,6 +794,7 @@ function NPCData:_setup()
 		self.charConns:Connect(char.ChildAdded, function(child)
 			if child:IsA("Humanoid") then retry() end
 		end)
+		if char:FindFirstChildOfClass("Humanoid") then retry() end
 		return
 	end
 
@@ -745,6 +805,7 @@ function NPCData:_setup()
 		self.charConns:Connect(char.ChildAdded, function(child)
 			if child:IsA("Humanoid") then retry() end
 		end)
+		if humanoid.Health > 0 then retry() end
 		return
 	end
 
@@ -767,6 +828,7 @@ function NPCData:_setup()
 		self.charConns:Connect(char.ChildAdded, function(child)
 			if child.Name == self._parent._settings.TARGET_LIMB then retry() end
 		end)
+		if char:FindFirstChild(self._parent._settings.TARGET_LIMB) then retry() end
 		return
 	end
 
@@ -783,16 +845,14 @@ function NPCData:_setup()
 
 		self.charConns:Connect(target.AncestryChanged, function()
 			if target:IsDescendantOf(char) then return end
-			
 			sharedRestoreLimb(self._parent, self._cacheKey, self._activeLimb)
 			if self._parent._ESP then
 				self._parent._ESP:Untrack(char)
 			end
 			self._activeLimb = nil
-			
 			self.charConns:Connect(char.ChildAdded, function(child)
 				if child.Name == self._parent._settings.TARGET_LIMB then
-					task.defer(function()
+					task_defer(function()
 						if not self._destroyed and char:IsDescendantOf(game) then
 							self:_setup()
 						end
@@ -825,25 +885,27 @@ end
 
 local function isLiveInstance(inst)
 	if typeof(inst) ~= "Instance" then return false end
-	local ok, result = pcall(function() return inst:IsDescendantOf(game) end)
+	local ok, result = pcall(inst.IsDescendantOf, inst, game)
 	return ok and result
 end
 
 local function normalizeDirectoryPath(path)
 	path = tostring(path or "")
-	path = path:gsub("^%s+", ""):gsub("%s+$", "")
-	path = path:gsub("^game:GetService%(%s*['\"]([^'\"]+)['\"]%s*%)", "%1")
-	path = path:gsub("^game%.", "")
+	path = string_gsub(path, "^%s+", "")
+	path = string_gsub(path, "%s+$", "")
+	path = string_gsub(path, "^game:GetService%(%s*['\"]([^'\"]+)['\"]%s*%)", "%1")
+	path = string_gsub(path, "^game%.", "")
 
 	if path:sub(1, 9):lower() == "workspace" then
 		path = "Workspace" .. path:sub(10)
 	end
 
-	path = path:gsub(":%s*WaitForChild%(%s*['\"]([^'\"]+)['\"]%s*%)", ".%1")
-	path = path:gsub(":%s*FindFirstChild%(%s*['\"]([^'\"]+)['\"]%s*%)", ".%1")
-	path = path:gsub("%[%s*['\"]([^'\"]+)['\"]%s*%]", ".%1")
-	path = path:gsub("%.+", ".")
-	path = path:gsub("^%.", ""):gsub("%.$", "")
+	path = string_gsub(path, ":%s*WaitForChild%(%s*['\"]([^'\"]+)['\"]%s*%)", ".%1")
+	path = string_gsub(path, ":%s*FindFirstChild%(%s*['\"]([^'\"]+)['\"]%s*%)", ".%1")
+	path = string_gsub(path, "%[%s*['\"]([^'\"]+)['\"]%s*%]", ".%1")
+	path = string_gsub(path, "%.+", ".")
+	path = string_gsub(path, "^%.", "")
+	path = string_gsub(path, "%.$", "")
 
 	return path
 end
@@ -854,7 +916,7 @@ local function resolvePathAsync(path, timeoutPerPart)
 
 	path = normalizeDirectoryPath(path)
 
-	local parts = string.split(path, ".")
+	local parts = string_split(path, ".")
 	if #parts == 0 then return nil end
 
 	local head = (parts[1] or ""):lower()
@@ -862,17 +924,16 @@ local function resolvePathAsync(path, timeoutPerPart)
 
 	if head == "game" then
 		current = game
-		table.remove(parts, 1)
+		table_remove(parts, 1)
 	elseif head == "workspace" then
 		current = Workspace
-		table.remove(parts, 1)
+		table_remove(parts, 1)
 	else
-		local ok, service = pcall(function()
-			return game:GetService(parts[1])
-		end)
+		
+		local ok, service = pcall(game.GetService, game, parts[1])
 		if ok and service then
 			current = service
-			table.remove(parts, 1)
+			table_remove(parts, 1)
 		else
 			current = Workspace
 		end
@@ -982,7 +1043,7 @@ function LimbExtender:AddDirectory(dir)
 		for _, d in ipairs(dirs) do
 			if d == dir then return end
 		end
-		table.insert(dirs, dir)
+		table_insert(dirs, dir)
 	end
 	self:Restart()
 end
@@ -992,7 +1053,7 @@ function LimbExtender:RemoveDirectory(dir)
 	if type(dirs) ~= "table" then return end
 	for i, d in ipairs(dirs) do
 		if d == dir then
-			table.remove(dirs, i)
+			table_remove(dirs, i)
 			if #dirs == 0 then self._settings.NPC_DIRECTORIES = nil end
 			self:Restart()
 			return
@@ -1003,7 +1064,7 @@ end
 function LimbExtender:GetDirectories()
 	local dirs = self._settings.NPC_DIRECTORIES
 	if type(dirs) == "table" and #dirs > 0 then
-		return table.clone(dirs)
+		return table_clone(dirs)
 	end
 	return {}
 end
@@ -1042,7 +1103,7 @@ function LimbExtender:_activateDirectory(dir, useDescendants)
 	end
 	if useDescendants then
 		self._connections:Connect(dir.DescendantAdded, function(desc)
-			task.defer(function()
+			task_defer(function()
 				if self._running and not self._destroyed then
 					self:_registerNPC(desc)
 				end
@@ -1054,7 +1115,7 @@ function LimbExtender:_activateDirectory(dir, useDescendants)
 		end)
 	else
 		self._connections:Connect(dir.ChildAdded, function(desc)
-			task.defer(function()
+			task_defer(function()
 				if self._running and not self._destroyed then
 					self:_registerNPC(desc)
 				end
@@ -1080,7 +1141,7 @@ function LimbExtender:Start()
 	end
 
 	if self._settings.NPC_ENABLED then
-		table.clear(self._playerCharacters)
+		table_clear(self._playerCharacters)
 
 		local function trackPlayer(p)
 			if p.Character then self._playerCharacters[p.Character] = true end
@@ -1106,7 +1167,7 @@ function LimbExtender:Start()
 			if p.Character then self._playerCharacters[p.Character] = nil end
 		end)
 	else
-		table.clear(self._playerCharacters)
+		table_clear(self._playerCharacters)
 	end
 
 	if self._settings.PLAYER_ENABLED then
@@ -1149,7 +1210,7 @@ function LimbExtender:Start()
 				self:_activateDirectory(entry, not hasUserDirs)
 			elseif type(entry) == "string" then
 				local gen = self._generation
-				task.spawn(function()
+				task_spawn(function()
 					local resolved = resolvePathAsync(entry)
 					if resolved and self._running and not self._destroyed and self._generation == gen then
 						self:_activateDirectory(resolved, not hasUserDirs)
@@ -1171,12 +1232,12 @@ function LimbExtender:Stop()
 	end
 
 	for _, pd in pairs(self._playerTable) do pd:Destroy() end
-	table.clear(self._playerTable)
+	table_clear(self._playerTable)
 
 	for _, nd in pairs(self._npcTable) do nd:Destroy() end
-	table.clear(self._npcTable)
+	table_clear(self._npcTable)
 
-	table.clear(self._playerCharacters)
+	table_clear(self._playerCharacters)
 
 	if self._ESP then
 		self._ESP:Stop()
@@ -1259,4 +1320,4 @@ function LimbExtender:Destroy()
 	setmetatable(self, nil)
 end
 
-return setmetatable({}, { __call = function(_, userSettings) return LimbExtender.new(userSettings) end, __index = LimbExtender, })
+return setmetatable({}, { __call = function(_, userSettings) return LimbExtender.new(userSettings) end, __index = LimbExtender })
