@@ -532,7 +532,7 @@ function PlayerData.new(parent, player)
 
 	self.playerConns:Connect(player.CharacterAdded, function(c) self:_setupCharacter(c) end)
 	self.playerConns:Connect(player.CharacterRemoving, function(c) self:_restoreLimb(c) end)
-	
+
 	self.playerConns:Connect(player:GetPropertyChangedSignal("Team"), function()
 		if self._destroyed then return end
 		if self._parent:_isTeam(self.player) then
@@ -628,15 +628,34 @@ function PlayerData:_setupCharacter(char)
 	end
 
 	if not self._destroyed then
-		
 		pcall(function() self:_applyLimb(char, target) end)
 		if self._parent._ESP then
-		    self._parent._ESP:Track(char)
+			self._parent._ESP:Track(char)
 		end
 
 		self.charConns:Connect(char.AncestryChanged, function()
 			if not char:IsDescendantOf(game) then self:_restoreLimb() end
 		end)
+
+		self.charConns:Connect(target.AncestryChanged, function()
+			if target:IsDescendantOf(char) then return end
+			
+			sharedRestoreLimb(self._parent, self._cacheKey, self._activeLimb)
+			if self._parent._ESP then
+				self._parent._ESP:Untrack(char)
+			end
+			self._activeLimb = nil
+			
+			self.charConns:Connect(char.ChildAdded, function(child)
+				if child.Name == self._parent._settings.TARGET_LIMB then
+					task.defer(function()
+						if not self._destroyed and char:IsDescendantOf(game) then
+							self:_setupCharacter(char)
+						end
+					end)
+				end
+			end, "LimbRespawn")
+		end, "LimbStream")
 
 		local deathEvent
 		if self._parent._settings.ALT_RESET_LIMB_ON_DEATH then
@@ -761,6 +780,26 @@ function NPCData:_setup()
 		self.charConns:Connect(char.AncestryChanged, function()
 			if not char:IsDescendantOf(game) then self:_restoreLimb() end
 		end)
+
+		self.charConns:Connect(target.AncestryChanged, function()
+			if target:IsDescendantOf(char) then return end
+			
+			sharedRestoreLimb(self._parent, self._cacheKey, self._activeLimb)
+			if self._parent._ESP then
+				self._parent._ESP:Untrack(char)
+			end
+			self._activeLimb = nil
+			
+			self.charConns:Connect(char.ChildAdded, function(child)
+				if child.Name == self._parent._settings.TARGET_LIMB then
+					task.defer(function()
+						if not self._destroyed and char:IsDescendantOf(game) then
+							self:_setup()
+						end
+					end)
+				end
+			end, "LimbRespawn")
+		end, "LimbStream")
 
 		local deathEvent
 		if self._parent._settings.ALT_RESET_LIMB_ON_DEATH then
