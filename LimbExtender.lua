@@ -180,10 +180,6 @@ end)
 if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod then
 	limbData._spoofInstalled = true
 
-	if has_loadstring and has_httpget then
-		loadstring(game:HttpGet("https://raw.githubusercontent.com/Pixeluted/adoniscries/main/Source.lua"))()
-	end
-
 	local _instanceLookup = limbData.instanceLookup
 	local _playerCache    = limbData.playerCache
 
@@ -205,9 +201,10 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod then
 	end
 
 	local oldNewIndex
-	oldNewIndex = hookmetamethod(game, "__newindex", newcclosure(function(self, key, value)
+	oldNewIndex = hookmetamethod(game, "__newindex", newcclosure(function(...)
 		if not checkcaller() then
 			local data, instType = getTargetData(self)
+			local self, key, value = ...
 			if data and instType == "Part" then
 				if key == "Size"                     then data.OriginalSize         = value return end
 				if key == "Transparency"             then data.OriginalTransparency  = value return end
@@ -218,13 +215,14 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod then
 				if key == "RootPriority"             then data.OriginalRootPriority  = value return end
 			end
 		end
-		return oldNewIndex(self, key, value)
+		return oldNewIndex(...)
 	end))
 
 	local oldIndex
-	oldIndex = hookmetamethod(game, "__index", newcclosure(function(self, key)
+	oldIndex = hookmetamethod(game, "__index", newcclosure(function(...)
 		if not checkcaller() then
 			local data, instType = getTargetData(self)
+			local self, key = ...
 			if data then
 				if instType == "Part" then
 					if key == "Size"                     then return data.OriginalSize         end
@@ -244,11 +242,11 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod then
 				end
 			end
 		end
-		return oldIndex(self, key)
+		return oldIndex(...)
 	end))
 
 	local oldNamecall
-	oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+	oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(...)
 		local method = getnamecallmethod()
 		local args = {...}
 
@@ -259,7 +257,7 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod then
 				if instType == "Part" then
 					if method == "GetMass" then return data.OriginalMass end
 					if method == "GetConnectedParts" then
-						return oldNamecall(self, ...)
+						return oldNamecall(...)
 					end
 					if method == "GetPropertyChangedSignal" then
 						local prop = args[1]
@@ -270,13 +268,13 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod then
 				elseif instType == "Model" then
 					if method == "GetExtentsSize" then return data.OriginalExtents end
 					if method == "GetBoundingBox" then
-						local cf, _ = oldNamecall(self, ...)
+						local cf, _ = oldNamecall(...)
 						return cf, data.OriginalExtents
 					end
 				end
 			end
 		end
-		return oldNamecall(self, ...)
+		return oldNamecall(...)
 	end))
 end
 
