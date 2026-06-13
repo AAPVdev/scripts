@@ -7,14 +7,12 @@ getgenv().uiLE.le = getgenv().uiLE.le
 
 if getgenv().uiLE.gcontroller then getgenv().uiLE.gcontroller:Destroy(); getgenv().uiLE.gcontroller = nil end
 
-getgenv().uiLE.gcontroller = LimbExtender.new()
+getgenv().uiLE.gcontroller = getgenv().uiLE.le.new()
 local ctrl = getgenv().uiLE.gcontroller
 
 if getgenv().uiLE.uilibray    then getgenv().uiLE.uilibray:Destroy();    getgenv().uiLE.uilibray    = nil end
 
 local LocalPlayer = game:GetService("Players").LocalPlayer
-
-local LimbExtender = getgenv().uiLE.le
 
 getgenv().RAYFIELD_SECURE   = true
 getgenv().RAYFIELD_ASSET_ID = 84895246331982
