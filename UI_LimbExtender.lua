@@ -1,3 +1,6 @@
+getgenv().uiLE.le = getgenv().uiLE.le
+    or loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua"))()
+
 getgenv().uiLE = getgenv().uiLE or {}
 if getgenv().uiLE.loading then return end
 getgenv().uiLE.loading = true
@@ -6,9 +9,6 @@ if getgenv().uiLE.uilibray    then getgenv().uiLE.uilibray:Destroy();    getgenv
 if getgenv().uiLE.gcontroller then getgenv().uiLE.gcontroller:Destroy(); getgenv().uiLE.gcontroller = nil end
 
 local LocalPlayer = game:GetService("Players").LocalPlayer
-
-getgenv().uiLE.le = getgenv().uiLE.le
-    or loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua"))()
 
 local LimbExtender = getgenv().uiLE.le
 
