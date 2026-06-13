@@ -1,12 +1,16 @@
-getgenv().uiLE.le = getgenv().uiLE.le
-    or loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua"))()
-
 getgenv().uiLE = getgenv().uiLE or {}
 if getgenv().uiLE.loading then return end
 getgenv().uiLE.loading = true
 
-if getgenv().uiLE.uilibray    then getgenv().uiLE.uilibray:Destroy();    getgenv().uiLE.uilibray    = nil end
+getgenv().uiLE.le = getgenv().uiLE.le
+    or loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua"))()
+
 if getgenv().uiLE.gcontroller then getgenv().uiLE.gcontroller:Destroy(); getgenv().uiLE.gcontroller = nil end
+
+getgenv().uiLE.gcontroller = LimbExtender.new()
+local ctrl = getgenv().uiLE.gcontroller
+
+if getgenv().uiLE.uilibray    then getgenv().uiLE.uilibray:Destroy();    getgenv().uiLE.uilibray    = nil end
 
 local LocalPlayer = game:GetService("Players").LocalPlayer
 
@@ -17,9 +21,6 @@ getgenv().RAYFIELD_ASSET_ID = 84895246331982
 getgenv().uiLE.uilibray     = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 
 local Rayfield = getgenv().uiLE.uilibray
-
-getgenv().uiLE.gcontroller = LimbExtender.new()
-local ctrl = getgenv().uiLE.gcontroller
 
 local function getLodFlag(key, field)
     local t = ctrl:Get(key)
