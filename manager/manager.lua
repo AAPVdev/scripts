@@ -16,6 +16,7 @@ end
 
 local table_clear  = table.clear
 local table_remove = table.remove
+local table_insert = table.insert
 local table_clone  = table.clone
 local task_spawn   = task.spawn
 local task_defer   = task.defer
@@ -78,6 +79,13 @@ local function mergeSettings(user)
 	if type(user) == "table" then
 		for k, v in pairs(user) do s[k] = v end
 	end
+
+	if type(s.NPC_DIRECTORIES) == "table" then
+		s.NPC_DIRECTORIES = table_clone(s.NPC_DIRECTORIES)
+	else
+		s.NPC_DIRECTORIES = {}
+	end
+
 	return s
 end
 
@@ -336,6 +344,13 @@ function Manager:Stop()
 
 	for _, pd in pairs(self._playerTable) do pd:Destroy() end
 	table_clear(self._playerTable)
+
+	local npcRemoving = self._settings.ON_NPC_REMOVING
+	if type(npcRemoving) == "function" then
+		for model in pairs(self._npcSet) do
+			pcall(npcRemoving, model)
+		end
+	end
 	table_clear(self._npcSet)
 end
 
@@ -351,6 +366,45 @@ function Manager:Restart()
 	local wasRunning = self._running
 	self:Stop()
 	if wasRunning then self:Start() end
+end
+
+function Manager:AddDirectory(dir)
+	if self._destroyed then return end
+	if not isLiveInstance(dir) and type(dir) ~= "string" then return end
+
+	local dirs = self._settings.NPC_DIRECTORIES
+	if type(dirs) ~= "table" then
+		dirs = {}
+		self._settings.NPC_DIRECTORIES = dirs
+	end
+
+	for _, d in ipairs(dirs) do
+		if d == dir then return end
+	end
+
+	table_insert(dirs, dir)
+	self:Restart()
+end
+
+function Manager:RemoveDirectory(dir)
+	if self._destroyed then return end
+
+	local dirs = self._settings.NPC_DIRECTORIES
+	if type(dirs) ~= "table" then return end
+
+	for i, d in ipairs(dirs) do
+		if d == dir then
+			table_remove(dirs, i)
+			self:Restart()
+			return
+		end
+	end
+end
+
+function Manager:GetDirectories()
+	local dirs = self._settings.NPC_DIRECTORIES
+	if type(dirs) ~= "table" then return {} end
+	return table_clone(dirs)
 end
 
 function Manager:Set(key, value)
