@@ -203,8 +203,9 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod then
 	local oldNewIndex
 	oldNewIndex = hookmetamethod(game, "__newindex", newcclosure(function(...)
 		if not checkcaller() then
-			local data, instType = getTargetData(self)
 			local self, key, value = ...
+			local data, instType = getTargetData(self)
+					
 			if data and instType == "Part" then
 				if key == "Size"                     then data.OriginalSize         = value return end
 				if key == "Transparency"             then data.OriginalTransparency  = value return end
@@ -221,8 +222,9 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod then
 	local oldIndex
 	oldIndex = hookmetamethod(game, "__index", newcclosure(function(...)
 		if not checkcaller() then
-			local data, instType = getTargetData(self)
 			local self, key = ...
+			local data, instType = getTargetData(self)
+					
 			if data then
 				if instType == "Part" then
 					if key == "Size"                     then return data.OriginalSize         end
@@ -249,7 +251,8 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod then
 	oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(...)
 		local method = getnamecallmethod()
 		local args = {...}
-
+		local self = args[1]
+				
 		if not checkcaller() then
 			local data, instType = getTargetData(self)
 
