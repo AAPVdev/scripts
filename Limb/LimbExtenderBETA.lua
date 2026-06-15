@@ -19,7 +19,14 @@ local PhysProps_new = PhysicalProperties.new
 local math_max = math.max
 local task_spawn = task.spawn
 
+local function missing(t, f, fallback)
+	if type(f) == t then return f end
+	return fallback
+end
+
+local cloneref = missing("function", cloneref, function(obj) return obj end)
 local Players = cloneref(game:GetService("Players"))
+
 local localPlayer = Players.LocalPlayer
 if not localPlayer then
 	Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
