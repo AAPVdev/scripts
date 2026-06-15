@@ -282,6 +282,21 @@ function StreamObserver:Destroy()
 	setmetatable(self, nil)
 end
 
+--[[
+	LimbObserver
+
+	Connections are split into two managers:
+	  - _lifeConns: long-lived "is this model still alive" watchers. These are
+	    set up once and survive Refresh()/_start() cycles.
+	  - _conns: "search" connections (waiting for the target limb to appear,
+	    watching the resolved limb, forcefield watcher, Humanoid.Died, etc).
+	    These are torn down and rebuilt every time we (re)resolve a limb, e.g.
+	    when TARGET_LIMB changes or the limb is removed.
+
+	This split fixes a bug where DisconnectAll() inside the "WaitLimb"
+	handler could wipe out the model-liveness watcher along with the
+	search-related connections.
+]]
 local LimbObserver = {}
 LimbObserver.__index = LimbObserver
 
@@ -292,26 +307,51 @@ function LimbObserver.new(manager, model, playerObject)
 		_player = playerObject,
 		_ready = false,
 		_limb = nil,
+		_lifeConns = ConnectionManager.new(),
 		_conns = ConnectionManager.new(),
 		_forcefieldWatcher = nil,
-
+		_destroyed = false,
 	}, LimbObserver)
 
+	self:_bindLifecycle()
 	self:_start()
 	return self
 end
 
+function LimbObserver:_bindLifecycle()
+	if self._destroyed then return end
+	if not isLiveInstance(self._model) then return end
+
+	self._lifeConns:Connect(self._model.AncestryChanged, function()
+		if not isLiveInstance(self._model) then
+			self:_notifyLost()
+		end
+	end, "AncestryChanged")
+end
+
 function LimbObserver:_start()
+	if self._destroyed then return end
+
 	if not isLiveInstance(self._model) then
 		self:_notifyLost()
 		return
 	end
 
 	local function tryResolve()
-		if self._ready then return end
+		if self._destroyed or self._ready then return end
+
+		local targetLimb = self._manager._settings.TARGET_LIMB
+		if type(targetLimb) ~= "string" or targetLimb == "" then
+			-- Nothing to resolve until a valid TARGET_LIMB is configured.
+			return
+		end
+
 		if self._player and self._manager._settings.TEAM_CHECK then
-			local myTeam = self._manager._settings.GET_LOCAL_TEAM()
-			if myTeam and self._player.Team == myTeam then return end
+			local getTeam = self._manager._settings.GET_LOCAL_TEAM
+			if type(getTeam) == "function" then
+				local ok, myTeam = pcall(getTeam)
+				if ok and myTeam and self._player.Team == myTeam then return end
+			end
 		end
 
 		if self._manager._settings.FORCEFIELD_CHECK then
@@ -320,8 +360,10 @@ function LimbObserver:_start()
 				if not self._forcefieldWatcher then
 					self._forcefieldWatcher = ff.AncestryChanged:Connect(function()
 						if not ff:IsDescendantOf(self._model) then
-							self._forcefieldWatcher:Disconnect()
-							self._forcefieldWatcher = nil
+							if self._forcefieldWatcher then
+								self._forcefieldWatcher:Disconnect()
+								self._forcefieldWatcher = nil
+							end
 							tryResolve()
 						end
 					end)
@@ -330,24 +372,18 @@ function LimbObserver:_start()
 			end
 		end
 
-		local limb = self._model:FindFirstChild(self._manager._settings.TARGET_LIMB)
+		local limb = self._model:FindFirstChild(targetLimb)
 		if limb and limb:IsA("BasePart") then
 			self:_onLimbFound(limb)
 		else
 			self._conns:Connect(self._model.ChildAdded, function(child)
 				if child.Name == self._manager._settings.TARGET_LIMB and child:IsA("BasePart") then
-					self._conns:DisconnectAll()
+					self._conns:Disconnect("WaitLimb")
 					tryResolve()
 				end
 			end, "WaitLimb")
 		end
 	end
-
-	self._conns:Connect(self._model.AncestryChanged, function()
-		if not isLiveInstance(self._model) then
-			self:_notifyLost()
-		end
-	end, "AncestryChanged")
 
 	tryResolve()
 end
@@ -367,7 +403,7 @@ function LimbObserver:_onLimbFound(limb)
 		if humanoid then
 			self._conns:Connect(humanoid.Died, function()
 				self:_notifyLost()
-			end)
+			end, "Died")
 		end
 	end
 
@@ -376,6 +412,8 @@ function LimbObserver:_onLimbFound(limb)
 end
 
 function LimbObserver:_limbRemoved()
+	if self._destroyed then return end
+
 	self._ready = false
 	local oldLimb = self._limb
 	self._limb = nil
@@ -386,35 +424,55 @@ function LimbObserver:_limbRemoved()
 end
 
 function LimbObserver:_notifyLost()
+	if self._destroyed then return end
+
 	if self._forcefieldWatcher then
 		self._forcefieldWatcher:Disconnect()
 		self._forcefieldWatcher = nil
 	end
 
-	local manager = self._manager
-	local player  = self._player
-	local model   = self._model
+	local wasReady = self._ready
 	local oldLimb = self._limb
 
 	self._ready = false
-	self._limb  = nil
-	self._conns:Destroy()
+	self._limb = nil
+	self._conns:DisconnectAll()
 
-	manager:_onLimbLost(player, model, oldLimb)
+	if wasReady then
+		self._manager:_onLimbLost(self._player, self._model, oldLimb)
+	end
 end
 
+-- Re-resolves the tracked limb, e.g. after TARGET_LIMB / TEAM_CHECK /
+-- FORCEFIELD_CHECK / DEATH_RESTORE / GET_LOCAL_TEAM change.
+-- If a limb was already being tracked, ON_LIMB_LOST fires for it first so
+-- callers never end up with stale "currently tracked limb" bookkeeping.
 function LimbObserver:Refresh()
-	self._ready = false
-	self._limb = nil
+	if self._destroyed then return end
+
 	if self._forcefieldWatcher then
 		self._forcefieldWatcher:Disconnect()
 		self._forcefieldWatcher = nil
 	end
+
+	local wasReady = self._ready
+	local oldLimb = self._limb
+
+	self._ready = false
+	self._limb = nil
 	self._conns:DisconnectAll()
+
+	if wasReady then
+		self._manager:_onLimbLost(self._player, self._model, oldLimb)
+	end
+
 	self:_start()
 end
 
 function LimbObserver:Destroy()
+	if self._destroyed then return end
+	self._destroyed = true
+
 	if self._forcefieldWatcher then
 		self._forcefieldWatcher:Disconnect()
 		self._forcefieldWatcher = nil
@@ -423,16 +481,17 @@ function LimbObserver:Destroy()
 	local manager     = self._manager
 	local player      = self._player
 	local model       = self._model
-	local shouldNotify = self._ready and self._limb ~= nil
+	local wasReady    = self._ready
 	local oldLimb     = self._limb
 
 	self._ready = false
 	self._limb  = nil
 	self._conns:Destroy()
+	self._lifeConns:Destroy()
 
 	setmetatable(self, nil)
 
-	if shouldNotify then
+	if wasReady then
 		manager:_onLimbLost(player, model, oldLimb)
 	end
 end
@@ -582,7 +641,16 @@ function Manager.new(userSettings)
 		_playerTable = {},
 		_npcSet = {},
 		_npcLimbObservers = {},
+
+		-- Connection manager for player-related connections (PlayerAdded/Removing).
 		_connections = nil,
+		-- Separate connection manager for NPC directory watchers, so NPC
+		-- tracking can be stopped/started without touching player tracking.
+		_npcConnections = nil,
+
+		_playerConnsStarted = false,
+		_npcConnsStarted = false,
+
 		_running = false,
 		_destroyed = false,
 		_generation = 0,
@@ -672,21 +740,21 @@ function Manager:_activateDirectory(dir, useDescendants)
 	end
 
 	if useDescendants then
-		self._connections:Connect(dir.DescendantAdded, function(desc)
+		self._npcConnections:Connect(dir.DescendantAdded, function(desc)
 			task_defer(function()
-				if self._running and not self._destroyed then self:_registerNPC(desc) end
+				if self._running and self._npcConnsStarted and not self._destroyed then self:_registerNPC(desc) end
 			end)
 		end, uid .. "_DescendantAdded")
-		self._connections:Connect(dir.DescendantRemoving, function(desc)
+		self._npcConnections:Connect(dir.DescendantRemoving, function(desc)
 			self:_unregisterNPC(desc)
 		end, uid .. "_DescendantRemoving")
 	else
-		self._connections:Connect(dir.ChildAdded, function(desc)
+		self._npcConnections:Connect(dir.ChildAdded, function(desc)
 			task_defer(function()
-				if self._running and not self._destroyed then self:_registerNPC(desc) end
+				if self._running and self._npcConnsStarted and not self._destroyed then self:_registerNPC(desc) end
 			end)
 		end, uid .. "_ChildAdded")
-		self._connections:Connect(dir.ChildRemoved, function(desc)
+		self._npcConnections:Connect(dir.ChildRemoved, function(desc)
 			self:_unregisterNPC(desc)
 		end, uid .. "_ChildRemoved")
 	end
@@ -721,65 +789,103 @@ function Manager:_refreshAllLimbObservers()
 	end
 end
 
-function Manager:Start()
-	if self._destroyed or self._running then return end
-	self._running = true
-	self._connections = ConnectionManager.new()
+-- Re-checks NPC_FILTER against currently tracked NPCs (dropping any that no
+-- longer pass) and re-scans the configured directories for NPCs that may now
+-- pass a (newly relaxed) filter.
+function Manager:_rescanNPCFilter()
+	if self._destroyed or not self._running or not self._npcConnsStarted then return end
 
-	if self._settings.PLAYER_ENABLED then
-		self._connections:Connect(Players.PlayerAdded, function(p)
-			if p ~= localPlayer then
-				self._playerTable[p] = PlayerData.new(self, p)
-			end
-		end, "PlayerAdded")
-		self._connections:Connect(Players.PlayerRemoving, function(p)
-			local pd = self._playerTable[p]
-			if pd then
-				pd:Destroy()
-				self._playerTable[p] = nil
-			end
-		end, "PlayerRemoving")
-
-		for _, p in ipairs(Players:GetPlayers()) do
-			if p ~= localPlayer and not self._playerTable[p] then
-				self._playerTable[p] = PlayerData.new(self, p)
-			end
+	for model in pairs(self._npcSet) do
+		if not self:_isValidNPC(model) then
+			self:_unregisterNPC(model)
 		end
 	end
 
-	if self._settings.NPC_ENABLED then
-		local dirs = self._settings.NPC_DIRECTORIES
-		local hasUserDirs = type(dirs) == "table" and #dirs > 0
-		local entries = hasUserDirs and dirs or { Workspace }
+	local dirs = self._settings.NPC_DIRECTORIES
+	local hasUserDirs = type(dirs) == "table" and #dirs > 0
+	local entries = hasUserDirs and dirs or { Workspace }
+	local useDescendants = not hasUserDirs
 
-		for _, entry in ipairs(entries) do
-			if isLiveInstance(entry) then
-				self:_activateDirectory(entry, not hasUserDirs)
-			elseif type(entry) == "string" then
-				local gen = self._generation
-				task_spawn(function()
-					local resolved = resolvePathAsync(entry)
-					if resolved and self._running and not self._destroyed and self._generation == gen then
-						self:_activateDirectory(resolved, not hasUserDirs)
-					end
-				end)
+	for _, entry in ipairs(entries) do
+		if isLiveInstance(entry) then
+			local children = useDescendants and entry:GetDescendants() or entry:GetChildren()
+			for _, desc in ipairs(children) do
+				self:_registerNPC(desc)
 			end
 		end
 	end
 end
 
-function Manager:Stop()
-	if self._destroyed or not self._running then return end
-	self._running = false
-	self._generation = self._generation + 1
+function Manager:_startPlayerTracking()
+	if self._destroyed or not self._running or self._playerConnsStarted then return end
+	self._playerConnsStarted = true
+
+	self._connections:Connect(Players.PlayerAdded, function(p)
+		if p ~= localPlayer and not self._playerTable[p] then
+			self._playerTable[p] = PlayerData.new(self, p)
+		end
+	end, "PlayerAdded")
+	self._connections:Connect(Players.PlayerRemoving, function(p)
+		local pd = self._playerTable[p]
+		if pd then
+			pd:Destroy()
+			self._playerTable[p] = nil
+		end
+	end, "PlayerRemoving")
+
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p ~= localPlayer and not self._playerTable[p] then
+			self._playerTable[p] = PlayerData.new(self, p)
+		end
+	end
+end
+
+function Manager:_stopPlayerTracking()
+	if not self._playerConnsStarted then return end
+	self._playerConnsStarted = false
 
 	if self._connections then
-		self._connections:Destroy()
-		self._connections = nil
+		self._connections:Disconnect("PlayerAdded")
+		self._connections:Disconnect("PlayerRemoving")
 	end
 
 	for _, pd in pairs(self._playerTable) do pd:Destroy() end
 	table_clear(self._playerTable)
+end
+
+function Manager:_startNPCTracking()
+	if self._destroyed or not self._running or self._npcConnsStarted then return end
+	self._npcConnsStarted = true
+	self._npcConnections = ConnectionManager.new()
+
+	local dirs = self._settings.NPC_DIRECTORIES
+	local hasUserDirs = type(dirs) == "table" and #dirs > 0
+	local entries = hasUserDirs and dirs or { Workspace }
+
+	for _, entry in ipairs(entries) do
+		if isLiveInstance(entry) then
+			self:_activateDirectory(entry, not hasUserDirs)
+		elseif type(entry) == "string" then
+			local gen = self._generation
+			task_spawn(function()
+				local resolved = resolvePathAsync(entry)
+				if resolved and self._running and self._npcConnsStarted and not self._destroyed and self._generation == gen then
+					self:_activateDirectory(resolved, not hasUserDirs)
+				end
+			end)
+		end
+	end
+end
+
+function Manager:_stopNPCTracking()
+	if not self._npcConnsStarted then return end
+	self._npcConnsStarted = false
+	self._generation = self._generation + 1
+
+	if self._npcConnections then
+		self._npcConnections:Destroy()
+		self._npcConnections = nil
+	end
 
 	for _, observer in pairs(self._npcSet) do
 		if observer then observer:Destroy() end
@@ -790,6 +896,33 @@ function Manager:Stop()
 		if limbObs then limbObs:Destroy() end
 	end
 	table_clear(self._npcLimbObservers)
+end
+
+function Manager:Start()
+	if self._destroyed or self._running then return end
+	self._running = true
+	self._connections = ConnectionManager.new()
+
+	if self._settings.PLAYER_ENABLED then
+		self:_startPlayerTracking()
+	end
+
+	if self._settings.NPC_ENABLED then
+		self:_startNPCTracking()
+	end
+end
+
+function Manager:Stop()
+	if self._destroyed or not self._running then return end
+	self._running = false
+
+	self:_stopNPCTracking()
+	self:_stopPlayerTracking()
+
+	if self._connections then
+		self._connections:Destroy()
+		self._connections = nil
+	end
 end
 
 function Manager:Toggle(state)
@@ -821,7 +954,14 @@ function Manager:AddDirectory(dir)
 	end
 
 	table_insert(dirs, dir)
-	self:Restart()
+
+	-- Only restart NPC tracking; this leaves player tracking (and currently
+	-- loaded characters) untouched instead of bouncing everything via a full
+	-- Restart().
+	if self._running and self._settings.NPC_ENABLED then
+		self:_stopNPCTracking()
+		self:_startNPCTracking()
+	end
 end
 
 function Manager:RemoveDirectory(dir)
@@ -833,7 +973,11 @@ function Manager:RemoveDirectory(dir)
 	for i, d in ipairs(dirs) do
 		if d == dir then
 			table_remove(dirs, i)
-			self:Restart()
+
+			if self._running and self._settings.NPC_ENABLED then
+				self:_stopNPCTracking()
+				self:_startNPCTracking()
+			end
 			return
 		end
 	end
@@ -858,6 +1002,26 @@ function Manager:Set(key, value)
 	if (key == "TARGET_LIMB" or key == "TEAM_CHECK") and self._running then
 		for _, pd in pairs(self._playerTable) do
 			pd:_updateTeamSignal()
+		end
+	end
+
+	if key == "NPC_FILTER" then
+		self:_rescanNPCFilter()
+	end
+
+	if key == "PLAYER_ENABLED" and self._running then
+		if value then
+			self:_startPlayerTracking()
+		else
+			self:_stopPlayerTracking()
+		end
+	end
+
+	if key == "NPC_ENABLED" and self._running then
+		if value then
+			self:_startNPCTracking()
+		else
+			self:_stopNPCTracking()
 		end
 	end
 end
