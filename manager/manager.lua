@@ -73,13 +73,13 @@ local DEFAULTS = {
 	ON_NPC_ADDED = nil,
 	ON_NPC_REMOVING = nil,
 
-	TARGET_LIMB = nil,            
+	TARGET_LIMB = nil,
 	TEAM_CHECK = false,
 	FORCEFIELD_CHECK = false,
-	DEATH_RESTORE = false,        
-	GET_LOCAL_TEAM = nil,         
-	ON_LIMB_READY = nil,          
-	ON_LIMB_LOST = nil,           
+	DEATH_RESTORE = false,
+	GET_LOCAL_TEAM = nil,
+	ON_LIMB_READY = nil,
+	ON_LIMB_LOST = nil,
 }
 
 local function mergeSettings(user)
@@ -101,7 +101,7 @@ local function mergeSettings(user)
 	return s
 end
 
-local function normalizeDirectoryPath(path) 
+local function normalizeDirectoryPath(path)
 	path = tostring(path or "")
 	path = string_gsub(path, "^%s+", "")
 	path = string_gsub(path, "%s+$", "")
@@ -165,7 +165,7 @@ local function isLiveInstance(inst)
 	return ok and result
 end
 
-local StreamObserver = {}  
+local StreamObserver = {}
 StreamObserver.__index = StreamObserver
 
 function StreamObserver.new(model, onAvailable, onUnavailable)
@@ -277,7 +277,7 @@ function LimbObserver.new(manager, model, playerObject)
 	local self = setmetatable({
 		_manager = manager,
 		_model = model,
-		_player = playerObject,   
+		_player = playerObject,
 		_ready = false,
 		_limb = nil,
 		_conns = ConnectionManager.new(),
@@ -322,7 +322,6 @@ function LimbObserver:_start()
 		if limb and limb:IsA("BasePart") then
 			self:_onLimbFound(limb)
 		else
-			
 			self._conns:Connect(self._model.ChildAdded, function(child)
 				if child.Name == self._manager._settings.TARGET_LIMB and child:IsA("BasePart") then
 					self._conns:DisconnectAll()
@@ -458,7 +457,6 @@ function PlayerData:_onCharacterAdded(char)
 		if self._destroyed then return end
 		local cb = parent._settings.ON_CHARACTER_REMOVING
 		if type(cb) == "function" then pcall(cb, self.player, model) end
-		
 		if self._limbObserver then
 			self._limbObserver:Destroy()
 			self._limbObserver = nil
@@ -508,7 +506,7 @@ function Manager.new(userSettings)
 		_settings = mergeSettings(userSettings),
 		_playerTable = {},
 		_npcSet = {},
-		_npcLimbObservers = {},  
+		_npcLimbObservers = {},
 		_connections = nil,
 		_running = false,
 		_destroyed = false,
@@ -555,7 +553,6 @@ function Manager:_registerNPC(model)
 			if self._destroyed then return end
 			local cb = self._settings.ON_NPC_ADDED
 			if type(cb) == "function" then pcall(cb, npcModel) end
-			
 			if self._settings.TARGET_LIMB and not self._npcLimbObservers[npcModel] then
 				self._npcLimbObservers[npcModel] = LimbObserver.new(self, npcModel, nil)
 			end
@@ -587,7 +584,7 @@ function Manager:_unregisterNPC(model)
 	end
 end
 
-function Manager:_activateDirectory(dir, useDescendants) 
+function Manager:_activateDirectory(dir, useDescendants)
 	self:_registerNPC(dir)
 	local children = useDescendants and dir:GetDescendants() or dir:GetChildren()
 	for _, desc in ipairs(children) do
@@ -686,14 +683,72 @@ function Manager:Stop()
 	table_clear(self._npcLimbObservers)
 end
 
-function Manager:Toggle(state) ... end   
-function Manager:Restart() ... end
-function Manager:AddDirectory(dir) ... end
-function Manager:RemoveDirectory(dir) ... end
-function Manager:GetDirectories() ... end
-function Manager:Set(key, value) self._settings[key] = value end
-function Manager:Get(key) return self._settings[key] end
-function Manager:Destroy() self:Stop() self._destroyed = true setmetatable(self, nil) end
+function Manager:Toggle(state)
+	if type(state) == "boolean" then
+		if state then self:Start() else self:Stop() end
+	else
+		if self._running then self:Stop() else self:Start() end
+	end
+end
+
+function Manager:Restart()
+	local wasRunning = self._running
+	self:Stop()
+	if wasRunning then self:Start() end
+end
+
+function Manager:AddDirectory(dir)
+	if self._destroyed then return end
+	if not isLiveInstance(dir) and type(dir) ~= "string" then return end
+
+	local dirs = self._settings.NPC_DIRECTORIES
+	if type(dirs) ~= "table" then
+		dirs = {}
+		self._settings.NPC_DIRECTORIES = dirs
+	end
+
+	for _, d in ipairs(dirs) do
+		if d == dir then return end
+	end
+
+	table_insert(dirs, dir)
+	self:Restart()
+end
+
+function Manager:RemoveDirectory(dir)
+	if self._destroyed then return end
+
+	local dirs = self._settings.NPC_DIRECTORIES
+	if type(dirs) ~= "table" then return end
+
+	for i, d in ipairs(dirs) do
+		if d == dir then
+			table_remove(dirs, i)
+			self:Restart()
+			return
+		end
+	end
+end
+
+function Manager:GetDirectories()
+	local dirs = self._settings.NPC_DIRECTORIES
+	if type(dirs) ~= "table" then return {} end
+	return table_clone(dirs)
+end
+
+function Manager:Set(key, value)
+	self._settings[key] = value
+end
+
+function Manager:Get(key)
+	return self._settings[key]
+end
+
+function Manager:Destroy()
+	self:Stop()
+	self._destroyed = true
+	setmetatable(self, nil)
+end
 
 return {
 	Manager = Manager,
