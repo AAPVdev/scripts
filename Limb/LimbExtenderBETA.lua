@@ -680,12 +680,14 @@ function LimbExtender:Restart()
 end
 
 function LimbExtender:Set(key, value)
+	
 	if self._settings[key] == value then return end
 	self._settings[key] = value
 
 	if type(key) == "string" and key:sub(1, 4) == "ESP_" then
 		if self._ESP then
 			self._ESP:SetOptions(self:_buildESPConfig())
+			
 			if key == "ESP_CAN_DRAW" then
 				self._ESP.Config.CanDraw = value
 			elseif key == "ESP_TEXT_RESOLVER" then
@@ -717,15 +719,29 @@ function LimbExtender:Set(key, value)
 		return
 	end
 
-	if key == "PLAYER_ENABLED" or key == "NPC_ENABLED" or key == "NPC_FILTER" then
-		self._manager:Set(key, value)
-		self:Restart()
-	elseif key == "NPC_DIRECTORIES" then
-		self:Restart()
-	else
-		
-		self:Restart()
+	local managerKey = key
+	if key == "ALT_RESET_LIMB_ON_DEATH" then
+		managerKey = "DEATH_RESTORE"
 	end
+
+	local managerCompatibleKeys = {
+		PLAYER_ENABLED = true,
+		NPC_ENABLED    = true,
+		NPC_FILTER     = true,
+		TARGET_LIMB    = true,
+		TEAM_CHECK     = true,
+		FORCEFIELD_CHECK = true,
+		DEATH_RESTORE  = true,
+	}
+	if managerCompatibleKeys[managerKey] then
+		self._manager:Set(managerKey, value)
+	end
+
+	if key == "NPC_DIRECTORIES" then
+		self._manager._settings.NPC_DIRECTORIES = value
+	end
+
+	self:Restart()
 end
 
 function LimbExtender:Get(key)
