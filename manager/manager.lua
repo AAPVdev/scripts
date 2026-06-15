@@ -49,6 +49,14 @@ function ConnectionManager:Connect(signal, fn, label)
 	return conn
 end
 
+function ConnectionManager:Disconnect(label)
+	local conn = self._labels[label]
+	if not conn then return end
+	if conn.Connected then conn:Disconnect() end
+	self._conns[conn] = nil
+	self._labels[label] = nil
+end
+
 function ConnectionManager:DisconnectAll()
 	for conn in pairs(self._conns) do
 		if conn.Connected then conn:Disconnect() end
@@ -130,7 +138,7 @@ local function resolvePathAsync(path, timeoutPerPart)
 	local parts = string_split(path, ".")
 	if #parts == 0 then return nil end
 
-	local head = (parts[1] or ""):lower()
+	local head = parts[1]:lower()
 	local current
 
 	if head == "game" then
@@ -186,6 +194,10 @@ function StreamObserver.new(model, onAvailable, onUnavailable)
 	self:_refresh()
 
 	return self
+end
+
+function StreamObserver:IsActive()
+	return not self._destroyed and self._active
 end
 
 function StreamObserver:_resolveAnchor()
@@ -282,7 +294,7 @@ function LimbObserver.new(manager, model, playerObject)
 		_limb = nil,
 		_conns = ConnectionManager.new(),
 		_forcefieldWatcher = nil,
-		_deathConn = nil,
+
 	}, LimbObserver)
 
 	self:_start()
@@ -335,7 +347,7 @@ function LimbObserver:_start()
 		if not isLiveInstance(self._model) then
 			self:_notifyLost()
 		end
-	end)
+	end, "AncestryChanged")
 
 	tryResolve()
 end
@@ -374,17 +386,55 @@ function LimbObserver:_limbRemoved()
 end
 
 function LimbObserver:_notifyLost()
-	self._ready = false
+	if self._forcefieldWatcher then
+		self._forcefieldWatcher:Disconnect()
+		self._forcefieldWatcher = nil
+	end
+
+	local manager = self._manager
+	local player  = self._player
+	local model   = self._model
 	local oldLimb = self._limb
-	self._limb = nil
-	self._manager:_onLimbLost(self._player, self._model, oldLimb)
+
+	self._ready = false
+	self._limb  = nil
 	self._conns:Destroy()
+
+	manager:_onLimbLost(player, model, oldLimb)
+end
+
+function LimbObserver:Refresh()
+	self._ready = false
+	self._limb = nil
+	if self._forcefieldWatcher then
+		self._forcefieldWatcher:Disconnect()
+		self._forcefieldWatcher = nil
+	end
+	self._conns:DisconnectAll()
+	self:_start()
 end
 
 function LimbObserver:Destroy()
-	self._conns:Destroy()
+	if self._forcefieldWatcher then
+		self._forcefieldWatcher:Disconnect()
+		self._forcefieldWatcher = nil
+	end
+
+	local manager     = self._manager
+	local player      = self._player
+	local model       = self._model
+	local shouldNotify = self._ready and self._limb ~= nil
+	local oldLimb     = self._limb
+
 	self._ready = false
-	self._limb = nil
+	self._limb  = nil
+	self._conns:Destroy()
+
+	setmetatable(self, nil)
+
+	if shouldNotify then
+		manager:_onLimbLost(player, model, oldLimb)
+	end
 end
 
 local PlayerData = {}
@@ -396,6 +446,7 @@ function PlayerData.new(parent, player)
 		player = player,
 		conns = ConnectionManager.new(),
 		_destroyed = false,
+		_character = nil,
 		_characterObserver = nil,
 		_limbObserver = nil,
 	}, PlayerData)
@@ -408,17 +459,7 @@ function PlayerData.new(parent, player)
 		self:_onCharacterRemoving(char)
 	end, "CharacterRemoving")
 
-	if self._parent._settings.TARGET_LIMB and self._parent._settings.TEAM_CHECK then
-		self.conns:Connect(player:GetPropertyChangedSignal("Team"), function()
-			if self._limbObserver then
-				self._limbObserver:Destroy()
-				self._limbObserver = nil
-			end
-			if self._character and isLiveInstance(self._character) then
-				self:_setupLimbTracking(self._character)
-			end
-		end)
-	end
+	self:_updateTeamSignal()
 
 	if player.Character then
 		self:_onCharacterAdded(player.Character)
@@ -427,12 +468,46 @@ function PlayerData.new(parent, player)
 	return self
 end
 
+function PlayerData:_updateTeamSignal()
+	local s = self._parent._settings
+	if s.TARGET_LIMB ~= nil and s.TEAM_CHECK then
+		self.conns:Connect(self.player:GetPropertyChangedSignal("Team"), function()
+			if self._limbObserver then
+				self._limbObserver:Refresh()
+			end
+		end, "TeamChanged")
+	else
+		self.conns:Disconnect("TeamChanged")
+	end
+end
+
 function PlayerData:_setupLimbTracking(char)
 	if self._destroyed or not isLiveInstance(char) then return end
 	if self._limbObserver then
 		self._limbObserver:Destroy()
 	end
 	self._limbObserver = LimbObserver.new(self._parent, char, self.player)
+end
+
+function PlayerData:_ensureLimbTracking()
+	if self._destroyed then return end
+	if self._limbObserver then
+		self._limbObserver:Refresh()
+		return
+	end
+	if self._characterObserver and self._characterObserver:IsActive() then
+		local char = self._character
+		if char and isLiveInstance(char) then
+			self:_setupLimbTracking(char)
+		end
+	end
+end
+
+function PlayerData:_teardownLimbTracking()
+	if self._limbObserver then
+		self._limbObserver:Destroy()
+		self._limbObserver = nil
+	end
 end
 
 function PlayerData:_onCharacterAdded(char)
@@ -511,6 +586,8 @@ function Manager.new(userSettings)
 		_running = false,
 		_destroyed = false,
 		_generation = 0,
+
+		_dirIdCounter = 0,
 	}, Manager)
 
 	return self
@@ -585,7 +662,10 @@ function Manager:_unregisterNPC(model)
 end
 
 function Manager:_activateDirectory(dir, useDescendants)
-	self:_registerNPC(dir)
+
+	self._dirIdCounter = self._dirIdCounter + 1
+	local uid = tostring(self._dirIdCounter)
+
 	local children = useDescendants and dir:GetDescendants() or dir:GetChildren()
 	for _, desc in ipairs(children) do
 		self:_registerNPC(desc)
@@ -596,19 +676,48 @@ function Manager:_activateDirectory(dir, useDescendants)
 			task_defer(function()
 				if self._running and not self._destroyed then self:_registerNPC(desc) end
 			end)
-		end, tostring(dir) .. "_DescendantAdded")
+		end, uid .. "_DescendantAdded")
 		self._connections:Connect(dir.DescendantRemoving, function(desc)
 			self:_unregisterNPC(desc)
-		end, tostring(dir) .. "_DescendantRemoving")
+		end, uid .. "_DescendantRemoving")
 	else
 		self._connections:Connect(dir.ChildAdded, function(desc)
 			task_defer(function()
 				if self._running and not self._destroyed then self:_registerNPC(desc) end
 			end)
-		end, tostring(dir) .. "_ChildAdded")
+		end, uid .. "_ChildAdded")
 		self._connections:Connect(dir.ChildRemoved, function(desc)
 			self:_unregisterNPC(desc)
-		end, tostring(dir) .. "_ChildRemoved")
+		end, uid .. "_ChildRemoved")
+	end
+end
+
+function Manager:_refreshAllLimbObservers()
+	local hasTarget = self._settings.TARGET_LIMB ~= nil
+
+	for _, pd in pairs(self._playerTable) do
+		if hasTarget then
+			pd:_ensureLimbTracking()
+		else
+			pd:_teardownLimbTracking()
+		end
+	end
+
+	for model, streamObs in pairs(self._npcSet) do
+		if hasTarget then
+			local limbObs = self._npcLimbObservers[model]
+			if limbObs then
+				limbObs:Refresh()
+			elseif streamObs:IsActive() then
+				self._npcLimbObservers[model] = LimbObserver.new(self, model, nil)
+			end
+		else
+			local limbObs = self._npcLimbObservers[model]
+			if limbObs then
+				limbObs:Destroy()
+				self._npcLimbObservers[model] = nil
+			end
+		end
 	end
 end
 
@@ -737,7 +846,20 @@ function Manager:GetDirectories()
 end
 
 function Manager:Set(key, value)
+	if self._settings[key] == value then return end
 	self._settings[key] = value
+
+	if key == "TARGET_LIMB" or key == "TEAM_CHECK" or key == "FORCEFIELD_CHECK" or key == "DEATH_RESTORE" or key == "GET_LOCAL_TEAM" then
+		if self._running then
+			self:_refreshAllLimbObservers()
+		end
+	end
+
+	if (key == "TARGET_LIMB" or key == "TEAM_CHECK") and self._running then
+		for _, pd in pairs(self._playerTable) do
+			pd:_updateTeamSignal()
+		end
+	end
 end
 
 function Manager:Get(key)
