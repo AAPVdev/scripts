@@ -44,7 +44,8 @@ end
 
 function ConnectionManager:Connect(signal, fn, label)
 	if not signal or not fn then return nil end
-	local conn = signal:Connect(fn)
+	local ok, conn = pcall(signal.Connect, signal, fn)
+	if not ok or not conn then return nil end
 	self:_register(conn, label)
 	return conn
 end
@@ -84,7 +85,7 @@ local DEFAULTS = {
 	TARGET_LIMB = nil,
 	TEAM_CHECK = false,
 	FORCEFIELD_CHECK = false,
-	DEATH_RESTORE = true,
+	DEATH_RESTORE = false,
 	DEATH_DETECT_METHOD = "Died",
 	GET_LOCAL_TEAM = nil,
 	ON_LIMB_READY = nil,
@@ -220,8 +221,12 @@ function StreamObserver:_bindModelSignals()
 	if not isLiveInstance(model) then return end
 
 	self._modelConns:Connect(model.AncestryChanged, function() self:_refresh() end, "AncestryChanged")
-	self._modelConns:Connect(model.ChildAdded, function() self:_refresh() end, "ChildAdded")
-	self._modelConns:Connect(model.ChildRemoved, function() self:_refresh() end, "ChildRemoved")
+	self._modelConns:Connect(model.ChildAdded, function(child)
+		if child.Name == "HumanoidRootPart" then self:_refresh() end
+	end, "ChildAdded")
+	self._modelConns:Connect(model.ChildRemoved, function(child)
+		if child.Name == "HumanoidRootPart" then self:_refresh() end
+	end, "ChildRemoved")
 	self._modelConns:Connect(model:GetPropertyChangedSignal("PrimaryPart"), function() self:_refresh() end, "PrimaryPart")
 end
 
@@ -232,7 +237,6 @@ function StreamObserver:_bindAnchor(anchor)
 
 	if not anchor or not isLiveInstance(anchor) then return end
 
-	self._anchorConns:Connect(anchor:GetPropertyChangedSignal("Parent"), function() self:_refresh() end, "Parent")
 	self._anchorConns:Connect(anchor.AncestryChanged, function() self:_refresh() end, "AncestryChanged")
 end
 
@@ -316,7 +320,7 @@ function LimbObserver:_bindLifecycle()
 end
 
 function LimbObserver:_start()
-	if self._destroyed then return end
+	if self._destroyed or self._ready then return end
 
 	if not isLiveInstance(self._model) then
 		self:_notifyLost()
@@ -370,6 +374,14 @@ function LimbObserver:_start()
 		end
 	end
 
+	if self._manager._settings.FORCEFIELD_CHECK then
+		self._conns:Connect(self._model.ChildAdded, function(child)
+			if child:IsA("ForceField") then
+				tryResolve()
+			end
+		end, "ForceFieldAppeared")
+	end
+
 	tryResolve()
 end
 
@@ -411,9 +423,9 @@ function LimbObserver:_limbRemoved()
 	self._ready = false
 	local oldLimb = self._limb
 	self._limb = nil
-	self._manager:_onLimbLost(self._player, self._model, oldLimb)
 
 	self._conns:DisconnectAll()
+	self._manager:_onLimbLost(self._player, self._model, oldLimb)
 	self:_start()
 end
 
@@ -643,6 +655,10 @@ function Manager.new(userSettings)
 		_generation = 0,
 
 		_dirIdCounter = 0,
+
+		_dirUidMap = {},       
+		_stringDirMap = {},    
+		_npcDirOwners = {},    
 	}, Manager)
 
 	return self
@@ -674,8 +690,9 @@ function Manager:_isValidNPC(model)
 	return true
 end
 
-function Manager:_registerNPC(model)
+function Manager:_registerNPC(model, dir)
 	if self._destroyed or not model then return end
+	if not isLiveInstance(model) then return end
 	if model:IsA("Humanoid") then model = model.Parent end
 	if not model or self._npcSet[model] then return end
 	if not self:_isValidNPC(model) then return end
@@ -701,6 +718,9 @@ function Manager:_registerNPC(model)
 		end
 	)
 	self._npcSet[model] = observer
+	if dir then
+		self._npcDirOwners[model] = dir   
+	end
 end
 
 function Manager:_unregisterNPC(model)
@@ -714,21 +734,29 @@ function Manager:_unregisterNPC(model)
 		limbObs:Destroy()
 		self._npcLimbObservers[model] = nil
 	end
+	self._npcDirOwners[model] = nil   
 end
 
 function Manager:_activateDirectory(dir, useDescendants)
 	self._dirIdCounter = self._dirIdCounter + 1
 	local uid = tostring(self._dirIdCounter)
 
+	self._dirUidMap[dir] = uid
+
 	local children = useDescendants and dir:GetDescendants() or dir:GetChildren()
 	for _, desc in ipairs(children) do
-		self:_registerNPC(desc)
+		self:_registerNPC(desc, dir)   
 	end
 
 	if useDescendants then
 		self._npcConnections:Connect(dir.DescendantAdded, function(desc)
+			local gen = self._generation
 			task_defer(function()
-				if self._running and self._npcConnsStarted and not self._destroyed then self:_registerNPC(desc) end
+				if self._running and self._npcConnsStarted
+					and not self._destroyed
+					and self._generation == gen then   
+					self:_registerNPC(desc, dir)
+				end
 			end)
 		end, uid .. "_DescendantAdded")
 		self._npcConnections:Connect(dir.DescendantRemoving, function(desc)
@@ -736,8 +764,13 @@ function Manager:_activateDirectory(dir, useDescendants)
 		end, uid .. "_DescendantRemoving")
 	else
 		self._npcConnections:Connect(dir.ChildAdded, function(desc)
+			local gen = self._generation
 			task_defer(function()
-				if self._running and self._npcConnsStarted and not self._destroyed then self:_registerNPC(desc) end
+				if self._running and self._npcConnsStarted
+					and not self._destroyed
+					and self._generation == gen then   
+					self:_registerNPC(desc, dir)
+				end
 			end)
 		end, uid .. "_ChildAdded")
 		self._npcConnections:Connect(dir.ChildRemoved, function(desc)
@@ -778,10 +811,14 @@ end
 function Manager:_rescanNPCFilter()
 	if self._destroyed or not self._running or not self._npcConnsStarted then return end
 
-	for model in pairs(self._npcSet) do
+	local toRemove = {}
+	for model, _ in pairs(self._npcSet) do
 		if not self:_isValidNPC(model) then
-			self:_unregisterNPC(model)
+			toRemove[#toRemove + 1] = model
 		end
+	end
+	for _, model in ipairs(toRemove) do
+		self:_unregisterNPC(model)
 	end
 
 	local dirs = self._settings.NPC_DIRECTORIES
@@ -793,7 +830,7 @@ function Manager:_rescanNPCFilter()
 		if isLiveInstance(entry) then
 			local children = useDescendants and entry:GetDescendants() or entry:GetChildren()
 			for _, desc in ipairs(children) do
-				self:_registerNPC(desc)
+				self:_registerNPC(desc, entry)   
 			end
 		end
 	end
@@ -852,7 +889,9 @@ function Manager:_startNPCTracking()
 			local gen = self._generation
 			task_spawn(function()
 				local resolved = resolvePathAsync(entry)
-				if resolved and self._running and self._npcConnsStarted and not self._destroyed and self._generation == gen then
+				if resolved and self._running and self._npcConnsStarted
+					and not self._destroyed and self._generation == gen then
+					self._stringDirMap[entry] = resolved     
 					self:_activateDirectory(resolved, not hasUserDirs)
 				end
 			end)
@@ -879,6 +918,10 @@ function Manager:_stopNPCTracking()
 		if limbObs then limbObs:Destroy() end
 	end
 	table_clear(self._npcLimbObservers)
+
+	table_clear(self._dirUidMap)
+	table_clear(self._stringDirMap)
+	table_clear(self._npcDirOwners)
 end
 
 function Manager:Start()
@@ -939,8 +982,20 @@ function Manager:AddDirectory(dir)
 	table_insert(dirs, dir)
 
 	if self._running and self._settings.NPC_ENABLED then
-		self:_stopNPCTracking()
-		self:_startNPCTracking()
+		if isLiveInstance(dir) then
+			
+			self:_activateDirectory(dir, false)
+		elseif type(dir) == "string" then
+			local gen = self._generation
+			task_spawn(function()
+				local resolved = resolvePathAsync(dir)
+				if resolved and self._running and self._npcConnsStarted
+					and not self._destroyed and self._generation == gen then
+					self._stringDirMap[dir] = resolved
+					self:_activateDirectory(resolved, false)  
+				end
+			end)
+		end
 	end
 end
 
@@ -955,8 +1010,32 @@ function Manager:RemoveDirectory(dir)
 			table_remove(dirs, i)
 
 			if self._running and self._settings.NPC_ENABLED then
-				self:_stopNPCTracking()
-				self:_startNPCTracking()
+				local instance
+				if isLiveInstance(dir) then
+					instance = dir
+				elseif type(dir) == "string" then
+					instance = self._stringDirMap[dir]
+				end
+
+				if instance and self._dirUidMap[instance] then
+					local uid = self._dirUidMap[instance]
+
+					self._npcConnections:Disconnect(uid .. "_DescendantAdded")
+					self._npcConnections:Disconnect(uid .. "_DescendantRemoving")
+					self._npcConnections:Disconnect(uid .. "_ChildAdded")
+					self._npcConnections:Disconnect(uid .. "_ChildRemoved")
+
+					for model, _ in pairs(self._npcSet) do
+						if self._npcDirOwners[model] == instance then
+							self:_unregisterNPC(model)
+						end
+					end
+
+					self._dirUidMap[instance] = nil
+					if type(dir) == "string" then
+						self._stringDirMap[dir] = nil
+					end
+				end
 			end
 			return
 		end
@@ -973,7 +1052,8 @@ function Manager:Set(key, value)
 	if self._settings[key] == value then return end
 	self._settings[key] = value
 
-	if key == "TARGET_LIMB" or key == "TEAM_CHECK" or key == "FORCEFIELD_CHECK" or key == "DEATH_RESTORE" or key == "GET_LOCAL_TEAM" or key == "DEATH_DETECT_METHOD" then
+	if key == "TARGET_LIMB" or key == "TEAM_CHECK" or key == "FORCEFIELD_CHECK"
+		or key == "DEATH_RESTORE" or key == "GET_LOCAL_TEAM" or key == "DEATH_DETECT_METHOD" then
 		if self._running then
 			self:_refreshAllLimbObservers()
 		end
@@ -1003,6 +1083,11 @@ function Manager:Set(key, value)
 		else
 			self:_stopNPCTracking()
 		end
+	end
+
+	if key == "NPC_DIRECTORIES" and self._running and self._settings.NPC_ENABLED then
+		self:_stopNPCTracking()
+		self:_startNPCTracking()
 	end
 end
 
