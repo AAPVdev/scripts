@@ -258,12 +258,34 @@ function SIXSEVENESP:GetMousePosition()
 	return UserInputService:GetMouseLocation()
 end
 
-function SIXSEVENESP:Track(model)
-	if not self.IsCharacterModel(model) then
-		return false, "Model is not a valid character rig"
-	end
-	self._tracked[model] = true
-	return true
+function SIXSEVENESP:Track(model, maxWait)
+    if typeof(model) ~= "Instance" or not model:IsA("Model") then
+        return false, "Model is not a valid Instance"
+    end
+
+    if self._tracked[model] then
+        return true
+    end
+
+    if self:IsCharacterModel(model) then
+        self._tracked[model] = true
+        return true
+    end
+
+    maxWait = maxWait or 3   
+    local start = os.clock()
+
+    task.spawn(function()
+        while not self:IsCharacterModel(model) and (os.clock() - start) < maxWait do
+            task.wait(0.1)
+        end
+        if self:IsCharacterModel(model) then
+            self._tracked[model] = true
+        end
+        
+    end)
+
+    return true
 end
 
 function SIXSEVENESP:Untrack(model)
