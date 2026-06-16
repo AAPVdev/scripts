@@ -705,21 +705,19 @@ function LimbExtender:Set(key, value)
 		end
 	end
 
-	if key == "ESP_NEAR_FLAGS" or key == "ESP_MEDIUM_FLAGS" or key == "ESP_FAR_FLAGS" then
-		self._settings[key] = table_clone(DEFAULTS[key])
-		mergeSettings(self._settings[key], value)
-	end
-
-	if type(key) == "string" and key:sub(1, 4) == "ESP_" then
+	if type(key) == "string" and string.sub(key, 1, 4) == "ESP_" then
 		if self._ESP then
-			self._ESP:SetOptions(self:_buildESPConfig())
 			if key == "ESP_CAN_DRAW" then
 				self._ESP.Config.CanDraw = value
 			elseif key == "ESP_TEXT_RESOLVER" then
 				self._ESP.Config.TextResolver = value
 			elseif key == "ESP_TRACER_ORIGIN" then
 				self._ESP.Config.TracerOrigin = value
+			elseif key == "ESP_NEAR_FLAGS" or key == "ESP_MEDIUM_FLAGS" or key == "ESP_FAR_FLAGS" then
+				self._settings[key] = table_clone(DEFAULTS[key])
+				mergeSettings(self._settings[key], value)
 			end
+			self._ESP:SetOptions(self:_buildESPConfig())
 		end
 		return
 	end
