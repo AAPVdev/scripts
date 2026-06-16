@@ -84,7 +84,8 @@ local DEFAULTS = {
 	TARGET_LIMB = nil,
 	TEAM_CHECK = false,
 	FORCEFIELD_CHECK = false,
-	DEATH_RESTORE = false,
+	DEATH_RESTORE = true,
+	DEATH_DETECT_METHOD = "Died",
 	GET_LOCAL_TEAM = nil,
 	ON_LIMB_READY = nil,
 	ON_LIMB_LOST = nil,
@@ -282,21 +283,6 @@ function StreamObserver:Destroy()
 	setmetatable(self, nil)
 end
 
---[[
-	LimbObserver
-
-	Connections are split into two managers:
-	  - _lifeConns: long-lived "is this model still alive" watchers. These are
-	    set up once and survive Refresh()/_start() cycles.
-	  - _conns: "search" connections (waiting for the target limb to appear,
-	    watching the resolved limb, forcefield watcher, Humanoid.Died, etc).
-	    These are torn down and rebuilt every time we (re)resolve a limb, e.g.
-	    when TARGET_LIMB changes or the limb is removed.
-
-	This split fixes a bug where DisconnectAll() inside the "WaitLimb"
-	handler could wipe out the model-liveness watcher along with the
-	search-related connections.
-]]
 local LimbObserver = {}
 LimbObserver.__index = LimbObserver
 
@@ -342,7 +328,6 @@ function LimbObserver:_start()
 
 		local targetLimb = self._manager._settings.TARGET_LIMB
 		if type(targetLimb) ~= "string" or targetLimb == "" then
-			-- Nothing to resolve until a valid TARGET_LIMB is configured.
 			return
 		end
 
@@ -401,9 +386,18 @@ function LimbObserver:_onLimbFound(limb)
 	if self._manager._settings.DEATH_RESTORE then
 		local humanoid = self._model:FindFirstChildOfClass("Humanoid")
 		if humanoid then
-			self._conns:Connect(humanoid.Died, function()
-				self:_notifyLost()
-			end, "Died")
+			local method = self._manager._settings.DEATH_DETECT_METHOD
+			if method == "Health" then
+				self._conns:Connect(humanoid:GetPropertyChangedSignal("Health"), function()
+					if humanoid.Health <= 0 then
+						self:_notifyLost()
+					end
+				end, "DeathHealth")
+			else
+				self._conns:Connect(humanoid.Died, function()
+					self:_notifyLost()
+				end, "Died")
+			end
 		end
 	end
 
@@ -443,10 +437,6 @@ function LimbObserver:_notifyLost()
 	end
 end
 
--- Re-resolves the tracked limb, e.g. after TARGET_LIMB / TEAM_CHECK /
--- FORCEFIELD_CHECK / DEATH_RESTORE / GET_LOCAL_TEAM change.
--- If a limb was already being tracked, ON_LIMB_LOST fires for it first so
--- callers never end up with stale "currently tracked limb" bookkeeping.
 function LimbObserver:Refresh()
 	if self._destroyed then return end
 
@@ -642,10 +632,7 @@ function Manager.new(userSettings)
 		_npcSet = {},
 		_npcLimbObservers = {},
 
-		-- Connection manager for player-related connections (PlayerAdded/Removing).
 		_connections = nil,
-		-- Separate connection manager for NPC directory watchers, so NPC
-		-- tracking can be stopped/started without touching player tracking.
 		_npcConnections = nil,
 
 		_playerConnsStarted = false,
@@ -730,7 +717,6 @@ function Manager:_unregisterNPC(model)
 end
 
 function Manager:_activateDirectory(dir, useDescendants)
-
 	self._dirIdCounter = self._dirIdCounter + 1
 	local uid = tostring(self._dirIdCounter)
 
@@ -789,9 +775,6 @@ function Manager:_refreshAllLimbObservers()
 	end
 end
 
--- Re-checks NPC_FILTER against currently tracked NPCs (dropping any that no
--- longer pass) and re-scans the configured directories for NPCs that may now
--- pass a (newly relaxed) filter.
 function Manager:_rescanNPCFilter()
 	if self._destroyed or not self._running or not self._npcConnsStarted then return end
 
@@ -955,9 +938,6 @@ function Manager:AddDirectory(dir)
 
 	table_insert(dirs, dir)
 
-	-- Only restart NPC tracking; this leaves player tracking (and currently
-	-- loaded characters) untouched instead of bouncing everything via a full
-	-- Restart().
 	if self._running and self._settings.NPC_ENABLED then
 		self:_stopNPCTracking()
 		self:_startNPCTracking()
@@ -993,7 +973,7 @@ function Manager:Set(key, value)
 	if self._settings[key] == value then return end
 	self._settings[key] = value
 
-	if key == "TARGET_LIMB" or key == "TEAM_CHECK" or key == "FORCEFIELD_CHECK" or key == "DEATH_RESTORE" or key == "GET_LOCAL_TEAM" then
+	if key == "TARGET_LIMB" or key == "TEAM_CHECK" or key == "FORCEFIELD_CHECK" or key == "DEATH_RESTORE" or key == "GET_LOCAL_TEAM" or key == "DEATH_DETECT_METHOD" then
 		if self._running then
 			self:_refreshAllLimbObservers()
 		end
