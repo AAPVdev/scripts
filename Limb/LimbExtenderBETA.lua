@@ -693,6 +693,7 @@ end
 
 function LimbExtender:Set(key, value)
     if self._settings[key] == value then return end
+	self._settings[key] = value
 
     local function mergeSettings(target, source)
         for k, v in pairs(source) do
@@ -771,7 +772,6 @@ function LimbExtender:Set(key, value)
         self._manager._settings.NPC_DIRECTORIES = value
     end
 
-	self._settings[key] = value
     self:Restart()
 end
 
