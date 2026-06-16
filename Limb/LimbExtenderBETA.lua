@@ -627,7 +627,19 @@ function LimbExtender:_applyLimbs(player, char, limb)
 	end
 
 	sharedApplyLimb(self, cacheKey, char, limb)
-	if self._ESP then self._ESP:Track(char) end
+
+	if self._ESP then
+		local tracked = self._ESP:Track(char)
+		if not tracked then
+			task.spawn(function()
+				local attempts = 0
+				while not self._ESP:Track(char) and attempts < 30 do
+					task.wait(0.1)
+					attempts = attempts + 1
+				end
+			end)
+		end
+	end
 end
 
 function LimbExtender:_removeLimbs(player, char, limb)
