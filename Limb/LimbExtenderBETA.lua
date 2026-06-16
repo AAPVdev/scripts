@@ -574,14 +574,17 @@ function LimbExtender:_buildESPConfig()
 	local s = self._settings
 
 	local function applyToggles(flags)
-		return {
-			Box      = s.ESP_BOX      and flags.Box,
-			Box3D    = s.ESP_BOX3D    and flags.Box3D,
-			Tracer   = s.ESP_TRACER   and flags.Tracer,
-			Skeleton = s.ESP_SKELETON and flags.Skeleton,
-			Health   = s.ESP_HEALTH   and flags.Health,
-			Label    = s.ESP_LABEL    and flags.Label,
-		}
+	    local function safe(val, fallback)
+	        return val ~= nil and val or fallback
+	    end
+	    return {
+	        Box      = safe(s.ESP_BOX, true)      and safe(flags.Box, true),
+	        Box3D    = safe(s.ESP_BOX3D, false)    and safe(flags.Box3D, false),
+	        Tracer   = safe(s.ESP_TRACER, true)    and safe(flags.Tracer, true),
+	        Skeleton = safe(s.ESP_SKELETON, true)  and safe(flags.Skeleton, true),
+	        Health   = safe(s.ESP_HEALTH, true)    and safe(flags.Health, true),
+	        Label    = safe(s.ESP_LABEL, true)     and safe(flags.Label, true),
+	    }
 	end
 
 	return {
