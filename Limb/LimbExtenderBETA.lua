@@ -680,68 +680,76 @@ function LimbExtender:Restart()
 end
 
 function LimbExtender:Set(key, value)
-	
-	if self._settings[key] == value then return end
-	self._settings[key] = value
+    
+    if self._settings[key] == value then return end
+    self._settings[key] = value
 
-	if type(key) == "string" and key:sub(1, 4) == "ESP_" then
-		if self._ESP then
-			self._ESP:SetOptions(self:_buildESPConfig())
-			
-			if key == "ESP_CAN_DRAW" then
-				self._ESP.Config.CanDraw = value
-			elseif key == "ESP_TEXT_RESOLVER" then
-				self._ESP.Config.TextResolver = value
-			elseif key == "ESP_TRACER_ORIGIN" then
-				self._ESP.Config.TracerOrigin = value
-			end
-		end
-		return
-	end
+    if type(key) == "string" and key:sub(1, 4) == "ESP_" then
+        if self._ESP then
+            self._ESP:SetOptions(self:_buildESPConfig())
+            
+            if key == "ESP_CAN_DRAW" then
+                self._ESP.Config.CanDraw = value
+            elseif key == "ESP_TEXT_RESOLVER" then
+                self._ESP.Config.TextResolver = value
+            elseif key == "ESP_TRACER_ORIGIN" then
+                self._ESP.Config.TracerOrigin = value
+            end
+        end
+        return
+    end
 
-	if key == "ESP" then
-		if value then
-			self.ESP = ensureESPLoaded()
-			if self.ESP then
-				if not self._ESP then
-					self._ESP = self.ESP.new(self:_buildESPConfig())
-					if self._running then self._ESP:Start() end
-				end
-			else
-				self._settings.ESP = false
-			end
-		else
-			if self._ESP then
-				self._ESP:Destroy()
-				self._ESP = nil
-			end
-		end
-		return
-	end
+    if key == "ESP" then
+        if value then
+            self.ESP = ensureESPLoaded()
+            if self.ESP then
+                if not self._ESP then
+                    self._ESP = self.ESP.new(self:_buildESPConfig())
 
-	local managerKey = key
-	if key == "ALT_RESET_LIMB_ON_DEATH" then
-		managerKey = "DEATH_RESTORE"
-	end
+                    if self._running then
+                        for _, entry in pairs(self._playerCache) do
+                            if entry.Character then
+                                self._ESP:Track(entry.Character)
+                            end
+                        end
+                        self._ESP:Start()
+                    end
+                end
+            else
+                self._settings.ESP = false   
+            end
+        else
+            if self._ESP then
+                self._ESP:Destroy()
+                self._ESP = nil
+            end
+        end
+        return
+    end
 
-	local managerCompatibleKeys = {
-		PLAYER_ENABLED = true,
-		NPC_ENABLED    = true,
-		NPC_FILTER     = true,
-		TARGET_LIMB    = true,
-		TEAM_CHECK     = true,
-		FORCEFIELD_CHECK = true,
-		DEATH_RESTORE  = true,
-	}
-	if managerCompatibleKeys[managerKey] then
-		self._manager:Set(managerKey, value)
-	end
+    local managerKey = key
+    if key == "ALT_RESET_LIMB_ON_DEATH" then
+        managerKey = "DEATH_RESTORE"
+    end
 
-	if key == "NPC_DIRECTORIES" then
-		self._manager._settings.NPC_DIRECTORIES = value
-	end
+    local managerCompatibleKeys = {
+        PLAYER_ENABLED = true,
+        NPC_ENABLED    = true,
+        NPC_FILTER     = true,
+        TARGET_LIMB    = true,
+        TEAM_CHECK     = true,
+        FORCEFIELD_CHECK = true,
+        DEATH_RESTORE  = true,
+    }
+    if managerCompatibleKeys[managerKey] then
+        self._manager:Set(managerKey, value)
+    end
 
-	self:Restart()
+    if key == "NPC_DIRECTORIES" then
+        self._manager._settings.NPC_DIRECTORIES = value
+    end
+
+    self:Restart()
 end
 
 function LimbExtender:Get(key)
