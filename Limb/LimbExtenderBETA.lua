@@ -574,17 +574,14 @@ function LimbExtender:_buildESPConfig()
 	local s = self._settings
 
 	local function applyToggles(flags)
-	    local function safe(val, fallback)
-	        return val ~= nil and val or fallback
-	    end
-	    return {
-	        Box      = safe(s.ESP_BOX, true)      and safe(flags.Box, true),
-	        Box3D    = safe(s.ESP_BOX3D, false)    and safe(flags.Box3D, false),
-	        Tracer   = safe(s.ESP_TRACER, true)    and safe(flags.Tracer, true),
-	        Skeleton = safe(s.ESP_SKELETON, true)  and safe(flags.Skeleton, true),
-	        Health   = safe(s.ESP_HEALTH, true)    and safe(flags.Health, true),
-	        Label    = safe(s.ESP_LABEL, true)     and safe(flags.Label, true),
-	    }
+		return {
+			Box      = s.ESP_BOX      and flags.Box,
+			Box3D    = s.ESP_BOX3D    and flags.Box3D,
+			Tracer   = s.ESP_TRACER   and flags.Tracer,
+			Skeleton = s.ESP_SKELETON and flags.Skeleton,
+			Health   = s.ESP_HEALTH   and flags.Health,
+			Label    = s.ESP_LABEL    and flags.Label,
+		}
 	end
 
 	return {
@@ -695,86 +692,87 @@ function LimbExtender:Restart()
 end
 
 function LimbExtender:Set(key, value)
-	if self._settings[key] == value then return end
+    if self._settings[key] == value then return end
+
+    local function mergeSettings(target, source)
+        for k, v in pairs(source) do
+            if type(v) == "table" and type(target[k]) == "table" then
+                mergeSettings(target[k], v)
+            else
+                target[k] = v
+            end
+        end
+    end
+
+    if key == "ESP_NEAR_FLAGS" or key == "ESP_MEDIUM_FLAGS" or key == "ESP_FAR_FLAGS" then
+        mergeSettings(self._settings[key], value)
+    end
+
+    if type(key) == "string" and key:sub(1, 4) == "ESP_" then
+        if self._ESP then
+            self._ESP:SetOptions(self:_buildESPConfig())
+            if key == "ESP_CAN_DRAW" then
+                self._ESP.Config.CanDraw = value
+            elseif key == "ESP_TEXT_RESOLVER" then
+                self._ESP.Config.TextResolver = value
+            elseif key == "ESP_TRACER_ORIGIN" then
+                self._ESP.Config.TracerOrigin = value
+            end
+        end
+        return
+    end
+
+    if key == "ESP" then
+        if value then
+            self.ESP = ensureESPLoaded()
+            if self.ESP then
+                if not self._ESP then
+                    self._ESP = self.ESP.new(self:_buildESPConfig())
+                    if self._running then
+                        for _, entry in pairs(self._playerCache) do
+                            if entry.Character then
+                                self._ESP:Track(entry.Character)
+                            end
+                        end
+                        self._ESP:Start()
+                    end
+                end
+            else
+                self._settings.ESP = false
+            end
+        else
+            if self._ESP then
+                self._ESP:Destroy()
+                self._ESP = nil
+            end
+        end
+        return
+    end
+
+    local managerKey = key
+    if key == "ALT_RESET_LIMB_ON_DEATH" then
+        managerKey = "DEATH_RESTORE"
+    end
+
+    local managerCompatibleKeys = {
+        PLAYER_ENABLED = true,
+        NPC_ENABLED    = true,
+        NPC_FILTER     = true,
+        TARGET_LIMB    = true,
+        TEAM_CHECK     = true,
+        FORCEFIELD_CHECK = true,
+        DEATH_RESTORE  = true,
+    }
+    if managerCompatibleKeys[managerKey] then
+        self._manager:Set(managerKey, value)
+    end
+
+    if key == "NPC_DIRECTORIES" then
+        self._manager._settings.NPC_DIRECTORIES = value
+    end
+
 	self._settings[key] = value
-
-	local function mergeSettings(target, source)
-		for k, v in pairs(source) do
-			if type(v) == "table" and type(target[k]) == "table" then
-				mergeSettings(target[k], v)
-			else
-				target[k] = v
-			end
-		end
-	end
-
-	if type(key) == "string" and string.sub(key, 1, 4) == "ESP_" then
-		if self._ESP then
-			if key == "ESP_CAN_DRAW" then
-				self._ESP.Config.CanDraw = value
-			elseif key == "ESP_TEXT_RESOLVER" then
-				self._ESP.Config.TextResolver = value
-			elseif key == "ESP_TRACER_ORIGIN" then
-				self._ESP.Config.TracerOrigin = value
-			elseif key == "ESP_NEAR_FLAGS" or key == "ESP_MEDIUM_FLAGS" or key == "ESP_FAR_FLAGS" then
-				self._settings[key] = table_clone(DEFAULTS[key])
-				mergeSettings(self._settings[key], value)
-			end
-			self._ESP:SetOptions(self:_buildESPConfig())
-		end
-		return
-	end
-
-	if key == "ESP" then
-		if value then
-			self.ESP = ensureESPLoaded()
-			if self.ESP then
-				if not self._ESP then
-					self._ESP = self.ESP.new(self:_buildESPConfig())
-					if self._running then
-						for _, entry in pairs(self._playerCache) do
-							if entry.Character then
-								self._ESP:Track(entry.Character)
-							end
-						end
-						self._ESP:Start()
-					end
-				end
-			else
-				self._settings.ESP = false
-			end
-		else
-			if self._ESP then
-				self._ESP:Destroy()
-				self._ESP = nil
-			end
-		end
-		return
-	end
-
-	local managerKey = key
-	if key == "ALT_RESET_LIMB_ON_DEATH" then
-		managerKey = "DEATH_RESTORE"
-	end
-
-	local managerCompatibleKeys = {
-		PLAYER_ENABLED = true,
-		NPC_ENABLED    = true,
-		NPC_FILTER     = true,
-		TARGET_LIMB    = true,
-		TEAM_CHECK     = true,
-		FORCEFIELD_CHECK = true,
-		DEATH_RESTORE  = true,
-	}
-	if managerCompatibleKeys[managerKey] then
-		self._manager:Set(managerKey, value)
-	end
-
-	if key == "NPC_DIRECTORIES" then
-		self._manager._settings.NPC_DIRECTORIES = value
-	end
-
-	self:Restart()
+    self:Restart()
 end
 
 function LimbExtender:Get(key)
