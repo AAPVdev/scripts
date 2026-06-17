@@ -232,8 +232,8 @@ end
 
 function StreamObserver:_bindAnchor(anchor)
 	self._anchor = anchor
-	self._anchorConns:Destroy()
-	self._anchorConns = ConnectionManager.new()
+	
+	self._anchorConns:Disconnect("AncestryChanged")
 
 	if not anchor or not isLiveInstance(anchor) then return end
 
@@ -299,7 +299,6 @@ function LimbObserver.new(manager, model, playerObject)
 		_limb = nil,
 		_lifeConns = ConnectionManager.new(),
 		_conns = ConnectionManager.new(),
-		_forcefieldWatcher = nil,
 		_destroyed = false,
 	}, LimbObserver)
 
@@ -346,17 +345,13 @@ function LimbObserver:_start()
 		if self._manager._settings.FORCEFIELD_CHECK then
 			local ff = self._model:FindFirstChildOfClass("ForceField")
 			if ff then
-				if not self._forcefieldWatcher then
-					self._forcefieldWatcher = ff.AncestryChanged:Connect(function()
-						if not ff:IsDescendantOf(self._model) then
-							if self._forcefieldWatcher then
-								self._forcefieldWatcher:Disconnect()
-								self._forcefieldWatcher = nil
-							end
-							tryResolve()
-						end
-					end)
-				end
+				
+				self._conns:Connect(ff.AncestryChanged, function()
+					if not ff:IsDescendantOf(self._model) then
+						self._conns:Disconnect("ForceFieldWatcher")
+						tryResolve()
+					end
+				end, "ForceFieldWatcher")
 				return
 			end
 		end
@@ -375,9 +370,10 @@ function LimbObserver:_start()
 	end
 
 	if self._manager._settings.FORCEFIELD_CHECK then
+		
 		self._conns:Connect(self._model.ChildAdded, function(child)
 			if child:IsA("ForceField") then
-				tryResolve()
+				self:Refresh()
 			end
 		end, "ForceFieldAppeared")
 	end
@@ -418,7 +414,8 @@ function LimbObserver:_onLimbFound(limb)
 end
 
 function LimbObserver:_limbRemoved()
-	if self._destroyed then return end
+	
+	if self._destroyed or not self._ready then return end
 
 	self._ready = false
 	local oldLimb = self._limb
@@ -431,11 +428,6 @@ end
 
 function LimbObserver:_notifyLost()
 	if self._destroyed then return end
-
-	if self._forcefieldWatcher then
-		self._forcefieldWatcher:Disconnect()
-		self._forcefieldWatcher = nil
-	end
 
 	local wasReady = self._ready
 	local oldLimb = self._limb
@@ -451,11 +443,6 @@ end
 
 function LimbObserver:Refresh()
 	if self._destroyed then return end
-
-	if self._forcefieldWatcher then
-		self._forcefieldWatcher:Disconnect()
-		self._forcefieldWatcher = nil
-	end
 
 	local wasReady = self._ready
 	local oldLimb = self._limb
@@ -474,11 +461,6 @@ end
 function LimbObserver:Destroy()
 	if self._destroyed then return end
 	self._destroyed = true
-
-	if self._forcefieldWatcher then
-		self._forcefieldWatcher:Disconnect()
-		self._forcefieldWatcher = nil
-	end
 
 	local manager     = self._manager
 	local player      = self._player
@@ -656,9 +638,9 @@ function Manager.new(userSettings)
 
 		_dirIdCounter = 0,
 
-		_dirUidMap = {},       
-		_stringDirMap = {},    
-		_npcDirOwners = {},    
+		_dirUidMap = {},
+		_stringDirMap = {},
+		_npcDirOwners = {},
 	}, Manager)
 
 	return self
@@ -679,19 +661,19 @@ function Manager:_onLimbLost(player, model, limb)
 end
 
 function Manager:_isValidNPC(model)
-    if not model or not model:IsA("Model") then return false end
-    if not model:FindFirstChildOfClass("Humanoid") then return false end
+	if not model or not model:IsA("Model") then return false end
+	if not model:FindFirstChildOfClass("Humanoid") then return false end
 
-    if Players:GetPlayerFromCharacter(model) then
-        return false
-    end
+	if Players:GetPlayerFromCharacter(model) then
+		return false
+	end
 
-    local filter = self._settings.NPC_FILTER
-    if type(filter) == "function" then
-        local ok, result = pcall(filter, model)
-        if not ok or not result then return false end
-    end
-    return true
+	local filter = self._settings.NPC_FILTER
+	if type(filter) == "function" then
+		local ok, result = pcall(filter, model)
+		if not ok or not result then return false end
+	end
+	return true
 end
 
 function Manager:_registerNPC(model, dir)
@@ -723,7 +705,7 @@ function Manager:_registerNPC(model, dir)
 	)
 	self._npcSet[model] = observer
 	if dir then
-		self._npcDirOwners[model] = dir   
+		self._npcDirOwners[model] = dir
 	end
 end
 
@@ -738,7 +720,7 @@ function Manager:_unregisterNPC(model)
 		limbObs:Destroy()
 		self._npcLimbObservers[model] = nil
 	end
-	self._npcDirOwners[model] = nil   
+	self._npcDirOwners[model] = nil
 end
 
 function Manager:_activateDirectory(dir, useDescendants)
@@ -749,7 +731,7 @@ function Manager:_activateDirectory(dir, useDescendants)
 
 	local children = useDescendants and dir:GetDescendants() or dir:GetChildren()
 	for _, desc in ipairs(children) do
-		self:_registerNPC(desc, dir)   
+		self:_registerNPC(desc, dir)
 	end
 
 	if useDescendants then
@@ -758,7 +740,7 @@ function Manager:_activateDirectory(dir, useDescendants)
 			task_defer(function()
 				if self._running and self._npcConnsStarted
 					and not self._destroyed
-					and self._generation == gen then   
+					and self._generation == gen then
 					self:_registerNPC(desc, dir)
 				end
 			end)
@@ -772,7 +754,7 @@ function Manager:_activateDirectory(dir, useDescendants)
 			task_defer(function()
 				if self._running and self._npcConnsStarted
 					and not self._destroyed
-					and self._generation == gen then   
+					and self._generation == gen then
 					self:_registerNPC(desc, dir)
 				end
 			end)
@@ -831,10 +813,12 @@ function Manager:_rescanNPCFilter()
 	local useDescendants = not hasUserDirs
 
 	for _, entry in ipairs(entries) do
-		if isLiveInstance(entry) then
-			local children = useDescendants and entry:GetDescendants() or entry:GetChildren()
+		
+		local instance = isLiveInstance(entry) and entry or self._stringDirMap[entry]
+		if instance and isLiveInstance(instance) then
+			local children = useDescendants and instance:GetDescendants() or instance:GetChildren()
 			for _, desc in ipairs(children) do
-				self:_registerNPC(desc, entry)   
+				self:_registerNPC(desc, instance)
 			end
 		end
 	end
@@ -895,7 +879,7 @@ function Manager:_startNPCTracking()
 				local resolved = resolvePathAsync(entry)
 				if resolved and self._running and self._npcConnsStarted
 					and not self._destroyed and self._generation == gen then
-					self._stringDirMap[entry] = resolved     
+					self._stringDirMap[entry] = resolved
 					self:_activateDirectory(resolved, not hasUserDirs)
 				end
 			end)
@@ -996,7 +980,7 @@ function Manager:AddDirectory(dir)
 				if resolved and self._running and self._npcConnsStarted
 					and not self._destroyed and self._generation == gen then
 					self._stringDirMap[dir] = resolved
-					self:_activateDirectory(resolved, false)  
+					self:_activateDirectory(resolved, false)
 				end
 			end)
 		end
