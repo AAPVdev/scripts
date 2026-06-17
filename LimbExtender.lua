@@ -117,19 +117,15 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod and h
 			if data and instType == "Part" then
 				ignoreHook = true
 
-				-- Disable the proxy filter so the external write produces a real Changed event
 				local proxy = limbData.changedProxies[self]
 				if proxy then proxy.filter.enabled = false end
 
-				-- Allow exactly one Changed event for the property being written
 				limbData.allowChangedOnce[self] = key
 
 				oldNewIndex(self, key, value)
 
-				-- Re‑enable the proxy filter (suppress any further events from the engine recalc)
 				if proxy then proxy.filter.enabled = true end
 
-				-- Mark that we are about to re‑apply the cheat value
 				limbData.reapplyInProgress[self] = true
 
 				if key == "Size" then
@@ -164,7 +160,6 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod and h
 					end
 				end
 
-				-- Fire the dummy event while reapplyInProgress is still true
 				if limbData.dummyEvent then
 					limbData.dummyEvent:Fire()
 				end
@@ -184,21 +179,21 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod and h
 		if not checkcaller() then
 			local data, instType = getTargetData(self)
 			if data then
-				-- Return a Changed signal proxy for non‑executor callers
+				
 				if instType == "Part" and key == "Changed" then
 					local part = self
 					local realChanged = oldIndex(self, key)
 					local signalProxy = {
 						Connect = function(_, fn)
 							local wrapped = function(prop)
-								-- Allow exactly one event for the property that was just written
+								
 								if limbData.allowChangedOnce[part] == prop then
-									-- First event: clear the flag and block all future events
+									
 									limbData.allowChangedOnce[part] = nil
 									limbData.reapplyInProgress[part] = true
 									fn(prop)
 								elseif not limbData.reapplyInProgress[part] then
-									-- Normal operation (no reapply happening)
+									
 									fn(prop)
 								end
 							end
@@ -211,7 +206,6 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod and h
 					return signalProxy
 				end
 
-				-- Spoofed property reads
 				if instType == "Part" then
 					if key == "Size"                     then return data.OriginalSize         end
 					if key == "Transparency"             then return data.OriginalTransparency  end
