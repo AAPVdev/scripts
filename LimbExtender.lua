@@ -3,159 +3,70 @@ local function missing(t, f, fallback)
 	return fallback
 end
 
-local cloneref    = missing("function", cloneref, function(obj) return obj end)
-local checkcaller = type(checkcaller) == "function" and checkcaller or function() return true end
+local cloneref = missing("function", cloneref, function(obj) return obj end)
+local has_checkcaller = type(checkcaller) == "function"
+local checkcaller = has_checkcaller and checkcaller or function() return true end
 
-local Players   = cloneref(game:GetService("Players"))
-local Workspace = cloneref(game:GetService("Workspace"))
-
+local Players = cloneref(game:GetService("Players"))
 local localPlayer = Players.LocalPlayer
 if not localPlayer then
 	Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
 	localPlayer = Players.LocalPlayer
 end
 
-local type, typeof            = type, typeof
-local pcall                   = pcall
-local pairs, ipairs           = pairs, ipairs
-local tostring, setmetatable  = tostring, setmetatable
-local math_max                = math.max
-local task_spawn              = task.spawn
-local task_defer              = task.defer
-local task_wait               = task.wait
-local task_delay              = task.delay   
-local table_clear             = table.clear
-local table_insert            = table.insert
-local table_remove            = table.remove
-local table_clone             = table.clone
-local string_split            = string.split
-local string_gsub             = string.gsub
-local Instance_new            = Instance.new
-local Vector3_new             = Vector3.new
-local PhysProps_new           = PhysicalProperties.new
-
-local function _safeGet(obj, key) return obj[key] end
-local function _disconnect(conn) conn:Disconnect() end
-
-local ConnectionManager = {}
-ConnectionManager.__index = ConnectionManager
-
-function ConnectionManager.new()
-	return setmetatable({ _conns = {}, _labels = {} }, ConnectionManager)
-end
-
-function ConnectionManager:_register(conn, label)
-	if label then
-		local prev = self._labels[label]
-		if prev then
-			if prev.Connected then prev:Disconnect() end
-			self._conns[prev] = nil
-		end
-		self._labels[label] = conn
-	end
-	self._conns[conn] = true
-end
-
-function ConnectionManager:Connect(signal, fn, label)
-	if not signal or not fn then return nil end
-	local conn = signal:Connect(fn)
-	self:_register(conn, label)
-	return conn
-end
-
-function ConnectionManager:Prune()
-	for conn in pairs(self._conns) do
-		if not conn.Connected then self._conns[conn] = nil end
-	end
-end
-
-function ConnectionManager:DisconnectAll()
-	for conn in pairs(self._conns) do
-		if conn.Connected then conn:Disconnect() end
-	end
-	table_clear(self._conns)
-	table_clear(self._labels)
-end
-
-function ConnectionManager:Destroy()
-	self:DisconnectAll()
-	setmetatable(self, nil)
-end
-
-local DEFAULTS = {
-	TARGET_LIMB             = "Head",
-	LIMB_SIZE               = 15,
-	LIMB_TRANSPARENCY       = 0.5,
-	LIMB_CAN_COLLIDE        = false,
-	TEAM_CHECK              = true,
-	FORCEFIELD_CHECK        = false,
-	ALT_RESET_LIMB_ON_DEATH = false,
-	PLAYER_ENABLED          = true,
-	NPC_ENABLED             = false,
-	NPC_FILTER              = nil,
-	NPC_DIRECTORIES         = {},
-	ESP                     = false,
-
-	ESP_COLOR               = Color3.fromRGB(255, 50, 50),
-	ESP_BOX3D_COLOR         = Color3.fromRGB(255, 50, 50),
-	ESP_HEALTH_COLOR        = Color3.fromRGB(9, 255, 0),
-	ESP_EMPTY_COLOR         = Color3.fromRGB(255, 0, 0),
-	ESP_SKELETON_COLOR      = Color3.fromRGB(255, 157, 0),
-	ESP_TEXT_COLOR          = Color3.fromRGB(255, 255, 255),
-	ESP_TEXT_SIZE           = 16,
-	ESP_OFFSCREEN_POINT     = true,
-	ESP_FILTER_LOCAL        = true,
-
-	ESP_MAX_DISTANCE        = 500,
-	ESP_NEAR_DISTANCE       = 100,
-	ESP_MEDIUM_DISTANCE     = 250,
-	ESP_OCCLUSION           = false,
-	ESP_OCCLUSION_FREQUENCY = 4,
-
-	ESP_BOX      = true,
-	ESP_BOX3D    = false,
-	ESP_TRACER   = true,
-	ESP_SKELETON = true,
-	ESP_HEALTH   = true,
-	ESP_LABEL    = true,
-
-	ESP_NEAR_FLAGS   = { Box = true,  Tracer = true,  Skeleton = true,  Health = true,  Label = true,  Box3D = false },
-	ESP_MEDIUM_FLAGS = { Box = true,  Tracer = true,  Skeleton = false, Health = true,  Label = true,  Box3D = false },
-	ESP_FAR_FLAGS    = { Box = true,  Tracer = true,  Skeleton = false, Health = false, Label = false, Box3D = false },
-
-	ESP_TEXT_RESOLVER = nil,
-	ESP_CAN_DRAW      = nil,
-	ESP_TRACER_ORIGIN = nil,
-}
-
-local function mergeSettings(user)
-	local s = table_clone(DEFAULTS)
-	if type(user) == "table" then
-		for k, v in pairs(user) do s[k] = v end
-	end
-	return s
-end
-
 local globalEnv = type(getgenv) == "function" and getgenv() or _G
 local limbData = globalEnv.limbExtenderData or {}
 globalEnv.limbExtenderData = limbData
 
+limbData.BaseModule = limbData.BaseModule or loadstring(game:HttpGet('https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/manager/manager.lua'))()
+
+local BaseModule = limbData.BaseModule 
+local Manager = BaseModule.Manager
+local ConnectionManager = BaseModule.ConnectionManager
+local isLiveInstance = BaseModule.isLiveInstance
+
+local type, typeof = type, typeof
+local pcall = pcall
+local pairs, ipairs = pairs, ipairs
+local setmetatable = setmetatable
+local math_max = math.max
+local task_spawn = task.spawn
+local task_defer = task.defer
+local task_wait = task.wait
+local table_clear = table.clear
+local table_insert = table.insert
+local table_remove = table.remove
+local table_clone = table.clone
+local Instance_new = Instance.new
+local Vector3_new = Vector3.new
+local PhysProps_new = PhysicalProperties.new
+
+local function _safeGet(obj, key) return obj[key] end
+local function _disconnect(conn) conn:Disconnect() end
+
 limbData.playerCache    = limbData.playerCache    or {}
 limbData.instanceLookup = limbData.instanceLookup or setmetatable({}, { __mode = "k" })
 limbData.npcIdCounter   = limbData.npcIdCounter   or 0
+limbData.changedProxies = limbData.changedProxies or setmetatable({}, { __mode = "k" })
+limbData.reapplyInProgress = limbData.reapplyInProgress or setmetatable({}, { __mode = "k" })
 
 if not limbData.dummyEvent then
 	limbData.dummyEvent = Instance_new("BindableEvent")
 end
-
-limbData.changedProxies = limbData.changedProxies or setmetatable({}, { __mode = "k" })
 
 if type(limbData.terminate) == "function" then
 	limbData.terminate()
 	limbData.terminate = nil
 end
 
-local CONN_KEYS = { "SizeConn", "TransConn", "CollConn", "PhysConn", "MasslessConn", "RootPriorityConn" }
+local has_newcclosure    = type(newcclosure)    == "function"
+local has_hookmetamethod = type(hookmetamethod) == "function"
+local has_loadstring     = type(loadstring)     == "function"
+local has_httpget = pcall(function()
+	local f = game.HttpGet
+	if type(f) ~= "function" then error("not callable") end
+end)
+
 local BLOCKED_PROPS = {
 	Size = true,
 	Transparency = true,
@@ -169,19 +80,17 @@ local BLOCKED_PROPS = {
 	RootPriority = true,
 }
 
-local has_newcclosure    = type(newcclosure)    == "function"
-local has_hookmetamethod = type(hookmetamethod) == "function"
-local has_loadstring     = type(loadstring)     == "function"
-local has_httpget = pcall(function()
-	local f = game.HttpGet
-	if type(f) ~= "function" then error("not callable") end
-end)
+local CONN_KEYS = { "SizeConn", "TransConn", "CollConn", "PhysConn", "MasslessConn", "RootPriorityConn" }
 
-if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod then
+if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod and has_checkcaller then
 	limbData._spoofInstalled = true
 
 	local _instanceLookup = limbData.instanceLookup
 	local _playerCache    = limbData.playerCache
+	local ignoreHook = false
+
+	limbData.reapplyInProgress = limbData.reapplyInProgress or setmetatable({}, { __mode = "k" })
+	limbData.allowChangedOnce = limbData.allowChangedOnce or setmetatable({}, { __mode = "k" })
 
 	local function getTargetData(instance)
 		if typeof(instance) ~= "Instance" then return nil, nil end
@@ -202,18 +111,68 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod then
 
 	local oldNewIndex
 	oldNewIndex = hookmetamethod(game, "__newindex", newcclosure(function(...)
-		if not checkcaller() then
-			local self, key, value = ...
+		local self, key, value = ...
+		if not checkcaller() and not ignoreHook then
 			local data, instType = getTargetData(self)
-					
 			if data and instType == "Part" then
-				if key == "Size"                     then data.OriginalSize         = value return end
-				if key == "Transparency"             then data.OriginalTransparency  = value return end
-				if key == "CanCollide"               then data.OriginalCanCollide    = value return end
-				if key == "Massless"                 then data.OriginalMassless      = value return end
-				if key == "Mass" or key == "AssemblyMass" or key == "AssemblyCenterOfMass" then return end
-				if key == "CustomPhysicalProperties" then data.OriginalPhysProps     = value return end
-				if key == "RootPriority"             then data.OriginalRootPriority  = value return end
+				ignoreHook = true
+
+				-- Disable the proxy filter so the external write produces a real Changed event
+				local proxy = limbData.changedProxies[self]
+				if proxy then proxy.filter.enabled = false end
+
+				-- Allow exactly one Changed event for the property being written
+				limbData.allowChangedOnce[self] = key
+
+				oldNewIndex(self, key, value)
+
+				-- Re‑enable the proxy filter (suppress any further events from the engine recalc)
+				if proxy then proxy.filter.enabled = true end
+
+				-- Mark that we are about to re‑apply the cheat value
+				limbData.reapplyInProgress[self] = true
+
+				if key == "Size" then
+					data.OriginalSize = value
+					self.Size = data.CheatSize or data.OriginalSize
+				elseif key == "Transparency" then
+					data.OriginalTransparency = value
+					self.Transparency = data.CheatTransparency or data.OriginalTransparency
+				elseif key == "CanCollide" then
+					data.OriginalCanCollide = value
+					self.CanCollide = data.CheatCanCollide ~= nil and data.CheatCanCollide or data.OriginalCanCollide
+				elseif key == "Massless" then
+					data.OriginalMassless = value
+					if data.CheatMassless ~= nil then
+						self.Massless = data.CheatMassless
+					end
+				elseif key == "Mass" then
+					self.Mass = data.OriginalMass
+				elseif key == "AssemblyMass" then
+					self.AssemblyMass = data.OriginalAssemblyMass
+				elseif key == "AssemblyCenterOfMass" then
+					self.AssemblyCenterOfMass = data.OriginalAssemblyCOM
+				elseif key == "CustomPhysicalProperties" then
+					data.OriginalPhysProps = value
+					if data.CheatPhysProps then
+						self.CustomPhysicalProperties = data.CheatPhysProps
+					end
+				elseif key == "RootPriority" then
+					data.OriginalRootPriority = value
+					if data.CheatRootPriority ~= nil then
+						self.RootPriority = data.CheatRootPriority
+					end
+				end
+
+				-- Fire the dummy event while reapplyInProgress is still true
+				if limbData.dummyEvent then
+					limbData.dummyEvent:Fire()
+				end
+
+				limbData.reapplyInProgress[self] = nil
+				limbData.allowChangedOnce[self] = nil
+				ignoreHook = false
+				return
 			end
 		end
 		return oldNewIndex(...)
@@ -221,11 +180,38 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod then
 
 	local oldIndex
 	oldIndex = hookmetamethod(game, "__index", newcclosure(function(...)
+		local self, key = ...
 		if not checkcaller() then
-			local self, key = ...
 			local data, instType = getTargetData(self)
-					
 			if data then
+				-- Return a Changed signal proxy for non‑executor callers
+				if instType == "Part" and key == "Changed" then
+					local part = self
+					local realChanged = oldIndex(self, key)
+					local signalProxy = {
+						Connect = function(_, fn)
+							local wrapped = function(prop)
+								-- Allow exactly one event for the property that was just written
+								if limbData.allowChangedOnce[part] == prop then
+									-- First event: clear the flag and block all future events
+									limbData.allowChangedOnce[part] = nil
+									limbData.reapplyInProgress[part] = true
+									fn(prop)
+								elseif not limbData.reapplyInProgress[part] then
+									-- Normal operation (no reapply happening)
+									fn(prop)
+								end
+							end
+							return realChanged:Connect(wrapped)
+						end,
+						Wait = function()
+							return realChanged:Wait()
+						end
+					}
+					return signalProxy
+				end
+
+				-- Spoofed property reads
 				if instType == "Part" then
 					if key == "Size"                     then return data.OriginalSize         end
 					if key == "Transparency"             then return data.OriginalTransparency  end
@@ -235,6 +221,7 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod then
 					if key == "AssemblyMass"             then return data.OriginalAssemblyMass  end
 					if key == "AssemblyCenterOfMass"     then return data.OriginalAssemblyCOM   end
 					if key == "CustomPhysicalProperties" then return data.OriginalPhysProps     end
+					if key == "CurrentPhysicalProperties" then return data.OriginalPhysProps    end
 					if key == "RootPriority"             then return data.OriginalRootPriority  end
 				elseif instType == "Model" then
 					if key == "ExtentsSize"              then return data.OriginalExtents       end
@@ -249,21 +236,17 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod then
 
 	local oldNamecall
 	oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(...)
+		local self = ...
 		local method = getnamecallmethod()
 		local args = {...}
-		local self = args[1]
-				
+
 		if not checkcaller() then
 			local data, instType = getTargetData(self)
-
 			if data then
 				if instType == "Part" then
 					if method == "GetMass" then return data.OriginalMass end
-					if method == "GetConnectedParts" then
-						return oldNamecall(...)
-					end
 					if method == "GetPropertyChangedSignal" then
-						local prop = args[1]
+						local prop = args[2]
 						if BLOCKED_PROPS[prop] then
 							return limbData.dummyEvent.Event
 						end
@@ -279,6 +262,20 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod then
 		end
 		return oldNamecall(...)
 	end))
+end
+
+local ESP_SOURCE_URL = "https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/esp/SIXSEVENESP.lua"
+
+local function ensureESPLoaded()
+	if limbData.ESP then return limbData.ESP end
+	if not (has_loadstring and has_httpget) then return nil end
+
+	local ok, res = pcall(function()
+		return loadstring(game:HttpGet(ESP_SOURCE_URL))()
+	end)
+	if ok then limbData.ESP = res end
+
+	return limbData.ESP
 end
 
 local function watchProperty(instance, prop, callback)
@@ -380,7 +377,6 @@ local function sharedSaveData(parent, cacheKey, char, limb)
 		end
 
 		for _, conn in ipairs(preExistingConns) do
-
 			local fnOk, fn = pcall(_safeGet, conn, "Function")
 			if fnOk and fn and fn ~= proxy.filterFn then
 				pcall(_disconnect, conn)
@@ -526,6 +522,17 @@ local function sharedApplyLimb(parent, cacheKey, char, limb)
 		limb.RootPriority = -127
 	end
 
+	entry.CheatSize         = newVec
+	entry.CheatTransparency = trans
+	entry.CheatCanCollide   = colide
+	if isHRP then
+		entry.CheatMassless = false
+		entry.CheatPhysProps = newPhys
+	else
+		entry.CheatMassless     = true
+		entry.CheatRootPriority = -127
+	end
+
 	entry.SizeConn  = watchProperty(limb, "Size",         function(l) l.Size         = newVec end)
 	entry.TransConn = watchProperty(limb, "Transparency", function(l) l.Transparency = trans  end)
 	entry.CollConn  = watchProperty(limb, "CanCollide",   function(l) l.CanCollide   = colide end)
@@ -542,455 +549,119 @@ local function sharedApplyLimb(parent, cacheKey, char, limb)
 	return newVec
 end
 
-local PlayerData = {}
-PlayerData.__index = PlayerData
-
-function PlayerData.new(parent, player)
-	local self = setmetatable({
-		_parent     = parent,
-		player      = player,
-		_cacheKey   = player.Name,
-		playerConns = ConnectionManager.new(),
-		charConns   = ConnectionManager.new(),
-		_activeLimb = nil,
-		_destroyed  = false,
-	}, PlayerData)
-
-	self.playerConns:Connect(player.CharacterAdded,    function(c) self:_setupCharacter(c) end)
-	self.playerConns:Connect(player.CharacterRemoving, function(c) self:_restoreLimb(c)    end)
-
-	self.playerConns:Connect(player:GetPropertyChangedSignal("Team"), function()
-		if self._destroyed then return end
-		if self._parent:_isTeam(self.player) then
-			self:_restoreLimb()
-		elseif self.player.Character then
-			self:_setupCharacter(self.player.Character)
-		end
-	end)
-	if player.Character then self:_setupCharacter(player.Character) end
-
-	task_spawn(function()
-		while not self._destroyed do
-			task_wait(2)
-			if self._destroyed then break end
-			if not self._activeLimb and not self._parent:_isTeam(self.player) then
-				local char = self.player and self.player.Character
-				if char and char:IsDescendantOf(game) then
-					local target = char:FindFirstChild(self._parent._settings.TARGET_LIMB)
-					if target and target:IsDescendantOf(char) then
-						pcall(function() self:_setupCharacter(char) end)
-					end
-				end
-			end
-		end
-	end)
-
-	return self
-end
-
-function PlayerData:_restoreLimb()
-	local char = self._activeLimb and self._activeLimb.Parent
-	sharedRestoreLimb(self._parent, self._cacheKey, self._activeLimb)
-	if self._parent._ESP and char then
-		self._parent._ESP:Untrack(char)
-	end
-	self._activeLimb = nil
-end
-
-function PlayerData:_applyLimb(char, limb)
-	if self._destroyed then return end
-	sharedApplyLimb(self._parent, self._cacheKey, char, limb)
-	self._activeLimb = limb
-end
-
-function PlayerData:_setupCharacter(char)
-	if self._parent:_isTeam(self.player) or self._destroyed or not char then return end
-
-	self.charConns:DisconnectAll()
-
-	local function retry()
-		if not self._destroyed and char:IsDescendantOf(game) then
-			task_defer(function()
-				if not self._destroyed and char:IsDescendantOf(game) then
-					self:_setupCharacter(char)
-				end
-			end)
-		end
-	end
-
-	local humanoid = char:FindFirstChildOfClass("Humanoid")
-	if not humanoid then
-		self.charConns:Connect(char.ChildAdded, function(child)
-			if child:IsA("Humanoid") then retry() end
-		end)
-		self.charConns:Connect(char.AncestryChanged, function()
-			if not char:IsDescendantOf(game) then self:_restoreLimb() end
-		end)
-		if char:FindFirstChildOfClass("Humanoid") then retry() end
-		return
-	end
-
-	if humanoid.Health <= 0 or self._destroyed then
-		self.charConns:Connect(humanoid:GetPropertyChangedSignal("Health"), function()
-			if humanoid.Health > 0 then retry() end
-		end)
-		self.charConns:Connect(char.ChildAdded, function(child)
-			if child:IsA("Humanoid") then retry() end
-		end)
-		if not self._destroyed and humanoid.Health > 0 then retry() end
-		return
-	end
-
-	if self._parent._settings.FORCEFIELD_CHECK then
-		local function onFFAppeared(ff)
-			self:_restoreLimb()
-			self.charConns:Connect(ff.AncestryChanged, function()
-				if not ff:IsDescendantOf(char) then retry() end
-			end)
-		end
-
-		self.charConns:Connect(char.ChildAdded, function(child)
-			if child:IsA("ForceField") then onFFAppeared(child) end
-		end, "FFChildWatch")
-
-		local ff = char:FindFirstChildOfClass("ForceField")
-		if ff then
-			onFFAppeared(ff)
-			return
-		end
-	end
-
-	local target = char:FindFirstChild(self._parent._settings.TARGET_LIMB)
-	if not target then
-		self.charConns:Connect(char.ChildAdded, function(child)
-			if child.Name == self._parent._settings.TARGET_LIMB then retry() end
-		end)
-		self.charConns:Connect(char.AncestryChanged, function()
-			if not char:IsDescendantOf(game) then self:_restoreLimb() end
-		end)
-		if char:FindFirstChild(self._parent._settings.TARGET_LIMB) then retry() end
-		return
-	end
-
-	if not self._destroyed then
-		pcall(function() self:_applyLimb(char, target) end)
-		if self._parent._ESP then
-			self._parent._ESP:Track(char)
-		end
-
-		self.charConns:Connect(char.AncestryChanged, function()
-			if not char:IsDescendantOf(game) then self:_restoreLimb() end
-		end)
-
-		self.charConns:Connect(target.AncestryChanged, function()
-			if target:IsDescendantOf(char) then return end
-			sharedRestoreLimb(self._parent, self._cacheKey, self._activeLimb)
-			if self._parent._ESP then
-				self._parent._ESP:Untrack(char)
-			end
-			self._activeLimb = nil
-			self.charConns:Connect(char.ChildAdded, function(child)
-				if child.Name == self._parent._settings.TARGET_LIMB then
-					task_defer(function()
-						if not self._destroyed and char:IsDescendantOf(game) then
-							self:_setupCharacter(char)
-						end
-					end)
-				end
-			end, "LimbRespawn")
-		end, "LimbStream")
-
-		local deathEvent
-		if self._parent._settings.ALT_RESET_LIMB_ON_DEATH then
-			deathEvent = humanoid.HealthChanged
-		else
-			deathEvent = humanoid.Died
-		end
-
-		self.charConns:Connect(deathEvent, function()
-			if humanoid.Health <= 0 then
-				self:_restoreLimb()
-			end
-		end)
-	end
-end
-
-function PlayerData:Destroy()
-	self._destroyed = true
-	self:_restoreLimb()
-	if self.charConns   then self.charConns:Destroy()   end
-	if self.playerConns then self.playerConns:Destroy() end
-	setmetatable(self, nil)
-end
-
-local NPCData = {}
-NPCData.__index = NPCData
-
-function NPCData.new(parent, char)
-	limbData.npcIdCounter = limbData.npcIdCounter + 1
-	local self = setmetatable({
-		_parent     = parent,
-		char        = char,
-		_cacheKey   = "__npc_" .. limbData.npcIdCounter,
-		charConns   = ConnectionManager.new(),
-		_activeLimb = nil,
-		_destroyed  = false,
-	}, NPCData)
-
-	self:_setup()
-
-	task_spawn(function()
-		while not self._destroyed do
-			task_wait(2)
-			if self._destroyed then break end
-			if not self._activeLimb then
-				local char = self.char
-				if char and char:IsDescendantOf(game) then
-					local target = char:FindFirstChild(self._parent._settings.TARGET_LIMB)
-					if target and target:IsDescendantOf(char) then
-						pcall(function() self:_setup() end)
-					end
-				end
-			end
-		end
-	end)
-
-	return self
-end
-
-function NPCData:_restoreLimb()
-	local char = self._activeLimb and self._activeLimb.Parent
-	sharedRestoreLimb(self._parent, self._cacheKey, self._activeLimb)
-	if self._parent._ESP and char then
-		self._parent._ESP:Untrack(char)
-	end
-	self._activeLimb = nil
-end
-
-function NPCData:_applyLimb(char, limb)
-	if self._destroyed then return end
-	sharedApplyLimb(self._parent, self._cacheKey, char, limb)
-	self._activeLimb = limb
-end
-
-function NPCData:_setup()
-	if self._destroyed then return end
-	local char = self.char
-
-	self.charConns:DisconnectAll()
-	if not char:IsDescendantOf(game) then return end
-
-	local function retry()
-		if not self._destroyed and char:IsDescendantOf(game) then
-			task_defer(function()
-				if not self._destroyed and char:IsDescendantOf(game) then
-					self:_setup()
-				end
-			end)
-		end
-	end
-
-	local humanoid = char:FindFirstChildOfClass("Humanoid")
-	if not humanoid then
-		self.charConns:Connect(char.ChildAdded, function(child)
-			if child:IsA("Humanoid") then retry() end
-		end)
-		if char:FindFirstChildOfClass("Humanoid") then retry() end
-		return
-	end
-
-	if humanoid.Health <= 0 then
-		self.charConns:Connect(humanoid:GetPropertyChangedSignal("Health"), function()
-			if humanoid.Health > 0 then retry() end
-		end)
-		self.charConns:Connect(char.ChildAdded, function(child)
-			if child:IsA("Humanoid") then retry() end
-		end)
-		if humanoid.Health > 0 then retry() end
-		return
-	end
-
-	if self._parent._settings.FORCEFIELD_CHECK then
-		local ff = char:FindFirstChildOfClass("ForceField")
-		if ff then
-			self.charConns:Connect(ff.Destroying, function() retry() end)
-			return
-		end
-		self.charConns:Connect(char.ChildAdded, function(child)
-			if child:IsA("ForceField") then
-				self:_restoreLimb()
-				self.charConns:Connect(child.Destroying, function() retry() end)
-			end
-		end)
-	end
-
-	local target = char:FindFirstChild(self._parent._settings.TARGET_LIMB)
-	if not target then
-		self.charConns:Connect(char.ChildAdded, function(child)
-			if child.Name == self._parent._settings.TARGET_LIMB then retry() end
-		end)
-		if char:FindFirstChild(self._parent._settings.TARGET_LIMB) then retry() end
-		return
-	end
-
-	if not self._destroyed then
-		self:_applyLimb(char, target)
-
-		if self._parent._ESP then
-			self._parent._ESP:Track(char)
-		end
-
-		self.charConns:Connect(char.AncestryChanged, function()
-			if not char:IsDescendantOf(game) then self:_restoreLimb() end
-		end)
-
-		self.charConns:Connect(target.AncestryChanged, function()
-			if target:IsDescendantOf(char) then return end
-			sharedRestoreLimb(self._parent, self._cacheKey, self._activeLimb)
-			if self._parent._ESP then
-				self._parent._ESP:Untrack(char)
-			end
-			self._activeLimb = nil
-			self.charConns:Connect(char.ChildAdded, function(child)
-				if child.Name == self._parent._settings.TARGET_LIMB then
-					task_defer(function()
-						if not self._destroyed and char:IsDescendantOf(game) then
-							self:_setup()
-						end
-					end)
-				end
-			end, "LimbRespawn")
-		end, "LimbStream")
-
-		local deathEvent
-		if self._parent._settings.ALT_RESET_LIMB_ON_DEATH then
-			deathEvent = humanoid.HealthChanged
-		else
-			deathEvent = humanoid.Died
-		end
-
-		self.charConns:Connect(deathEvent, function()
-			if humanoid.Health <= 0 then
-				self:_restoreLimb()
-			end
-		end)
-	end
-end
-
-function NPCData:Destroy()
-	self._destroyed = true
-	self:_restoreLimb()
-	if self.charConns then self.charConns:Destroy() end
-	setmetatable(self, nil)
-end
-
-local function isLiveInstance(inst)
-	if typeof(inst) ~= "Instance" then return false end
-	local ok, result = pcall(inst.IsDescendantOf, inst, game)
-	return ok and result
-end
-
-local function normalizeDirectoryPath(path)
-	path = tostring(path or "")
-	path = string_gsub(path, "^%s+", "")
-	path = string_gsub(path, "%s+$", "")
-	path = string_gsub(path, "^game:GetService%(%s*['\"]([^'\"]+)['\"]%s*%)", "%1")
-	path = string_gsub(path, "^game%.", "")
-
-	if path:sub(1, 9):lower() == "workspace" then
-		path = "Workspace" .. path:sub(10)
-	end
-
-	path = string_gsub(path, ":%s*WaitForChild%(%s*['\"]([^'\"]+)['\"]%s*%)", ".%1")
-	path = string_gsub(path, ":%s*FindFirstChild%(%s*['\"]([^'\"]+)['\"]%s*%)", ".%1")
-	path = string_gsub(path, "%[%s*['\"]([^'\"]+)['\"]%s*%]", ".%1")
-	path = string_gsub(path, "%.+", ".")
-	path = string_gsub(path, "^%.", "")
-	path = string_gsub(path, "%.$", "")
-
-	return path
-end
-
-local function resolvePathAsync(path, timeoutPerPart)
-	timeoutPerPart = timeoutPerPart or 5
-	if type(path) ~= "string" or path == "" then return nil end
-
-	path = normalizeDirectoryPath(path)
-
-	local parts = string_split(path, ".")
-	if #parts == 0 then return nil end
-
-	local head = (parts[1] or ""):lower()
-	local current
-
-	if head == "game" then
-		current = game
-		table_remove(parts, 1)
-	elseif head == "workspace" then
-		current = Workspace
-		table_remove(parts, 1)
-	else
-		
-		local ok, service = pcall(game.GetService, game, parts[1])
-		if ok and service then
-			current = service
-			table_remove(parts, 1)
-		else
-			current = Workspace
-		end
-	end
-
-	for _, part in ipairs(parts) do
-		if part ~= "" then
-			current = current:WaitForChild(part, timeoutPerPart)
-			if not current then return nil end
-		end
-	end
-
-	return current
-end
-
 local LimbExtender = {}
 LimbExtender.__index = LimbExtender
 
-function LimbExtender.new(userSettings)
-	local self = setmetatable({
-		_settings         = mergeSettings(userSettings),
-		_playerCache      = limbData.playerCache,
-		_playerTable      = {},
-		_npcTable         = {},
-		_connections      = ConnectionManager.new(),
-		_ESP              = nil,
-		_running          = false,
-		_destroyed        = false,
-		_generation       = 0,
-		_playerCharacters = {},
-	}, LimbExtender)
+local DEFAULTS = {
+	TARGET_LIMB             = "HumanoidRootPart",
+	LIMB_SIZE               = 15,
+	LIMB_TRANSPARENCY       = 0.5,
+	LIMB_CAN_COLLIDE        = false,
+	TEAM_CHECK              = true,
+	FORCEFIELD_CHECK        = false,
+	ALT_RESET_LIMB_ON_DEATH = false,
+	PLAYER_ENABLED          = true,
+	NPC_ENABLED             = false,
+	NPC_FILTER              = nil,
+	NPC_DIRECTORIES         = {},
+	ESP                     = false,
 
-	limbData.terminate = function() self:Destroy() end
+	ESP_COLOR               = Color3.fromRGB(255, 50, 50),
+	ESP_BOX3D_COLOR         = Color3.fromRGB(255, 50, 50),
+	ESP_HEALTH_COLOR        = Color3.fromRGB(9, 255, 0),
+	ESP_EMPTY_COLOR         = Color3.fromRGB(255, 0, 0),
+	ESP_SKELETON_COLOR      = Color3.fromRGB(255, 157, 0),
+	ESP_TEXT_COLOR          = Color3.fromRGB(255, 255, 255),
+	ESP_TEXT_SIZE           = 16,
+	ESP_OFFSCREEN_POINT     = true,
+	ESP_FILTER_LOCAL        = true,
 
-	if has_loadstring and has_httpget then
-		if self._settings.ESP then
-			if not limbData.ESP then
-				local ok, res = pcall(function()
-					return loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/esp/SIXSEVENESP.lua"))()
-				end)
-				if ok then limbData.ESP = res end
-			end
-			self.ESP = limbData.ESP
-			if self.ESP then
-				self._ESP = self.ESP.new(self:_buildESPConfig())
-			end
+	ESP_MAX_DISTANCE        = 500,
+	ESP_NEAR_DISTANCE       = 100,
+	ESP_MEDIUM_DISTANCE     = 250,
+	ESP_OCCLUSION           = false,
+	ESP_OCCLUSION_FREQUENCY = 4,
+
+	ESP_BOX      = true,
+	ESP_BOX3D    = false,
+	ESP_TRACER   = true,
+	ESP_SKELETON = true,
+	ESP_HEALTH   = true,
+	ESP_LABEL    = true,
+
+	ESP_NEAR_FLAGS   = { Box = true,  Tracer = true,  Skeleton = true,  Health = true,  Label = true,  Box3D = false },
+	ESP_MEDIUM_FLAGS = { Box = true,  Tracer = true,  Skeleton = false, Health = true,  Label = true,  Box3D = false },
+	ESP_FAR_FLAGS    = { Box = true,  Tracer = true,  Skeleton = false, Health = false, Label = false, Box3D = false },
+
+	ESP_TEXT_RESOLVER = nil,
+	ESP_CAN_DRAW      = nil,
+	ESP_TRACER_ORIGIN = nil,
+}
+
+local function mergeSettings(user)
+	local s = table_clone(DEFAULTS)
+	if type(user) == "table" then
+		for k, v in pairs(user) do s[k] = v end
+	end
+
+	if type(s.NPC_DIRECTORIES) == "table" then
+		s.NPC_DIRECTORIES = table_clone(s.NPC_DIRECTORIES)
+	else
+		s.NPC_DIRECTORIES = {}
+	end
+
+	for _, key in ipairs({ "ESP_NEAR_FLAGS", "ESP_MEDIUM_FLAGS", "ESP_FAR_FLAGS" }) do
+		if type(s[key]) == "table" then
+			s[key] = table_clone(s[key])
 		end
 	end
 
-	return self
+	return s
 end
 
-function LimbExtender:_isTeam(player)
-	if not self._settings.TEAM_CHECK then return false end
-	local myTeam = localPlayer and localPlayer.Team
-	return myTeam ~= nil and player.Team == myTeam
+function LimbExtender.new(userSettings)
+	local self = setmetatable({
+		_settings    = mergeSettings(userSettings),
+		_playerCache = limbData.playerCache,
+		_manager     = nil,
+		_ESP         = nil,
+		_running     = false,
+		_destroyed   = false,
+		_npcIdMap    = {},   
+	}, LimbExtender)
+
+	self._manager = Manager.new({
+		PLAYER_ENABLED  = self._settings.PLAYER_ENABLED,
+		NPC_ENABLED     = self._settings.NPC_ENABLED,
+		NPC_FILTER      = self._settings.NPC_FILTER,
+		NPC_DIRECTORIES = self._settings.NPC_DIRECTORIES,
+
+		TARGET_LIMB         = self._settings.TARGET_LIMB,
+		TEAM_CHECK          = self._settings.TEAM_CHECK,
+		FORCEFIELD_CHECK    = self._settings.FORCEFIELD_CHECK,
+		DEATH_RESTORE       = self._settings.ALT_RESET_LIMB_ON_DEATH,
+		GET_LOCAL_TEAM      = function() return localPlayer.Team end,
+
+		ON_LIMB_READY = function(player, model, limb)
+			self:_applyLimbs(player, model, limb)
+		end,
+		ON_LIMB_LOST  = function(player, model, limb)
+			self:_removeLimbs(player, model, limb)
+		end,
+	})
+
+	if self._settings.ESP then
+		self.ESP = ensureESPLoaded()
+		if self.ESP then
+			self._ESP = self.ESP.new(self:_buildESPConfig())
+		else
+			self._settings.ESP = false
+		end
+	end
+
+	limbData.terminate = function() self:Destroy() end
+
+	return self
 end
 
 function LimbExtender:_buildESPConfig()
@@ -1035,214 +706,69 @@ function LimbExtender:_buildESPConfig()
 	}
 end
 
-function LimbExtender:AddDirectory(dir)
-	if not isLiveInstance(dir) and type(dir) ~= "string" then return end
-	local dirs = self._settings.NPC_DIRECTORIES
-	if type(dirs) ~= "table" then
-		self._settings.NPC_DIRECTORIES = { dir }
+function LimbExtender:_applyLimbs(player, char, limb)
+	if not isLiveInstance(limb) or not limb.Parent then return end
+
+	local cacheKey
+	if player then
+		cacheKey = player.Name
 	else
-		for _, d in ipairs(dirs) do
-			if d == dir then return end
+		if not self._npcIdMap[char] then
+			limbData.npcIdCounter = limbData.npcIdCounter + 1
+			self._npcIdMap[char] = "__npc_" .. limbData.npcIdCounter
 		end
-		table_insert(dirs, dir)
-	end
-	self:Restart()
-end
-
-function LimbExtender:RemoveDirectory(dir)
-	local dirs = self._settings.NPC_DIRECTORIES
-	if type(dirs) ~= "table" then return end
-	for i, d in ipairs(dirs) do
-		if d == dir then
-			table_remove(dirs, i)
-			if #dirs == 0 then self._settings.NPC_DIRECTORIES = nil end
-			self:Restart()
-			return
-		end
-	end
-end
-
-function LimbExtender:GetDirectories()
-	local dirs = self._settings.NPC_DIRECTORIES
-	if type(dirs) == "table" and #dirs > 0 then
-		return table_clone(dirs)
-	end
-	return {}
-end
-
-function LimbExtender:_isValidNPC(model)
-	if not model:IsA("Model") then return false end
-	if self._playerCharacters[model] then return false end
-
-	local humanoid = model:FindFirstChildOfClass("Humanoid")
-	if not humanoid then return false end
-
-	local filter = self._settings.NPC_FILTER
-	if type(filter) == "function" then
-		local ok, result = pcall(filter, model)
-		if not ok or not result then return false end
+		cacheKey = self._npcIdMap[char]
 	end
 
-	return true
-end
+	sharedApplyLimb(self, cacheKey, char, limb)
 
-function LimbExtender:_registerNPC(model)
-	if self._destroyed then return end
-	if model and model:IsA("Humanoid") then model = model.Parent end
-	if not model or not model:IsA("Model") then return end
-	if self._npcTable[model] then return end
-	if self:_isValidNPC(model) then
-		self._npcTable[model] = NPCData.new(self, model)
-	end
-end
-
-function LimbExtender:_activateDirectory(dir, useDescendants)
-	self:_registerNPC(dir)
-	local children = useDescendants and dir:GetDescendants() or dir:GetChildren()
-	for _, desc in ipairs(children) do
-		self:_registerNPC(desc)
-	end
-	if useDescendants then
-		self._connections:Connect(dir.DescendantAdded, function(desc)
-			task_defer(function()
-				if self._running and not self._destroyed then
-					self:_registerNPC(desc)
+	if self._ESP then
+		local tracked = self._ESP:Track(char)
+		if not tracked then
+			task.spawn(function()
+				local attempts = 0
+				while not self._ESP:Track(char) and attempts < 30 do
+					task.wait(0.1)
+					attempts = attempts + 1
 				end
 			end)
-		end)
-		self._connections:Connect(dir.DescendantRemoving, function(desc)
-			local nd = self._npcTable[desc]
-			if nd then nd:Destroy(); self._npcTable[desc] = nil end
-		end)
+		end
+	end
+end
+
+function LimbExtender:_removeLimbs(player, char, limb)
+	local cacheKey
+	if player then
+		cacheKey = player.Name
 	else
-		self._connections:Connect(dir.ChildAdded, function(desc)
-			task_defer(function()
-				if self._running and not self._destroyed then
-					self:_registerNPC(desc)
-				end
-			end)
-		end)
-		self._connections:Connect(dir.ChildRemoved, function(desc)
-			local nd = self._npcTable[desc]
-			if nd then nd:Destroy(); self._npcTable[desc] = nil end
-		end)
+		cacheKey = self._npcIdMap[char]
+	end
+
+	sharedRestoreLimb(self, cacheKey, limb)
+	if self._ESP and char then self._ESP:Untrack(char) end
+	if not player then
+		self._npcIdMap[char] = nil
 	end
 end
 
 function LimbExtender:Start()
 	if self._destroyed or self._running then return end
 	self._running = true
-
-	if not self._connections then
-		self._connections = ConnectionManager.new()
-	end
-
-	if self._ESP then
-		self._ESP:Start()
-	end
-
-	if self._settings.NPC_ENABLED then
-		table_clear(self._playerCharacters)
-
-		local function trackPlayer(p)
-			if p.Character then self._playerCharacters[p.Character] = true end
-			self._connections:Connect(p.CharacterAdded, function(char)
-				self._playerCharacters[char] = true
-				local nd = self._npcTable[char]
-				if nd then nd:Destroy(); self._npcTable[char] = nil end
-			end)
-			self._connections:Connect(p.CharacterRemoving, function(char)
-				self._playerCharacters[char] = nil
-			end)
-		end
-
-		for _, p in ipairs(Players:GetPlayers()) do
-			trackPlayer(p)
-		end
-
-		self._connections:Connect(Players.PlayerAdded, function(p)
-			trackPlayer(p)
-		end)
-
-		self._connections:Connect(Players.PlayerRemoving, function(p)
-			if p.Character then self._playerCharacters[p.Character] = nil end
-		end)
-	else
-		table_clear(self._playerCharacters)
-	end
-
-	if self._settings.PLAYER_ENABLED then
-		self._connections:Connect(Players.PlayerAdded, function(p)
-			if p ~= localPlayer then self._playerTable[p.Name] = PlayerData.new(self, p) end
-		end)
-		self._connections:Connect(Players.PlayerRemoving, function(p)
-			if self._playerTable[p.Name] then
-				self._playerTable[p.Name]:Destroy()
-				self._playerTable[p.Name] = nil
-			end
-		end)
-
-		for _, p in ipairs(Players:GetPlayers()) do
-			if p ~= localPlayer then self._playerTable[p.Name] = PlayerData.new(self, p) end
-		end
-
-		if self._settings.TEAM_CHECK then
-			self._connections:Connect(localPlayer:GetPropertyChangedSignal("Team"), function()
-				if self._destroyed then return end
-				for _, pd in pairs(self._playerTable) do
-					if pd._destroyed then continue end
-					if self:_isTeam(pd.player) then
-						pd:_restoreLimb()
-					elseif pd.player.Character then
-						pd:_setupCharacter(pd.player.Character)
-					end
-				end
-			end)
-		end
-	end
-
-	if self._settings.NPC_ENABLED then
-		local dirs = self._settings.NPC_DIRECTORIES
-		local hasUserDirs = type(dirs) == "table" and #dirs > 0
-		local entries = hasUserDirs and dirs or { Workspace }
-
-		for _, entry in ipairs(entries) do
-			if isLiveInstance(entry) then
-				self:_activateDirectory(entry, not hasUserDirs)
-			elseif type(entry) == "string" then
-				local gen = self._generation
-				task_spawn(function()
-					local resolved = resolvePathAsync(entry)
-					if resolved and self._running and not self._destroyed and self._generation == gen then
-						self:_activateDirectory(resolved, not hasUserDirs)
-					end
-				end)
-			end
-		end
-	end
+	self._manager:Start()
+	if self._ESP then self._ESP:Start() end
 end
 
 function LimbExtender:Stop()
 	if self._destroyed or not self._running then return end
 	self._running = false
-	self._generation = self._generation + 1
+	self._manager:Stop()
 
-	if self._connections then
-		self._connections:Destroy()
-		self._connections = nil
+	for cacheKey, entry in pairs(self._playerCache) do
+		sharedRestoreLimb(self, cacheKey, entry.Limb)
 	end
+	table_clear(self._playerCache)
 
-	for _, pd in pairs(self._playerTable) do pd:Destroy() end
-	table_clear(self._playerTable)
-
-	for _, nd in pairs(self._npcTable) do nd:Destroy() end
-	table_clear(self._npcTable)
-
-	table_clear(self._playerCharacters)
-
-	if self._ESP then
-		self._ESP:Stop()
-	end
+	if self._ESP then self._ESP:Stop() end
 end
 
 function LimbExtender:Toggle(state)
@@ -1260,65 +786,122 @@ function LimbExtender:Restart()
 end
 
 function LimbExtender:Set(key, value)
-	if self._settings[key] ~= value then
-		self._settings[key] = value
 
-		if key == "ESP" then
-			if value then
-				if not limbData.ESP and has_loadstring and has_httpget then
-					local ok, res = pcall(function()
-						return loadstring(game:HttpGet(
-							"https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/esp/SIXSEVENESP.lua"
-						))()
-					end)
-					if ok then limbData.ESP = res end
-				end
-				self.ESP = limbData.ESP
-				if self.ESP and not self._ESP then
-					self._ESP = self.ESP.new(self:_buildESPConfig())
-					if self._running then self._ESP:Start() end
-				end
-			else
-				if self._ESP then
-					self._ESP:Destroy()
-					self._ESP = nil
-				end
-			end
+    local isLodKey = (key == "ESP_NEAR_FLAGS" or key == "ESP_MEDIUM_FLAGS" or key == "ESP_FAR_FLAGS")
+    if self._settings[key] == value and not isLodKey then return end
 
-		elseif self._ESP and type(key) == "string" and key:sub(1, 4) == "ESP_" then
-			self._ESP:SetOptions(self:_buildESPConfig())
+    local function mergeSettings(target, source)
+        for k, v in pairs(source) do
+            if type(v) == "table" and type(target[k]) == "table" then
+                mergeSettings(target[k], v)
+            else
+                target[k] = v
+            end
+        end
+    end
 
-			if key == "ESP_CAN_DRAW" then
-				self._ESP.Config.CanDraw = value
-			elseif key == "ESP_TEXT_RESOLVER" then
-				self._ESP.Config.TextResolver = value
-			elseif key == "ESP_TRACER_ORIGIN" then
-				self._ESP.Config.TracerOrigin = value
-			end
-		end
-		self:Restart()
-	end
+    if isLodKey then
+        if type(self._settings[key]) ~= "table" then
+            self._settings[key] = {}
+        end
+        mergeSettings(self._settings[key], value)
+    else
+        self._settings[key] = value
+    end
+
+    if key == "ESP" then
+        if value then
+            self.ESP = ensureESPLoaded()
+            if self.ESP then
+                if not self._ESP then
+                    self._ESP = self.ESP.new(self:_buildESPConfig())
+                    if self._running then
+                        for _, entry in pairs(self._playerCache) do
+                            if entry.Character then
+                                self._ESP:Track(entry.Character)
+                            end
+                        end
+                        self._ESP:Start()
+                    end
+                end
+            else
+                self._settings.ESP = false
+            end
+        else
+            if self._ESP then
+                self._ESP:Destroy()
+                self._ESP = nil
+            end
+        end
+        return
+    end
+
+    if type(key) == "string" and key:sub(1, 4) == "ESP_" then
+        if self._ESP then
+            self._ESP:SetOptions(self:_buildESPConfig())
+            if key == "ESP_CAN_DRAW" then
+                self._ESP.Config.CanDraw = value
+            elseif key == "ESP_TEXT_RESOLVER" then
+                self._ESP.Config.TextResolver = value
+            elseif key == "ESP_TRACER_ORIGIN" then
+                self._ESP.Config.TracerOrigin = value
+            end
+        end
+        return
+    end
+
+    local managerKey = key
+    if key == "ALT_RESET_LIMB_ON_DEATH" then
+        managerKey = "DEATH_RESTORE"
+    end
+
+    local managerCompatibleKeys = {
+        PLAYER_ENABLED = true,
+        NPC_ENABLED    = true,
+        NPC_FILTER     = true,
+        TARGET_LIMB    = true,
+        TEAM_CHECK     = true,
+        FORCEFIELD_CHECK = true,
+        DEATH_RESTORE  = true,
+    }
+    if managerCompatibleKeys[managerKey] then
+        self._manager:Set(managerKey, value)
+    end
+
+    if key == "NPC_DIRECTORIES" then
+        self._manager._settings.NPC_DIRECTORIES = value
+    end
+
+    self:Restart()
 end
 
 function LimbExtender:Get(key)
 	return self._settings[key]
 end
 
+function LimbExtender:AddDirectory(dir)
+	self._manager:AddDirectory(dir)
+end
+
+function LimbExtender:RemoveDirectory(dir)
+	self._manager:RemoveDirectory(dir)
+end
+
+function LimbExtender:GetDirectories()
+	return self._manager:GetDirectories()
+end
+
 function LimbExtender:Destroy()
 	self:Stop()
 	self._destroyed = true
-
-	if self._connections then
-		self._connections:Destroy()
-		self._connections = nil
-	end
-
-	if self._ESP then
-		self._ESP:Destroy()
-		self._ESP = nil
-	end
+	if self._ESP then self._ESP:Destroy(); self._ESP = nil end
 	limbData.terminate = nil
 	setmetatable(self, nil)
 end
 
-return setmetatable({}, { __call = function(_, userSettings) return LimbExtender.new(userSettings) end, __index = LimbExtender })
+return setmetatable({}, {
+	__call = function(_, userSettings)
+		return LimbExtender.new(userSettings)
+	end,
+	__index = LimbExtender,
+})
