@@ -786,7 +786,9 @@ function LimbExtender:Restart()
 end
 
 function LimbExtender:Set(key, value)
-    if self._settings[key] == value then return end
+
+    local isLodKey = (key == "ESP_NEAR_FLAGS" or key == "ESP_MEDIUM_FLAGS" or key == "ESP_FAR_FLAGS")
+    if self._settings[key] == value and not isLodKey then return end
 
     local function mergeSettings(target, source)
         for k, v in pairs(source) do
@@ -798,14 +800,40 @@ function LimbExtender:Set(key, value)
         end
     end
 
-    if key == "ESP_NEAR_FLAGS" or key == "ESP_MEDIUM_FLAGS" or key == "ESP_FAR_FLAGS" then
-        
+    if isLodKey then
         if type(self._settings[key]) ~= "table" then
             self._settings[key] = {}
         end
         mergeSettings(self._settings[key], value)
     else
         self._settings[key] = value
+    end
+
+    if key == "ESP" then
+        if value then
+            self.ESP = ensureESPLoaded()
+            if self.ESP then
+                if not self._ESP then
+                    self._ESP = self.ESP.new(self:_buildESPConfig())
+                    if self._running then
+                        for _, entry in pairs(self._playerCache) do
+                            if entry.Character then
+                                self._ESP:Track(entry.Character)
+                            end
+                        end
+                        self._ESP:Start()
+                    end
+                end
+            else
+                self._settings.ESP = false
+            end
+        else
+            if self._ESP then
+                self._ESP:Destroy()
+                self._ESP = nil
+            end
+        end
+        return
     end
 
     if type(key) == "string" and key:sub(1, 4) == "ESP_" then
@@ -819,10 +847,13 @@ function LimbExtender:Set(key, value)
                 self._ESP.Config.TracerOrigin = value
             end
         end
-        return   
+        return
     end
 
     local managerKey = key
+    if key == "ALT_RESET_LIMB_ON_DEATH" then
+        managerKey = "DEATH_RESTORE"
+    end
 
     local managerCompatibleKeys = {
         PLAYER_ENABLED = true,
