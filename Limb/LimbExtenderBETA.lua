@@ -48,6 +48,7 @@ limbData.playerCache    = limbData.playerCache    or {}
 limbData.instanceLookup = limbData.instanceLookup or setmetatable({}, { __mode = "k" })
 limbData.npcIdCounter   = limbData.npcIdCounter   or 0
 limbData.changedProxies = limbData.changedProxies or setmetatable({}, { __mode = "k" })
+limbData.reapplyInProgress = limbData.reapplyInProgress or setmetatable({}, { __mode = "k" })
 
 if not limbData.dummyEvent then
 	limbData.dummyEvent = Instance_new("BindableEvent")
@@ -86,6 +87,10 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod and h
 
 	local _instanceLookup = limbData.instanceLookup
 	local _playerCache    = limbData.playerCache
+	local ignoreHook = false
+
+	limbData.reapplyInProgress = limbData.reapplyInProgress or setmetatable({}, { __mode = "k" })
+	limbData.allowChangedOnce = limbData.allowChangedOnce or setmetatable({}, { __mode = "k" })
 
 	local function getTargetData(instance)
 		if typeof(instance) ~= "Instance" then return nil, nil end
@@ -107,16 +112,67 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod and h
 	local oldNewIndex
 	oldNewIndex = hookmetamethod(game, "__newindex", newcclosure(function(...)
 		local self, key, value = ...
-		if not checkcaller() then
+		if not checkcaller() and not ignoreHook then
 			local data, instType = getTargetData(self)
 			if data and instType == "Part" then
-				if key == "Size"                     then data.OriginalSize         = value return end
-				if key == "Transparency"             then data.OriginalTransparency  = value return end
-				if key == "CanCollide"               then data.OriginalCanCollide    = value return end
-				if key == "Massless"                 then data.OriginalMassless      = value return end
-				if key == "Mass" or key == "AssemblyMass" or key == "AssemblyCenterOfMass" or key == "CurrentPhysicalProperties" then return end
-				if key == "CustomPhysicalProperties" then data.OriginalPhysProps     = value return end
-				if key == "RootPriority"             then data.OriginalRootPriority  = value return end
+				ignoreHook = true
+
+				-- Disable the proxy filter so the external write produces a real Changed event
+				local proxy = limbData.changedProxies[self]
+				if proxy then proxy.filter.enabled = false end
+
+				-- Allow exactly one Changed event for the property being written
+				limbData.allowChangedOnce[self] = key
+
+				oldNewIndex(self, key, value)
+
+				-- Re‑enable the proxy filter (suppress any further events from the engine recalc)
+				if proxy then proxy.filter.enabled = true end
+
+				-- Mark that we are about to re‑apply the cheat value
+				limbData.reapplyInProgress[self] = true
+
+				if key == "Size" then
+					data.OriginalSize = value
+					self.Size = data.CheatSize or data.OriginalSize
+				elseif key == "Transparency" then
+					data.OriginalTransparency = value
+					self.Transparency = data.CheatTransparency or data.OriginalTransparency
+				elseif key == "CanCollide" then
+					data.OriginalCanCollide = value
+					self.CanCollide = data.CheatCanCollide ~= nil and data.CheatCanCollide or data.OriginalCanCollide
+				elseif key == "Massless" then
+					data.OriginalMassless = value
+					if data.CheatMassless ~= nil then
+						self.Massless = data.CheatMassless
+					end
+				elseif key == "Mass" then
+					self.Mass = data.OriginalMass
+				elseif key == "AssemblyMass" then
+					self.AssemblyMass = data.OriginalAssemblyMass
+				elseif key == "AssemblyCenterOfMass" then
+					self.AssemblyCenterOfMass = data.OriginalAssemblyCOM
+				elseif key == "CustomPhysicalProperties" then
+					data.OriginalPhysProps = value
+					if data.CheatPhysProps then
+						self.CustomPhysicalProperties = data.CheatPhysProps
+					end
+				elseif key == "RootPriority" then
+					data.OriginalRootPriority = value
+					if data.CheatRootPriority ~= nil then
+						self.RootPriority = data.CheatRootPriority
+					end
+				end
+
+				-- Fire the dummy event while reapplyInProgress is still true
+				if limbData.dummyEvent then
+					limbData.dummyEvent:Fire()
+				end
+
+				limbData.reapplyInProgress[self] = nil
+				limbData.allowChangedOnce[self] = nil
+				ignoreHook = false
+				return
 			end
 		end
 		return oldNewIndex(...)
@@ -128,6 +184,34 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod and h
 		if not checkcaller() then
 			local data, instType = getTargetData(self)
 			if data then
+				-- Return a Changed signal proxy for non‑executor callers
+				if instType == "Part" and key == "Changed" then
+					local part = self
+					local realChanged = oldIndex(self, key)
+					local signalProxy = {
+						Connect = function(_, fn)
+							local wrapped = function(prop)
+								-- Allow exactly one event for the property that was just written
+								if limbData.allowChangedOnce[part] == prop then
+									-- First event: clear the flag and block all future events
+									limbData.allowChangedOnce[part] = nil
+									limbData.reapplyInProgress[part] = true
+									fn(prop)
+								elseif not limbData.reapplyInProgress[part] then
+									-- Normal operation (no reapply happening)
+									fn(prop)
+								end
+							end
+							return realChanged:Connect(wrapped)
+						end,
+						Wait = function()
+							return realChanged:Wait()
+						end
+					}
+					return signalProxy
+				end
+
+				-- Spoofed property reads
 				if instType == "Part" then
 					if key == "Size"                     then return data.OriginalSize         end
 					if key == "Transparency"             then return data.OriginalTransparency  end
@@ -158,7 +242,6 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod and h
 
 		if not checkcaller() then
 			local data, instType = getTargetData(self)
-
 			if data then
 				if instType == "Part" then
 					if method == "GetMass" then return data.OriginalMass end
@@ -439,6 +522,17 @@ local function sharedApplyLimb(parent, cacheKey, char, limb)
 		limb.RootPriority = -127
 	end
 
+	entry.CheatSize         = newVec
+	entry.CheatTransparency = trans
+	entry.CheatCanCollide   = colide
+	if isHRP then
+		entry.CheatMassless = false
+		entry.CheatPhysProps = newPhys
+	else
+		entry.CheatMassless     = true
+		entry.CheatRootPriority = -127
+	end
+
 	entry.SizeConn  = watchProperty(limb, "Size",         function(l) l.Size         = newVec end)
 	entry.TransConn = watchProperty(limb, "Transparency", function(l) l.Transparency = trans  end)
 	entry.CollConn  = watchProperty(limb, "CanCollide",   function(l) l.CanCollide   = colide end)
@@ -459,7 +553,7 @@ local LimbExtender = {}
 LimbExtender.__index = LimbExtender
 
 local DEFAULTS = {
-	TARGET_LIMB             = "Head",
+	TARGET_LIMB             = "HumanoidRootPart",
 	LIMB_SIZE               = 15,
 	LIMB_TRANSPARENCY       = 0.5,
 	LIMB_CAN_COLLIDE        = false,
