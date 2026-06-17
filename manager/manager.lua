@@ -679,15 +679,19 @@ function Manager:_onLimbLost(player, model, limb)
 end
 
 function Manager:_isValidNPC(model)
-	if not model or not model:IsA("Model") then return false end
-	if not model:FindFirstChildOfClass("Humanoid") then return false end
+    if not model or not model:IsA("Model") then return false end
+    if not model:FindFirstChildOfClass("Humanoid") then return false end
 
-	local filter = self._settings.NPC_FILTER
-	if type(filter) == "function" then
-		local ok, result = pcall(filter, model)
-		if not ok or not result then return false end
-	end
-	return true
+    if Players:GetPlayerFromCharacter(model) then
+        return false
+    end
+
+    local filter = self._settings.NPC_FILTER
+    if type(filter) == "function" then
+        local ok, result = pcall(filter, model)
+        if not ok or not result then return false end
+    end
+    return true
 end
 
 function Manager:_registerNPC(model, dir)
