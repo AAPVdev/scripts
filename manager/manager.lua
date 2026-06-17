@@ -207,11 +207,11 @@ function StreamObserver:_resolveAnchor()
 	if not isLiveInstance(model) or not model:IsA("Model") then return nil end
 
 	local root = model.PrimaryPart
-	if not isLiveInstance(root) or not root:IsDescendantOf(model) then
-		root = model:FindFirstChild("HumanoidRootPart")
-	end
+	if isLiveInstance(root) then return root end
 
+	root = model:FindFirstChild("HumanoidRootPart")
 	if root and isLiveInstance(root) then return root end
+
 	return nil
 end
 
@@ -232,11 +232,8 @@ end
 
 function StreamObserver:_bindAnchor(anchor)
 	self._anchor = anchor
-	
-	self._anchorConns:Disconnect("AncestryChanged")
-
+	self._anchorConns:DisconnectAll()
 	if not anchor or not isLiveInstance(anchor) then return end
-
 	self._anchorConns:Connect(anchor.AncestryChanged, function() self:_refresh() end, "AncestryChanged")
 end
 
@@ -320,7 +317,6 @@ end
 
 function LimbObserver:_start()
 	if self._destroyed or self._ready then return end
-
 	if not isLiveInstance(self._model) then
 		self:_notifyLost()
 		return
@@ -330,29 +326,13 @@ function LimbObserver:_start()
 		if self._destroyed or self._ready then return end
 
 		local targetLimb = self._manager._settings.TARGET_LIMB
-		if type(targetLimb) ~= "string" or targetLimb == "" then
-			return
-		end
+		if type(targetLimb) ~= "string" or targetLimb == "" then return end
 
 		if self._player and self._manager._settings.TEAM_CHECK then
 			local getTeam = self._manager._settings.GET_LOCAL_TEAM
 			if type(getTeam) == "function" then
 				local ok, myTeam = pcall(getTeam)
 				if ok and myTeam and self._player.Team == myTeam then return end
-			end
-		end
-
-		if self._manager._settings.FORCEFIELD_CHECK then
-			local ff = self._model:FindFirstChildOfClass("ForceField")
-			if ff then
-				
-				self._conns:Connect(ff.AncestryChanged, function()
-					if not ff:IsDescendantOf(self._model) then
-						self._conns:Disconnect("ForceFieldWatcher")
-						tryResolve()
-					end
-				end, "ForceFieldWatcher")
-				return
 			end
 		end
 
@@ -369,11 +349,25 @@ function LimbObserver:_start()
 		end
 	end
 
+	local function watchForceField(ff)
+		self._conns:Disconnect("WaitLimb")
+		self._conns:Connect(ff.AncestryChanged, function()
+			if not ff:IsDescendantOf(self._model) then
+				self._conns:Disconnect("ForceFieldWatcher")
+				tryResolve()
+			end
+		end, "ForceFieldWatcher")
+	end
+
 	if self._manager._settings.FORCEFIELD_CHECK then
-		
+		local existing = self._model:FindFirstChildOfClass("ForceField")
+		if existing then
+			watchForceField(existing)
+			return
+		end
 		self._conns:Connect(self._model.ChildAdded, function(child)
 			if child:IsA("ForceField") then
-				self:Refresh()
+				watchForceField(child)
 			end
 		end, "ForceFieldAppeared")
 	end
@@ -797,14 +791,10 @@ end
 function Manager:_rescanNPCFilter()
 	if self._destroyed or not self._running or not self._npcConnsStarted then return end
 
-	local toRemove = {}
-	for model, _ in pairs(self._npcSet) do
+	for model in pairs(self._npcSet) do
 		if not self:_isValidNPC(model) then
-			toRemove[#toRemove + 1] = model
+			self:_unregisterNPC(model)
 		end
-	end
-	for _, model in ipairs(toRemove) do
-		self:_unregisterNPC(model)
 	end
 
 	local dirs = self._settings.NPC_DIRECTORIES
@@ -813,7 +803,6 @@ function Manager:_rescanNPCFilter()
 	local useDescendants = not hasUserDirs
 
 	for _, entry in ipairs(entries) do
-		
 		local instance = isLiveInstance(entry) and entry or self._stringDirMap[entry]
 		if instance and isLiveInstance(instance) then
 			local children = useDescendants and instance:GetDescendants() or instance:GetChildren()
