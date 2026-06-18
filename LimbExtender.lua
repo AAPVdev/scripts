@@ -31,11 +31,9 @@ local pairs, ipairs = pairs, ipairs
 local setmetatable = setmetatable
 local math_max = math.max
 local task_spawn = task.spawn
-local task_defer = task.defer
 local task_wait = task.wait
 local table_clear = table.clear
 local table_insert = table.insert
-local table_remove = table.remove
 local table_clone = table.clone
 local Instance_new = Instance.new
 local Vector3_new = Vector3.new
@@ -47,12 +45,7 @@ local function _disconnect(conn) conn:Disconnect() end
 limbData.playerCache    = limbData.playerCache    or {}
 limbData.instanceLookup = limbData.instanceLookup or setmetatable({}, { __mode = "k" })
 limbData.npcIdCounter   = limbData.npcIdCounter   or 0
-limbData.changedProxies = limbData.changedProxies or setmetatable({}, { __mode = "k" })
-limbData.reapplyInProgress = limbData.reapplyInProgress or setmetatable({}, { __mode = "k" })
-
-if not limbData.dummyEvent then
-	limbData.dummyEvent = Instance_new("BindableEvent")
-end
+limbData.fakeSignals     = limbData.fakeSignals     or setmetatable({}, { __mode = "k" })
 
 if type(limbData.terminate) == "function" then
 	limbData.terminate()
@@ -80,17 +73,13 @@ local BLOCKED_PROPS = {
 	RootPriority = true,
 }
 
-local CONN_KEYS = { "SizeConn", "TransConn", "CollConn", "PhysConn", "MasslessConn", "RootPriorityConn" }
-
 if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod and has_checkcaller then
 	limbData._spoofInstalled = true
+	limbData._bypassHooks = false
 
 	local _instanceLookup = limbData.instanceLookup
 	local _playerCache    = limbData.playerCache
-	local ignoreHook = false
-
-	limbData.reapplyInProgress = limbData.reapplyInProgress or setmetatable({}, { __mode = "k" })
-	limbData.allowChangedOnce = limbData.allowChangedOnce or setmetatable({}, { __mode = "k" })
+	local _fakeSignals     = limbData.fakeSignals
 
 	local function getTargetData(instance)
 		if typeof(instance) ~= "Instance" then return nil, nil end
@@ -109,64 +98,41 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod and h
 		return nil, nil
 	end
 
+	local function ensureFakeSignal(part, prop)
+		local sigs = _fakeSignals[part]
+		if not sigs then
+			sigs = {}
+			_fakeSignals[part] = sigs
+		end
+		if not sigs[prop] then
+			sigs[prop] = Instance_new("BindableEvent")
+		end
+		return sigs[prop]
+	end
+
 	local oldNewIndex
 	oldNewIndex = hookmetamethod(game, "__newindex", newcclosure(function(...)
 		local self, key, value = ...
-		if not checkcaller() and not ignoreHook then
+		if not checkcaller() then
 			local data, instType = getTargetData(self)
-			if data and instType == "Part" then
-				ignoreHook = true
-
-				local proxy = limbData.changedProxies[self]
-				if proxy then proxy.filter.enabled = false end
-
-				limbData.allowChangedOnce[self] = key
-
-				oldNewIndex(self, key, value)
-
-				if proxy then proxy.filter.enabled = true end
-
-				limbData.reapplyInProgress[self] = true
-
-				if key == "Size" then
-					data.OriginalSize = value
-					self.Size = data.CheatSize or data.OriginalSize
-				elseif key == "Transparency" then
-					data.OriginalTransparency = value
-					self.Transparency = data.CheatTransparency or data.OriginalTransparency
-				elseif key == "CanCollide" then
-					data.OriginalCanCollide = value
-					self.CanCollide = data.CheatCanCollide ~= nil and data.CheatCanCollide or data.OriginalCanCollide
-				elseif key == "Massless" then
-					data.OriginalMassless = value
-					if data.CheatMassless ~= nil then
-						self.Massless = data.CheatMassless
-					end
-				elseif key == "Mass" then
-					self.Mass = data.OriginalMass
-				elseif key == "AssemblyMass" then
-					self.AssemblyMass = data.OriginalAssemblyMass
-				elseif key == "AssemblyCenterOfMass" then
-					self.AssemblyCenterOfMass = data.OriginalAssemblyCOM
-				elseif key == "CustomPhysicalProperties" then
-					data.OriginalPhysProps = value
-					if data.CheatPhysProps then
-						self.CustomPhysicalProperties = data.CheatPhysProps
-					end
-				elseif key == "RootPriority" then
-					data.OriginalRootPriority = value
-					if data.CheatRootPriority ~= nil then
-						self.RootPriority = data.CheatRootPriority
-					end
+			if data and instType == "Part" and BLOCKED_PROPS[key] then
+				if key == "Size" then data.OriginalSize = value
+				elseif key == "Transparency" then data.OriginalTransparency = value
+				elseif key == "CanCollide" then data.OriginalCanCollide = value
+				elseif key == "Massless" then data.OriginalMassless = value
+				elseif key == "Mass" then data.OriginalMass = value
+				elseif key == "AssemblyMass" then data.OriginalAssemblyMass = value
+				elseif key == "AssemblyCenterOfMass" then data.OriginalAssemblyCOM = value
+				elseif key == "CustomPhysicalProperties" then data.OriginalPhysProps = value
+				elseif key == "RootPriority" then data.OriginalRootPriority = value
 				end
 
-				if limbData.dummyEvent then
-					limbData.dummyEvent:Fire()
-				end
+				local changedFake = _fakeSignals[self] and _fakeSignals[self]["__Changed"]
+				if changedFake then changedFake:Fire(key) end
 
-				limbData.reapplyInProgress[self] = nil
-				limbData.allowChangedOnce[self] = nil
-				ignoreHook = false
+				local propFake = _fakeSignals[self] and _fakeSignals[self][key]
+				if propFake then propFake:Fire() end
+
 				return
 			end
 		end
@@ -177,36 +143,15 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod and h
 	oldIndex = hookmetamethod(game, "__index", newcclosure(function(...)
 		local self, key = ...
 		if not checkcaller() then
+			if limbData._bypassHooks then return oldIndex(...) end
+
+			if key == "Changed" and typeof(self) == "Instance" and self:IsA("BasePart") and self.Name == (limbData.targetLimbName or "HumanoidRootPart") then
+				return ensureFakeSignal(self, "__Changed").Event
+			end
+
 			local data, instType = getTargetData(self)
 			if data then
-				
-				if instType == "Part" and key == "Changed" then
-					local part = self
-					local realChanged = oldIndex(self, key)
-					local signalProxy = {
-						Connect = function(_, fn)
-							local wrapped = function(prop)
-								
-								if limbData.allowChangedOnce[part] == prop then
-									
-									limbData.allowChangedOnce[part] = nil
-									limbData.reapplyInProgress[part] = true
-									fn(prop)
-								elseif not limbData.reapplyInProgress[part] then
-									
-									fn(prop)
-								end
-							end
-							return realChanged:Connect(wrapped)
-						end,
-						Wait = function()
-							return realChanged:Wait()
-						end
-					}
-					return signalProxy
-				end
-
-				if instType == "Part" then
+				if instType == "Part" and BLOCKED_PROPS[key] then
 					if key == "Size"                     then return data.OriginalSize         end
 					if key == "Transparency"             then return data.OriginalTransparency  end
 					if key == "CanCollide"               then return data.OriginalCanCollide    end
@@ -235,16 +180,19 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod and h
 		local args = {...}
 
 		if not checkcaller() then
+			if limbData._bypassHooks then return oldNamecall(...) end
+
+			if method == "GetPropertyChangedSignal" and typeof(self) == "Instance" and self:IsA("BasePart") and self.Name == (limbData.targetLimbName or "HumanoidRootPart") then
+				local prop = args[2]
+				if BLOCKED_PROPS[prop] then
+					return ensureFakeSignal(self, prop).Event
+				end
+			end
+
 			local data, instType = getTargetData(self)
 			if data then
 				if instType == "Part" then
 					if method == "GetMass" then return data.OriginalMass end
-					if method == "GetPropertyChangedSignal" then
-						local prop = args[2]
-						if BLOCKED_PROPS[prop] then
-							return limbData.dummyEvent.Event
-						end
-					end
 				elseif instType == "Model" then
 					if method == "GetExtentsSize" then return data.OriginalExtents end
 					if method == "GetBoundingBox" then
@@ -263,47 +211,41 @@ local ESP_SOURCE_URL = "https://raw.githubusercontent.com/AAPVdev/scripts/refs/h
 local function ensureESPLoaded()
 	if limbData.ESP then return limbData.ESP end
 	if not (has_loadstring and has_httpget) then return nil end
-
 	local ok, res = pcall(function()
 		return loadstring(game:HttpGet(ESP_SOURCE_URL))()
 	end)
 	if ok then limbData.ESP = res end
-
 	return limbData.ESP
-end
-
-local function watchProperty(instance, prop, callback)
-	if not instance then return end
-	if not pcall(_safeGet, instance, prop) then return end
-
-	local lastVal = instance[prop]
-	return instance:GetPropertyChangedSignal(prop):Connect(function()
-		local ok, curVal = pcall(_safeGet, instance, prop)
-		if ok and curVal ~= lastVal then
-			pcall(callback, instance)
-			local ok2, newVal = pcall(_safeGet, instance, prop)
-			if ok2 then lastVal = newVal end
-		end
-	end)
 end
 
 local function getAdjustedPhysicalProperties(limb, origSize, newSize)
 	local origPhys = limb.CustomPhysicalProperties or PhysProps_new(limb.Material)
-
 	local origVol = origSize.X * origSize.Y * origSize.Z
 	local newVol  = newSize.X  * newSize.Y  * newSize.Z
 	if newVol <= 0 then newVol = 1 end
-
 	local ratio      = origVol / newVol
 	local newDensity = math_max(0.01, origPhys.Density * ratio)
+	return PhysProps_new(newDensity, origPhys.Friction, origPhys.Elasticity, origPhys.FrictionWeight, origPhys.ElasticityWeight)
+end
 
-	return PhysProps_new(
-		newDensity,
-		origPhys.Friction,
-		origPhys.Elasticity,
-		origPhys.FrictionWeight,
-		origPhys.ElasticityWeight
-	)
+local function disconnectRealListeners(part)
+    if type(getconnections) ~= "function" then return end
+    limbData._bypassHooks = true
+    pcall(function()
+        local realChanged = part.Changed
+        for _, conn in ipairs(getconnections(realChanged)) do
+            conn:Disconnect()
+        end
+    end)
+    for prop in pairs(BLOCKED_PROPS) do
+        pcall(function()
+            local realSig = part:GetPropertyChangedSignal(prop)
+            for _, conn in ipairs(getconnections(realSig)) do
+                conn:Disconnect()
+            end
+        end)
+    end
+    limbData._bypassHooks = false
 end
 
 local function sharedSaveData(parent, cacheKey, char, limb)
@@ -344,76 +286,7 @@ local function sharedSaveData(parent, cacheKey, char, limb)
 	limbData.instanceLookup[limb] = { data = entry, type = "Part"  }
 	limbData.instanceLookup[char] = { data = entry, type = "Model" }
 
-	do
-		local realChanged = limb.Changed
-
-		local preExistingConns = {}
-		if type(getconnections) == "function" then
-			pcall(function()
-				for _, conn in ipairs(getconnections(realChanged)) do
-					table_insert(preExistingConns, conn)
-				end
-			end)
-		end
-
-		local proxy = limbData.changedProxies[limb]
-		if not proxy then
-			local proxyBE  = Instance_new("BindableEvent")
-			local filter   = { enabled = false }
-			local filterFn = function(prop)
-				if not filter.enabled or not BLOCKED_PROPS[prop] then
-					proxyBE:Fire(prop)
-				end
-			end
-			local filterConn = realChanged:Connect(filterFn)
-			proxy = { event = proxyBE.Event, filter = filter, filterFn = filterFn, conn = filterConn, be = proxyBE }
-			limbData.changedProxies[limb] = proxy
-		end
-
-		for _, conn in ipairs(preExistingConns) do
-			local fnOk, fn = pcall(_safeGet, conn, "Function")
-			if fnOk and fn and fn ~= proxy.filterFn then
-				pcall(_disconnect, conn)
-				pcall(function() proxy.be.Event:Connect(fn) end)
-			end
-		end
-		proxy.filter.enabled = true
-	end
-
-	if type(getconnections) == "function" then
-		if entry._gpcRedirects then
-			for _, r in ipairs(entry._gpcRedirects) do
-				if r.dummyConn and r.dummyConn.Connected then
-					r.dummyConn:Disconnect()
-				end
-			end
-		end
-
-		local redirects = {}
-		entry._gpcRedirects = redirects
-
-		local dummyEventEvent = limbData.dummyEvent.Event
-		for prop in pairs(BLOCKED_PROPS) do
-			pcall(function()
-				local realSig = limb:GetPropertyChangedSignal(prop)
-				local existing = getconnections(realSig)
-				for _, conn in ipairs(existing) do
-					local fnOk, fn = pcall(_safeGet, conn, "Function")
-					if fnOk and fn then
-						pcall(_disconnect, conn)
-						local ok, dummyConn = pcall(function()
-							return dummyEventEvent:Connect(fn)
-						end)
-						table_insert(redirects, {
-							prop      = prop,
-							fn        = fn,
-							dummyConn = ok and dummyConn or nil,
-						})
-					end
-				end
-			end)
-		end
-	end
+	disconnectRealListeners(limb)
 
 	local charParts     = {}
 	local charPartEntry = { data = entry, type = "CharPart" }
@@ -431,11 +304,6 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 	local entry = cache[cacheKey]
 	if not entry then return end
 
-	for _, k in ipairs(CONN_KEYS) do
-		if entry[k] and entry[k].Connected then entry[k]:Disconnect() end
-		entry[k] = nil
-	end
-
 	if activeLimb and activeLimb.Parent then
 		pcall(function()
 			activeLimb.Size                     = entry.OriginalSize
@@ -447,16 +315,8 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 		end)
 	end
 
-	if entry._gpcRedirects and entry.Limb and entry.Limb.Parent then
-		for _, r in ipairs(entry._gpcRedirects) do
-			if r.dummyConn and r.dummyConn.Connected then
-				r.dummyConn:Disconnect()
-			end
-			pcall(function()
-				entry.Limb:GetPropertyChangedSignal(r.prop):Connect(r.fn)
-			end)
-		end
-		entry._gpcRedirects = nil
+	if activeLimb then
+		limbData.fakeSignals[activeLimb] = nil
 	end
 
 	if entry.Limb then limbData.instanceLookup[entry.Limb] = nil end
@@ -470,14 +330,6 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 		end
 		entry._charParts = nil
 	end
-
-	local _cp = limbData.changedProxies[entry.Limb]
-	if _cp then _cp.filter.enabled = false end
-	if activeLimb and activeLimb ~= entry.Limb then
-		local _cpActive = limbData.changedProxies[activeLimb]
-		if _cpActive then _cpActive.filter.enabled = false end
-	end
-
 	cache[cacheKey] = nil
 end
 
@@ -488,11 +340,6 @@ local function sharedApplyLimb(parent, cacheKey, char, limb)
 	local entry = parent._playerCache[cacheKey]
 	if not entry then return end
 	local cfg   = parent._settings
-
-	for _, k in ipairs(CONN_KEYS) do
-		if entry[k] and entry[k].Connected then entry[k]:Disconnect() end
-		entry[k] = nil
-	end
 
 	local newVec = Vector3_new(cfg.LIMB_SIZE, cfg.LIMB_SIZE, cfg.LIMB_SIZE)
 	local trans  = cfg.LIMB_TRANSPARENCY
@@ -516,30 +363,6 @@ local function sharedApplyLimb(parent, cacheKey, char, limb)
 		limb.RootPriority = -127
 	end
 
-	entry.CheatSize         = newVec
-	entry.CheatTransparency = trans
-	entry.CheatCanCollide   = colide
-	if isHRP then
-		entry.CheatMassless = false
-		entry.CheatPhysProps = newPhys
-	else
-		entry.CheatMassless     = true
-		entry.CheatRootPriority = -127
-	end
-
-	entry.SizeConn  = watchProperty(limb, "Size",         function(l) l.Size         = newVec end)
-	entry.TransConn = watchProperty(limb, "Transparency", function(l) l.Transparency = trans  end)
-	entry.CollConn  = watchProperty(limb, "CanCollide",   function(l) l.CanCollide   = colide end)
-
-	if not isHRP then
-		entry.MasslessConn     = watchProperty(limb, "Massless",     function(l) l.Massless     = true end)
-		entry.RootPriorityConn = watchProperty(limb, "RootPriority", function(l) l.RootPriority = -127 end)
-	else
-		if newPhys then
-			entry.PhysConn = watchProperty(limb, "CustomPhysicalProperties", function(l) l.CustomPhysicalProperties = newPhys end)
-		end
-	end
-
 	return newVec
 end
 
@@ -555,7 +378,7 @@ local DEFAULTS = {
 	FORCEFIELD_CHECK        = false,
 	ALT_RESET_LIMB_ON_DEATH = false,
 	PLAYER_ENABLED          = true,
-	NPC_ENABLED             = false,
+	NPC_ENABLED             = true,
 	NPC_FILTER              = nil,
 	NPC_DIRECTORIES         = {},
 	ESP                     = false,
@@ -597,19 +420,16 @@ local function mergeSettings(user)
 	if type(user) == "table" then
 		for k, v in pairs(user) do s[k] = v end
 	end
-
 	if type(s.NPC_DIRECTORIES) == "table" then
 		s.NPC_DIRECTORIES = table_clone(s.NPC_DIRECTORIES)
 	else
 		s.NPC_DIRECTORIES = {}
 	end
-
 	for _, key in ipairs({ "ESP_NEAR_FLAGS", "ESP_MEDIUM_FLAGS", "ESP_FAR_FLAGS" }) do
 		if type(s[key]) == "table" then
 			s[key] = table_clone(s[key])
 		end
 	end
-
 	return s
 end
 
@@ -623,6 +443,8 @@ function LimbExtender.new(userSettings)
 		_destroyed   = false,
 		_npcIdMap    = {},   
 	}, LimbExtender)
+
+	limbData.targetLimbName = self._settings.TARGET_LIMB
 
 	self._manager = Manager.new({
 		PLAYER_ENABLED  = self._settings.PLAYER_ENABLED,
@@ -660,7 +482,6 @@ end
 
 function LimbExtender:_buildESPConfig()
 	local s = self._settings
-
 	local function applyToggles(flags)
 		return {
 			Box      = s.ESP_BOX      and flags.Box,
@@ -671,7 +492,6 @@ function LimbExtender:_buildESPConfig()
 			Label    = s.ESP_LABEL    and flags.Label,
 		}
 	end
-
 	return {
 		Color                = s.ESP_COLOR,
 		Box3DColor           = s.ESP_BOX3D_COLOR,
@@ -737,7 +557,6 @@ function LimbExtender:_removeLimbs(player, char, limb)
 	else
 		cacheKey = self._npcIdMap[char]
 	end
-
 	sharedRestoreLimb(self, cacheKey, limb)
 	if self._ESP and char then self._ESP:Untrack(char) end
 	if not player then
