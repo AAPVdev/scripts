@@ -494,10 +494,6 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 		end
 	end
 
-	if activeLimb then
-		limbData.fakeSignals[activeLimb] = nil
-	end
-
 	if entry._partData then
 		for part, _ in pairs(entry._partData) do
 			limbData.partData[part] = nil
