@@ -1,5 +1,12 @@
-local Players = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
+local function missing(t, f, fallback)
+	if type(f) == t then return f end
+	return fallback
+end
+
+local cloneref = missing("function", cloneref, function(obj) return obj end)
+
+local Players = cloneref(game:GetService("Players"))
+local Workspace = cloneref(game:GetService("Workspace"))
 
 local localPlayer = Players.LocalPlayer
 if not localPlayer then
