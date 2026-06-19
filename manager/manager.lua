@@ -709,18 +709,16 @@ function Manager.new(userSettings)
 		_stringDirMap = {},
 		_npcDirOwners = {},
 
-		-- Heartbeat work queue (prevents frame spikes)
 		_limbReadyQueue = {},
 		_limbLostQueue  = {},
 		_queueProcessed = false,
-		_processBudget  = 5,       -- how many callbacks to run per Heartbeat
+		_processBudget  = 5,       
 		_heartbeatConn  = nil,
 	}, Manager)
 
 	return self
 end
 
--- ── Internal event helpers (now enqueued, not direct) ──
 function Manager:_onLimbReady(player, model, limb)
 	table.insert(self._limbReadyQueue, {player, model, limb})
 	self:_ensureQueueProcessor()
@@ -731,7 +729,6 @@ function Manager:_onLimbLost(player, model, limb)
 	self:_ensureQueueProcessor()
 end
 
--- ── Heartbeat queue processor ──
 function Manager:_ensureQueueProcessor()
 	if self._queueProcessed then return end
 	self._queueProcessed = true
@@ -743,41 +740,37 @@ function Manager:_ensureQueueProcessor()
 end
 
 function Manager:_processQueueBatch()
-	local budget = self._processBudget
-	local readyQ = self._limbReadyQueue
-	local lostQ  = self._limbLostQueue
+    local budget = self._processBudget
+    local readyQ = self._limbReadyQueue
+    local lostQ  = self._limbLostQueue
 
-	-- Process ready events first (more important for initial load)
-	while budget > 0 and #readyQ > 0 do
-		local entry = table.remove(readyQ, 1)
-		budget = budget - 1
-		local cb = self._settings.ON_LIMB_READY
-		if type(cb) == "function" then
-			task_spawn(cb, entry[1], entry[2], entry[3])
-		end
-	end
+    while budget > 0 and #readyQ > 0 do
+        local entry = table.remove(readyQ, 1)
+        budget = budget - 1
+        local cb = self._settings.ON_LIMB_READY
+        if type(cb) == "function" then
+            pcall(cb, entry[1], entry[2], entry[3])
+        end
+    end
 
-	-- Then process lost events
-	while budget > 0 and #lostQ > 0 do
-		local entry = table.remove(lostQ, 1)
-		budget = budget - 1
-		local cb = self._settings.ON_LIMB_LOST
-		if type(cb) == "function" then
-			task_spawn(cb, entry[1], entry[2], entry[3])
-		end
-	end
+    while budget > 0 and #lostQ > 0 do
+        local entry = table.remove(lostQ, 1)
+        budget = budget - 1
+        local cb = self._settings.ON_LIMB_LOST
+        if type(cb) == "function" then
+            pcall(cb, entry[1], entry[2], entry[3])
+        end
+    end
 
-	-- Stop heartbeat when nothing left to do
-	if #readyQ == 0 and #lostQ == 0 then
-		if self._heartbeatConn then
-			self._heartbeatConn:Disconnect()
-			self._heartbeatConn = nil
-		end
-		self._queueProcessed = false
-	end
+    if #readyQ == 0 and #lostQ == 0 then
+        if self._heartbeatConn then
+            self._heartbeatConn:Disconnect()
+            self._heartbeatConn = nil
+        end
+        self._queueProcessed = false
+    end
 end
 
--- ── Rest of Manager unchanged ──
 function Manager:_isValidNPC(model)
 	if not model or not model:IsA("Model") then return false end
 	if not model:FindFirstChildOfClass("Humanoid") then return false end
@@ -1043,7 +1036,6 @@ function Manager:Stop()
 	if self._destroyed or not self._running then return end
 	self._running = false
 
-	-- Clean up the heartbeat queue processor
 	if self._heartbeatConn then
 		self._heartbeatConn:Disconnect()
 		self._heartbeatConn = nil
