@@ -111,13 +111,13 @@ local function mergeSettings(user)
 end
 
 local function parseLimbPath(targetLimb)
-    if type(targetLimb) ~= "string" or targetLimb == "" then return nil end
-    local segs = {}
-    for seg in targetLimb:gmatch("[^%.]+") do
-        local t = seg:match("^%s*(.-)%s*$")
-        if t ~= "" then segs[#segs + 1] = t end
-    end
-    return #segs > 0 and segs or nil
+	if type(targetLimb) ~= "string" or targetLimb == "" then return nil end
+	local segs = {}
+	for seg in targetLimb:gmatch("[^%.]+") do
+		local t = seg:match("^%s*(.-)%s*$")
+		if t ~= "" then segs[#segs + 1] = t end
+	end
+	return #segs > 0 and segs or nil
 end
 
 local function normalizeDirectoryPath(path)
@@ -332,65 +332,63 @@ function LimbObserver.new(manager, model, playerObject)
 end
 
 function LimbObserver:_clearPathConns()
-    local segs = self._segments
-    if not segs then return end
-    for i = 1, #segs do
-        self._conns:Disconnect("Step" .. i)
-        self._conns:Disconnect("Int"  .. i)
-    end
+	local segs = self._segments
+	if not segs then return end
+	for i = 1, #segs do
+		self._conns:Disconnect("Step" .. i)
+		self._conns:Disconnect("Int"  .. i)
+	end
 end
 
 function LimbObserver:_resolveStep(container, segs, depth)
-    if self._destroyed or self._ready then return end
-    if not isLiveInstance(container) then return end
+	if self._destroyed or self._ready then return end
+	if not isLiveInstance(container) then return end
 
-    local name    = segs[depth]
-    local isLeaf  = depth == #segs
-    local stepKey = "Step" .. depth
+	local name    = segs[depth]
+	local isLeaf  = depth == #segs
+	local stepKey = "Step" .. depth
 
-    local function proceed(child)
-        if self._destroyed or self._ready then return end
+	local function proceed(child)
+		if self._destroyed or self._ready then return end
 
-        if isLeaf then
-            if child:IsA("BasePart") then
-                
-                for i = 1, depth - 1 do
-                    self._conns:Disconnect("Int" .. i)
-                end
-                self:_onLimbFound(child)
-            end
-        else
+		if isLeaf then
+			if child:IsA("BasePart") then
+				for i = 1, depth - 1 do
+					self._conns:Disconnect("Int" .. i)
+				end
+				self:_onLimbFound(child)
+			end
+		else
+			self._conns:Connect(child:GetPropertyChangedSignal("Parent"), function()
+				if self._destroyed then return end
+				if not child:IsDescendantOf(self._model) then
+					for i = depth, #segs do
+						self._conns:Disconnect("Step" .. i)
+						self._conns:Disconnect("Int"  .. i)
+					end
+					if self._ready then
+						self:_limbRemoved()
+					else
+						self:_resolveStep(container, segs, depth)
+					end
+				end
+			end, "Int" .. depth)
 
-            self._conns:Connect(child:GetPropertyChangedSignal("Parent"), function()
-                if self._destroyed then return end
-                if not child:IsDescendantOf(self._model) then
-                    for i = depth, #segs do
-                        self._conns:Disconnect("Step" .. i)
-                        self._conns:Disconnect("Int"  .. i)
-                    end
-                    if self._ready then
-                        self:_limbRemoved()   
-                    else
-                        self:_resolveStep(container, segs, depth)
-                    end
-                end
-            end, "Int" .. depth)
+			self:_resolveStep(child, segs, depth + 1)
+		end
+	end
 
-            self:_resolveStep(child, segs, depth + 1)
-        end
-    end
-
-    local existing = container:FindFirstChild(name)
-    if existing then
-        proceed(existing)
-    else
-        self._conns:Connect(container.ChildAdded, function(child)
-            if child.Name == name then
-                self._conns:Disconnect(stepKey)
-                proceed(child)
-            end
-        end, stepKey)
-    end
+	local existing = container:FindFirstChild(name)
+	if existing then
+		proceed(existing)
+	else
+		self._conns:Connect(container.ChildAdded, function(child)
+			if child.Name == name then
+				self._conns:Disconnect(stepKey)
+				proceed(child)
+			end
+		end, stepKey)
+	end
 end
 
 function LimbObserver:_bindLifecycle()
@@ -406,52 +404,52 @@ function LimbObserver:_bindLifecycle()
 end
 
 function LimbObserver:_start()
-    if self._destroyed or self._ready then return end
-    if not isLiveInstance(self._model) then
-        self:_notifyLost()
-        return
-    end
+	if self._destroyed or self._ready then return end
+	if not isLiveInstance(self._model) then
+		self:_notifyLost()
+		return
+	end
 
-    local targetLimb = self._manager._settings.TARGET_LIMB
-    self._segments = parseLimbPath(targetLimb)
-    if not self._segments then return end
+	local targetLimb = self._manager._settings.TARGET_LIMB
+	self._segments = parseLimbPath(targetLimb)
+	if not self._segments then return end
 
-    if self._player and self._manager._settings.TEAM_CHECK then
-        local getTeam = self._manager._settings.GET_LOCAL_TEAM
-        if type(getTeam) == "function" then
-            local ok, myTeam = pcall(getTeam)
-            if ok and myTeam and self._player.Team == myTeam then return end
-        end
-    end
+	if self._player and self._manager._settings.TEAM_CHECK then
+		local getTeam = self._manager._settings.GET_LOCAL_TEAM
+		if type(getTeam) == "function" then
+			local ok, myTeam = pcall(getTeam)
+			if ok and myTeam and self._player.Team == myTeam then return end
+		end
+	end
 
-    local function beginResolve()
-        self:_resolveStep(self._model, self._segments, 1)
-    end
+	local function beginResolve()
+		self:_resolveStep(self._model, self._segments, 1)
+	end
 
-    local function watchForceField(ff)
-        self:_clearPathConns()   
-        self._conns:Connect(ff.AncestryChanged, function()
-            if not ff:IsDescendantOf(self._model) then
-                self._conns:Disconnect("ForceFieldWatcher")
-                beginResolve()
-            end
-        end, "ForceFieldWatcher")
-    end
+	local function watchForceField(ff)
+		self:_clearPathConns()
+		self._conns:Connect(ff.AncestryChanged, function()
+			if not ff:IsDescendantOf(self._model) then
+				self._conns:Disconnect("ForceFieldWatcher")
+				beginResolve()
+			end
+		end, "ForceFieldWatcher")
+	end
 
-    if self._manager._settings.FORCEFIELD_CHECK then
-        local existing = self._model:FindFirstChildOfClass("ForceField")
-        if existing then
-            watchForceField(existing)
-            return
-        end
-        self._conns:Connect(self._model.ChildAdded, function(child)
-            if child:IsA("ForceField") then
-                watchForceField(child)
-            end
-        end, "ForceFieldAppeared")
-    end
+	if self._manager._settings.FORCEFIELD_CHECK then
+		local existing = self._model:FindFirstChildOfClass("ForceField")
+		if existing then
+			watchForceField(existing)
+			return
+		end
+		self._conns:Connect(self._model.ChildAdded, function(child)
+			if child:IsA("ForceField") then
+				watchForceField(child)
+			end
+		end, "ForceFieldAppeared")
+	end
 
-    beginResolve()
+	beginResolve()
 end
 
 function LimbObserver:_onLimbFound(limb)
@@ -710,25 +708,76 @@ function Manager.new(userSettings)
 		_dirUidMap = {},
 		_stringDirMap = {},
 		_npcDirOwners = {},
+
+		-- Heartbeat work queue (prevents frame spikes)
+		_limbReadyQueue = {},
+		_limbLostQueue  = {},
+		_queueProcessed = false,
+		_processBudget  = 5,       -- how many callbacks to run per Heartbeat
+		_heartbeatConn  = nil,
 	}, Manager)
 
 	return self
 end
 
+-- ── Internal event helpers (now enqueued, not direct) ──
 function Manager:_onLimbReady(player, model, limb)
-	local cb = self._settings.ON_LIMB_READY
-	if type(cb) == "function" then
-		pcall(cb, player, model, limb)
-	end
+	table.insert(self._limbReadyQueue, {player, model, limb})
+	self:_ensureQueueProcessor()
 end
 
 function Manager:_onLimbLost(player, model, limb)
-	local cb = self._settings.ON_LIMB_LOST
-	if type(cb) == "function" then
-		pcall(cb, player, model, limb)
+	table.insert(self._limbLostQueue, {player, model, limb})
+	self:_ensureQueueProcessor()
+end
+
+-- ── Heartbeat queue processor ──
+function Manager:_ensureQueueProcessor()
+	if self._queueProcessed then return end
+	self._queueProcessed = true
+
+	local hb = game:GetService("RunService").Heartbeat
+	self._heartbeatConn = hb:Connect(function()
+		self:_processQueueBatch()
+	end)
+end
+
+function Manager:_processQueueBatch()
+	local budget = self._processBudget
+	local readyQ = self._limbReadyQueue
+	local lostQ  = self._limbLostQueue
+
+	-- Process ready events first (more important for initial load)
+	while budget > 0 and #readyQ > 0 do
+		local entry = table.remove(readyQ, 1)
+		budget = budget - 1
+		local cb = self._settings.ON_LIMB_READY
+		if type(cb) == "function" then
+			task_spawn(cb, entry[1], entry[2], entry[3])
+		end
+	end
+
+	-- Then process lost events
+	while budget > 0 and #lostQ > 0 do
+		local entry = table.remove(lostQ, 1)
+		budget = budget - 1
+		local cb = self._settings.ON_LIMB_LOST
+		if type(cb) == "function" then
+			task_spawn(cb, entry[1], entry[2], entry[3])
+		end
+	end
+
+	-- Stop heartbeat when nothing left to do
+	if #readyQ == 0 and #lostQ == 0 then
+		if self._heartbeatConn then
+			self._heartbeatConn:Disconnect()
+			self._heartbeatConn = nil
+		end
+		self._queueProcessed = false
 	end
 end
 
+-- ── Rest of Manager unchanged ──
 function Manager:_isValidNPC(model)
 	if not model or not model:IsA("Model") then return false end
 	if not model:FindFirstChildOfClass("Humanoid") then return false end
@@ -993,6 +1042,15 @@ end
 function Manager:Stop()
 	if self._destroyed or not self._running then return end
 	self._running = false
+
+	-- Clean up the heartbeat queue processor
+	if self._heartbeatConn then
+		self._heartbeatConn:Disconnect()
+		self._heartbeatConn = nil
+	end
+	table_clear(self._limbReadyQueue)
+	table_clear(self._limbLostQueue)
+	self._queueProcessed = false
 
 	self:_stopNPCTracking()
 	self:_stopPlayerTracking()
