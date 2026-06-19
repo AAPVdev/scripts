@@ -187,6 +187,7 @@ function StreamObserver.new(model, onAvailable, onUnavailable)
 		_partConn = nil,          
 		_watchConn = nil,         
 		_currentPart = nil,
+		_modelConns = nil,
 	}, StreamObserver)
 
 	self:_startWatching()
@@ -222,7 +223,7 @@ function StreamObserver:_startWatching()
 			end
 		end)
 
-		self._modelConns = ConnectionManager.new()   
+		self._modelConns = ConnectionManager.new()
 		self._modelConns:Connect(model.AncestryChanged, function()
 			if self._destroyed then return end
 			if not isLiveInstance(model) then
@@ -270,8 +271,6 @@ function StreamObserver:_onPartLost()
 
 	if isLiveInstance(self._model) then
 		self:_startWatching()
-	else
-		
 	end
 end
 
@@ -538,6 +537,8 @@ function PlayerData:_updateTeamSignal()
 		self.conns:Connect(self.player:GetPropertyChangedSignal("Team"), function()
 			if self._limbObserver then
 				self._limbObserver:Refresh()
+			elseif self._characterObserver and self._characterObserver:IsActive() then
+				self:_setupLimbTracking(self._character)
 			end
 		end, "TeamChanged")
 	else
@@ -605,6 +606,8 @@ end
 
 function PlayerData:_onCharacterRemoving(char)
 	if self._destroyed then return end
+	
+	if self._character ~= char then return end
 
 	if self._characterObserver then
 		self._characterObserver:Destroy()
@@ -616,9 +619,7 @@ function PlayerData:_onCharacterRemoving(char)
 		self._limbObserver = nil
 	end
 
-	if self._character == char then
-		self._character = nil
-	end
+	self._character = nil
 end
 
 function PlayerData:Destroy()
