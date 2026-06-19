@@ -662,6 +662,8 @@ function LimbExtender.new(userSettings)
 		GET_LOCAL_TEAM      = function() return localPlayer.Team end,
 
 		ON_LIMB_READY = function(player, model, limb)
+			-- This callback is now called from the manager's heartbeat queue,
+			-- so it's already spread across frames – no more first‑frame freeze.
 			self:_applyLimbs(player, model, limb)
 		end,
 		ON_LIMB_LOST  = function(player, model, limb)
