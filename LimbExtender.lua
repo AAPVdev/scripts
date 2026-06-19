@@ -469,6 +469,11 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 	if not entry then return end
 
 	if activeLimb and activeLimb.Parent then
+		if entry._internalChangedConn then
+			pcall(function() entry._internalChangedConn:Disconnect() end)
+			entry._internalChangedConn = nil
+		end
+		limbData._bypassHooks = true
 		pcall(function()
 			activeLimb.Size                     = entry.OriginalSize
 			activeLimb.Transparency             = entry.OriginalTransparency
@@ -477,11 +482,7 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 			activeLimb.CustomPhysicalProperties = entry.OriginalPhysProps
 			activeLimb.RootPriority             = entry.OriginalRootPriority
 		end)
-	end
-
-	if entry._internalChangedConn then
-		pcall(function() entry._internalChangedConn:Disconnect() end)
-		entry._internalChangedConn = nil
+		limbData._bypassHooks = false
 	end
 
 	if limbData.neutralizedCallbacks then
