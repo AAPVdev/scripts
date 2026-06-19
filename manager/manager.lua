@@ -110,6 +110,16 @@ local function mergeSettings(user)
 	return s
 end
 
+local function parseLimbPath(targetLimb)
+    if type(targetLimb) ~= "string" or targetLimb == "" then return nil end
+    local segs = {}
+    for seg in targetLimb:gmatch("[^%.]+") do
+        local t = seg:match("^%s*(.-)%s*$")
+        if t ~= "" then segs[#segs + 1] = t end
+    end
+    return #segs > 0 and segs or nil
+end
+
 local function normalizeDirectoryPath(path)
 	path = tostring(path or "")
 	path = string_gsub(path, "^%s+", "")
@@ -313,11 +323,74 @@ function LimbObserver.new(manager, model, playerObject)
 		_lifeConns = ConnectionManager.new(),
 		_conns = ConnectionManager.new(),
 		_destroyed = false,
+		_segments = nil,
 	}, LimbObserver)
 
 	self:_bindLifecycle()
 	self:_start()
 	return self
+end
+
+function LimbObserver:_clearPathConns()
+    local segs = self._segments
+    if not segs then return end
+    for i = 1, #segs do
+        self._conns:Disconnect("Step" .. i)
+        self._conns:Disconnect("Int"  .. i)
+    end
+end
+
+function LimbObserver:_resolveStep(container, segs, depth)
+    if self._destroyed or self._ready then return end
+    if not isLiveInstance(container) then return end
+
+    local name    = segs[depth]
+    local isLeaf  = depth == #segs
+    local stepKey = "Step" .. depth
+
+    local function proceed(child)
+        if self._destroyed or self._ready then return end
+
+        if isLeaf then
+            if child:IsA("BasePart") then
+                
+                for i = 1, depth - 1 do
+                    self._conns:Disconnect("Int" .. i)
+                end
+                self:_onLimbFound(child)
+            end
+        else
+
+            self._conns:Connect(child:GetPropertyChangedSignal("Parent"), function()
+                if self._destroyed then return end
+                if not child:IsDescendantOf(self._model) then
+                    for i = depth, #segs do
+                        self._conns:Disconnect("Step" .. i)
+                        self._conns:Disconnect("Int"  .. i)
+                    end
+                    if self._ready then
+                        self:_limbRemoved()   
+                    else
+                        self:_resolveStep(container, segs, depth)
+                    end
+                end
+            end, "Int" .. depth)
+
+            self:_resolveStep(child, segs, depth + 1)
+        end
+    end
+
+    local existing = container:FindFirstChild(name)
+    if existing then
+        proceed(existing)
+    else
+        self._conns:Connect(container.ChildAdded, function(child)
+            if child.Name == name then
+                self._conns:Disconnect(stepKey)
+                proceed(child)
+            end
+        end, stepKey)
+    end
 end
 
 function LimbObserver:_bindLifecycle()
@@ -333,63 +406,52 @@ function LimbObserver:_bindLifecycle()
 end
 
 function LimbObserver:_start()
-	if self._destroyed or self._ready then return end
-	if not isLiveInstance(self._model) then
-		self:_notifyLost()
-		return
-	end
+    if self._destroyed or self._ready then return end
+    if not isLiveInstance(self._model) then
+        self:_notifyLost()
+        return
+    end
 
-	local function tryResolve()
-		if self._destroyed or self._ready then return end
+    local targetLimb = self._manager._settings.TARGET_LIMB
+    self._segments = parseLimbPath(targetLimb)
+    if not self._segments then return end
 
-		local targetLimb = self._manager._settings.TARGET_LIMB
-		if type(targetLimb) ~= "string" or targetLimb == "" then return end
+    if self._player and self._manager._settings.TEAM_CHECK then
+        local getTeam = self._manager._settings.GET_LOCAL_TEAM
+        if type(getTeam) == "function" then
+            local ok, myTeam = pcall(getTeam)
+            if ok and myTeam and self._player.Team == myTeam then return end
+        end
+    end
 
-		if self._player and self._manager._settings.TEAM_CHECK then
-			local getTeam = self._manager._settings.GET_LOCAL_TEAM
-			if type(getTeam) == "function" then
-				local ok, myTeam = pcall(getTeam)
-				if ok and myTeam and self._player.Team == myTeam then return end
-			end
-		end
+    local function beginResolve()
+        self:_resolveStep(self._model, self._segments, 1)
+    end
 
-		local limb = self._model:FindFirstChild(targetLimb)
-		if limb and limb:IsA("BasePart") then
-			self:_onLimbFound(limb)
-		else
-			self._conns:Connect(self._model.ChildAdded, function(child)
-				if child.Name == self._manager._settings.TARGET_LIMB and child:IsA("BasePart") then
-					self._conns:Disconnect("WaitLimb")
-					tryResolve()
-				end
-			end, "WaitLimb")
-		end
-	end
+    local function watchForceField(ff)
+        self:_clearPathConns()   
+        self._conns:Connect(ff.AncestryChanged, function()
+            if not ff:IsDescendantOf(self._model) then
+                self._conns:Disconnect("ForceFieldWatcher")
+                beginResolve()
+            end
+        end, "ForceFieldWatcher")
+    end
 
-	local function watchForceField(ff)
-		self._conns:Disconnect("WaitLimb")
-		self._conns:Connect(ff.AncestryChanged, function()
-			if not ff:IsDescendantOf(self._model) then
-				self._conns:Disconnect("ForceFieldWatcher")
-				tryResolve()
-			end
-		end, "ForceFieldWatcher")
-	end
+    if self._manager._settings.FORCEFIELD_CHECK then
+        local existing = self._model:FindFirstChildOfClass("ForceField")
+        if existing then
+            watchForceField(existing)
+            return
+        end
+        self._conns:Connect(self._model.ChildAdded, function(child)
+            if child:IsA("ForceField") then
+                watchForceField(child)
+            end
+        end, "ForceFieldAppeared")
+    end
 
-	if self._manager._settings.FORCEFIELD_CHECK then
-		local existing = self._model:FindFirstChildOfClass("ForceField")
-		if existing then
-			watchForceField(existing)
-			return
-		end
-		self._conns:Connect(self._model.ChildAdded, function(child)
-			if child:IsA("ForceField") then
-				watchForceField(child)
-			end
-		end, "ForceFieldAppeared")
-	end
-
-	tryResolve()
+    beginResolve()
 end
 
 function LimbObserver:_onLimbFound(limb)
