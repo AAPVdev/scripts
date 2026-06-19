@@ -1,12 +1,5 @@
-local function missing(t, f, fallback)
-	if type(f) == t then return f end
-	return fallback
-end
-
-local cloneref = missing("function", cloneref, function(obj) return obj end)
-
-local Players = cloneref(game:GetService("Players"))
-local Workspace = cloneref(game:GetService("Workspace"))
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
 
 local localPlayer = Players.LocalPlayer
 if not localPlayer then
@@ -68,7 +61,6 @@ end
 
 function ConnectionManager:Destroy()
 	self:DisconnectAll()
-	setmetatable(self, nil)
 end
 
 local DEFAULTS = {
@@ -220,21 +212,32 @@ function StreamObserver:_bindModelSignals()
 	local model = self._model
 	if not isLiveInstance(model) then return end
 
-	self._modelConns:Connect(model.AncestryChanged, function() self:_refresh() end, "AncestryChanged")
+	self._modelConns:Connect(model.AncestryChanged, function()
+		if self._destroyed then return end
+		self:_refresh()
+	end, "AncestryChanged")
 	self._modelConns:Connect(model.ChildAdded, function(child)
+		if self._destroyed then return end
 		if child.Name == "HumanoidRootPart" then self:_refresh() end
 	end, "ChildAdded")
 	self._modelConns:Connect(model.ChildRemoved, function(child)
+		if self._destroyed then return end
 		if child.Name == "HumanoidRootPart" then self:_refresh() end
 	end, "ChildRemoved")
-	self._modelConns:Connect(model:GetPropertyChangedSignal("PrimaryPart"), function() self:_refresh() end, "PrimaryPart")
+	self._modelConns:Connect(model:GetPropertyChangedSignal("PrimaryPart"), function()
+		if self._destroyed then return end
+		self:_refresh()
+	end, "PrimaryPart")
 end
 
 function StreamObserver:_bindAnchor(anchor)
 	self._anchor = anchor
 	self._anchorConns:DisconnectAll()
 	if not anchor or not isLiveInstance(anchor) then return end
-	self._anchorConns:Connect(anchor.AncestryChanged, function() self:_refresh() end, "AncestryChanged")
+	self._anchorConns:Connect(anchor.AncestryChanged, function()
+		if self._destroyed then return end
+		self:_refresh()
+	end, "AncestryChanged")
 end
 
 function StreamObserver:_setActive(active)
@@ -280,8 +283,6 @@ function StreamObserver:Destroy()
 
 	self._anchorConns:Destroy()
 	self._modelConns:Destroy()
-
-	setmetatable(self, nil)
 end
 
 local LimbObserver = {}
@@ -309,6 +310,7 @@ function LimbObserver:_bindLifecycle()
 	if not isLiveInstance(self._model) then return end
 
 	self._lifeConns:Connect(self._model.AncestryChanged, function()
+		if self._destroyed then return end
 		if not isLiveInstance(self._model) then
 			self:_notifyLost()
 		end
@@ -408,7 +410,6 @@ function LimbObserver:_onLimbFound(limb)
 end
 
 function LimbObserver:_limbRemoved()
-	
 	if self._destroyed or not self._ready then return end
 
 	self._ready = false
@@ -466,8 +467,6 @@ function LimbObserver:Destroy()
 	self._limb  = nil
 	self._conns:Destroy()
 	self._lifeConns:Destroy()
-
-	setmetatable(self, nil)
 
 	if wasReady then
 		manager:_onLimbLost(player, model, oldLimb)
@@ -607,7 +606,6 @@ function PlayerData:Destroy()
 	end
 
 	self.conns:Destroy()
-	setmetatable(self, nil)
 end
 
 local Manager = {}
@@ -960,7 +958,6 @@ function Manager:AddDirectory(dir)
 
 	if self._running and self._settings.NPC_ENABLED then
 		if isLiveInstance(dir) then
-			
 			self:_activateDirectory(dir, false)
 		elseif type(dir) == "string" then
 			local gen = self._generation
@@ -1075,7 +1072,6 @@ end
 function Manager:Destroy()
 	self:Stop()
 	self._destroyed = true
-	setmetatable(self, nil)
 end
 
 return {
