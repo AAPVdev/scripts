@@ -1,12 +1,5 @@
-local function missing(t, f, fallback)
-	if type(f) == t then return f end
-	return fallback
-end
-
-local cloneref = missing("function", cloneref, function(obj) return obj end)
-
-local Players = cloneref(game:GetService("Players"))
-local Workspace = cloneref(game:GetService("Workspace"))
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
 
 local localPlayer = Players.LocalPlayer
 if not localPlayer then
@@ -182,15 +175,18 @@ function StreamObserver.new(model, onAvailable, onUnavailable)
 		_model = model,
 		_onAvailable = onAvailable,
 		_onUnavailable = onUnavailable,
+
+		_modelConns = ConnectionManager.new(),
+		_anchorConns = ConnectionManager.new(),
+
 		_active = false,
 		_destroyed = false,
-		_partConn = nil,          
-		_watchConn = nil,         
-		_currentPart = nil,
-		_modelConns = nil,
+		_anchor = nil,
 	}, StreamObserver)
 
-	self:_startWatching()
+	self:_bindModelSignals()
+	self:_refresh()
+
 	return self
 end
 
@@ -198,80 +194,56 @@ function StreamObserver:IsActive()
 	return not self._destroyed and self._active
 end
 
-function StreamObserver:_getPartName()
+function StreamObserver:_resolveAnchor()
+	local model = self._model
+	if not isLiveInstance(model) or not model:IsA("Model") then return nil end
 
-	return "HumanoidRootPart"
+	local root = model.PrimaryPart
+	if isLiveInstance(root) then return root end
+
+	root = model:FindFirstChild("HumanoidRootPart")
+	if root and isLiveInstance(root) then return root end
+
+	return nil
 end
 
-function StreamObserver:_startWatching()
+function StreamObserver:_bindModelSignals()
 	if self._destroyed then return end
 	local model = self._model
-	if not isLiveInstance(model) then
-		self:_setActive(false)
-		return
-	end
+	if typeof(model) ~= "Instance" then return end
 
-	local part = model:FindFirstChild(self:_getPartName())
-	if part and isLiveInstance(part) then
-		self:_onPartFound(part)
-	else
-		
-		self._watchConn = model.ChildAdded:Connect(function(child)
-			if self._destroyed then return end
-			if child.Name == self:_getPartName() and child:IsA("BasePart") then
-				self:_onPartFound(child)
-			end
-		end)
-
-		self._modelConns = ConnectionManager.new()
-		self._modelConns:Connect(model.AncestryChanged, function()
-			if self._destroyed then return end
-			if not isLiveInstance(model) then
-				self:_onPartLost()
-			end
-		end)
-	end
-end
-
-function StreamObserver:_onPartFound(part)
-	if self._destroyed then return end
-
-	if self._watchConn then
-		self._watchConn:Disconnect()
-		self._watchConn = nil
-	end
-
-	self._currentPart = part
-	self:_setActive(true)
-
-	self._partConn = part:GetPropertyChangedSignal("Parent"):Connect(function()
+	self._modelConns:Connect(model.AncestryChanged, function()
 		if self._destroyed then return end
-		if not part.Parent then
-			self:_onPartLost()
-		end
-	end)
+		self:_refresh()
+	end, "AncestryChanged")
+
+	if not isLiveInstance(model) then return end
+
+	self._modelConns:Connect(model.ChildAdded, function(child)
+		if self._destroyed then return end
+		if child.Name == "HumanoidRootPart" then self:_refresh() end
+	end, "ChildAdded")
+
+	self._modelConns:Connect(model.ChildRemoved, function(child)
+		if self._destroyed then return end
+		if child.Name == "HumanoidRootPart" then self:_refresh() end
+	end, "ChildRemoved")
+
+	self._modelConns:Connect(model:GetPropertyChangedSignal("PrimaryPart"), function()
+		if self._destroyed then return end
+		self:_refresh()
+	end, "PrimaryPart")
 end
 
-function StreamObserver:_onPartLost()
-	if self._destroyed then return end
+function StreamObserver:_bindAnchor(anchor)
+	self._anchor = anchor
+	self._anchorConns:DisconnectAll()
+	if not anchor or not isLiveInstance(anchor) then return end
 
-	if self._partConn then
-		self._partConn:Disconnect()
-		self._partConn = nil
-	end
-	self._currentPart = nil
-
-	if self._modelConns then
-		self._modelConns:Destroy()
-		self._modelConns = nil
-	end
-
-	local wasActive = self._active
-	self:_setActive(false)
-
-	if isLiveInstance(self._model) then
-		self:_startWatching()
-	end
+	self._anchorConns:Connect(anchor:GetPropertyChangedSignal("Parent"), function()
+		if self._destroyed then return end
+		self:_refresh()
+	end, "AnchorParent")
 end
 
 function StreamObserver:_setActive(active)
@@ -288,28 +260,37 @@ function StreamObserver:_setActive(active)
 	end
 end
 
+function StreamObserver:_refresh()
+	if self._destroyed then return end
+
+	local model = self._model
+	if not isLiveInstance(model) then
+		self:_bindAnchor(nil)
+		self:_setActive(false)
+		return
+	end
+
+	self:_bindModelSignals()
+
+	local anchor = self:_resolveAnchor()
+	if anchor ~= self._anchor then self:_bindAnchor(anchor) end
+
+	local available = anchor ~= nil and isLiveInstance(anchor) and isLiveInstance(model)
+	self:_setActive(available)
+end
+
 function StreamObserver:Destroy()
 	if self._destroyed then return end
 	self._destroyed = true
-
-	if self._partConn then
-		self._partConn:Disconnect()
-		self._partConn = nil
-	end
-	if self._watchConn then
-		self._watchConn:Disconnect()
-		self._watchConn = nil
-	end
-	if self._modelConns then
-		self._modelConns:Destroy()
-		self._modelConns = nil
-	end
 
 	if self._active then
 		self._active = false
 		local cb = self._onUnavailable
 		if type(cb) == "function" then pcall(cb, self._model) end
 	end
+
+	self._anchorConns:Destroy()
+	self._modelConns:Destroy()
 end
 
 local LimbObserver = {}
@@ -408,7 +389,7 @@ function LimbObserver:_onLimbFound(limb)
 	self._limb = limb
 	self._ready = true
 
-	self._conns:Connect(limb.AncestryChanged, function()
+	self._conns:Connect(limb:GetPropertyChangedSignal("Parent"), function()
 		if not limb:IsDescendantOf(self._model) then
 			self:_limbRemoved()
 		end
@@ -537,8 +518,6 @@ function PlayerData:_updateTeamSignal()
 		self.conns:Connect(self.player:GetPropertyChangedSignal("Team"), function()
 			if self._limbObserver then
 				self._limbObserver:Refresh()
-			elseif self._characterObserver and self._characterObserver:IsActive() then
-				self:_setupLimbTracking(self._character)
 			end
 		end, "TeamChanged")
 	else
@@ -576,7 +555,7 @@ function PlayerData:_teardownLimbTracking()
 end
 
 function PlayerData:_onCharacterAdded(char)
-	if self._destroyed or not isLiveInstance(char) or not char:IsA("Model") then return end
+	if self._destroyed or typeof(char) ~= "Instance" or not char:IsA("Model") then return end
 
 	if self._characterObserver then
 		self._characterObserver:Destroy()
@@ -606,7 +585,7 @@ end
 
 function PlayerData:_onCharacterRemoving(char)
 	if self._destroyed then return end
-	
+
 	if self._character ~= char then return end
 
 	if self._characterObserver then
