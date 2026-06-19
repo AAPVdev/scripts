@@ -243,14 +243,29 @@ end
 
 local function scanCharacter(character)
     if not character then return end
-    character.ChildAdded:Connect(function(child)
-        if child:IsA("BasePart") then registerLimb(child.Name) end
-    end)
-    for _, child in ipairs(character:GetChildren()) do
-        if child:IsA("BasePart") then registerLimb(child.Name) end
+    for _, desc in ipairs(character:GetDescendants()) do
+        if desc:IsA("BasePart") then
+            
+            local path = desc.Name
+            local p = desc.Parent
+            while p and p ~= character do
+                path = p.Name .. "." .. path
+                p = p.Parent
+            end
+            registerLimb(path)
+        end
     end
+    character.DescendantAdded:Connect(function(desc)
+        if not desc:IsA("BasePart") then return end
+        local path = desc.Name
+        local p = desc.Parent
+        while p and p ~= character do
+            path = p.Name .. "." .. path
+            p = p.Parent
+        end
+        registerLimb(path)
+    end)
 end
-
 LocalPlayer.CharacterAdded:Connect(scanCharacter)
 if LocalPlayer.Character then scanCharacter(LocalPlayer.Character) end
 
