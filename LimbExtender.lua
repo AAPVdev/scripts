@@ -60,6 +60,7 @@ end
 local has_newcclosure    = type(newcclosure)    == "function"
 local has_hookmetamethod = type(hookmetamethod) == "function"
 local has_loadstring     = type(loadstring)     == "function"
+local has_hookfunction   = type(hookfunction)   == "function"
 local has_httpget = pcall(function()
 	local f = game.HttpGet
 	if type(f) ~= "function" then error("not callable") end
@@ -78,6 +79,18 @@ local BLOCKED_PROPS = {
 	RootPriority = true,
 }
 
+local function ensureFakeSignal(part, prop)
+	local sigs = limbData.fakeSignals[part]
+	if not sigs then
+		sigs = {}
+		limbData.fakeSignals[part] = sigs
+	end
+	if not sigs[prop] then
+		sigs[prop] = Instance_new("BindableEvent")
+	end
+	return sigs[prop]
+end
+
 if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod and has_checkcaller then
 	limbData._spoofInstalled = true
 
@@ -93,9 +106,20 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod and h
 	local connMeta = debug.getmetatable(sampleConn)
 	sampleConn:Disconnect()
 	local oldConnIndex = connMeta.__index
+
+	local spoofedConnectedProxy = {}
+	do
+		local dummy = function() end
+		setmetatable(spoofedConnectedProxy, {
+			__index = function(_, k) return dummy end,
+			__tostring = function() return "true" end,
+			__call = function() end,
+		})
+	end
+
 	local function connIndexHook(self, key)
 		if key == "Connected" and _spoofedConns[self] then
-			return true
+			return spoofedConnectedProxy
 		end
 		return oldConnIndex(self, key)
 	end
@@ -118,18 +142,6 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod and h
 			end
 		end
 		return nil, nil
-	end
-
-	local function ensureFakeSignal(part, prop)
-		local sigs = _fakeSignals[part]
-		if not sigs then
-			sigs = {}
-			_fakeSignals[part] = sigs
-		end
-		if not sigs[prop] then
-			sigs[prop] = Instance_new("BindableEvent")
-		end
-		return sigs[prop]
 	end
 
 	local function getPartDensity(part)
@@ -248,7 +260,10 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod and h
 						local size = data.OriginalSize
 						return density * (size.X * size.Y * size.Z)
 					end
-					if key == "AssemblyCenterOfMass"     then return self.Position end
+					if key == "AssemblyCenterOfMass"     then
+						local size = data.OriginalSize
+						return self.Position + Vector3_new(size.X * 0.001, size.Y * 0.001, size.Z * 0.001)
+					end
 					if key == "CustomPhysicalProperties" then return data.OriginalPhysProps     end
 					if key == "CurrentPhysicalProperties" then return data.OriginalPhysProps    end
 					if key == "RootPriority"             then return data.OriginalRootPriority  end
@@ -273,17 +288,9 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod and h
 	oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(...)
 		local self = ...
 		local method = getnamecallmethod()
-		local args = {...}
 
 		if not checkcaller() then
 			if limbData._bypassHooks then return oldNamecall(...) end
-
-			if method == "GetPropertyChangedSignal" and typeof(self) == "Instance" and self:IsA("BasePart") and self.Name == (limbData.targetLimbName or "HumanoidRootPart") then
-				local prop = args[2]
-				if BLOCKED_PROPS[prop] then
-					return ensureFakeSignal(self, prop).Event
-				end
-			end
 
 			local data, instType = getTargetData(self)
 			if data then
@@ -377,6 +384,17 @@ local function getPartDensitySafe(part)
 	return 1 
 end
 
+local function perPartHookGetPropertyChangedSignal(limb)
+	if not has_hookfunction then return end
+	local originalGPS = limb.GetPropertyChangedSignal
+	hookfunction(limb, "GetPropertyChangedSignal", function(_, prop)
+		if BLOCKED_PROPS[prop] then
+			return ensureFakeSignal(limb, prop).Event
+		end
+		return originalGPS(limb, prop)
+	end)
+end
+
 local function sharedSaveData(parent, cacheKey, char, limb)
 	local cache = parent._playerCache
 	local entry = cache[cacheKey]
@@ -415,8 +433,8 @@ local function sharedSaveData(parent, cacheKey, char, limb)
 	entry.OriginalAssemblyMass = limb.AssemblyMass
 	entry.OriginalAssemblyCOM  = limb.AssemblyCenterOfMass
 	entry.OriginalExtents      = char:GetExtentsSize()
-	entry.OriginalPhysProps    = limb.CustomPhysicalProperties
-	entry.OriginalRootPriority = limb.RootPriority
+	entry.OriginalPhysProps    = limb.CustomPhysicalProperties or PhysProps_new(limb.Material)
+	entry.OriginalRootPriority = limb.RootPriority or 0
 	entry.OriginalDensity      = getPartDensitySafe(limb)
 
 	limbData.instanceLookup[limb] = { data = entry, type = "Part"  }
@@ -441,6 +459,7 @@ local function sharedSaveData(parent, cacheKey, char, limb)
 	end
 	entry._charParts = charParts
 
+	perPartHookGetPropertyChangedSignal(limb)
 	neutralizeRealListeners(limb)
 end
 
@@ -465,11 +484,13 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 		entry._internalChangedConn = nil
 	end
 
-	for fn, orig in pairs(limbData.neutralizedCallbacks) do
-		pcall(function()
-			hookfunction(fn, orig)
-			limbData.neutralizedCallbacks[fn] = nil
-		end)
+	if limbData.neutralizedCallbacks then
+		for fn, orig in pairs(limbData.neutralizedCallbacks) do
+			pcall(function()
+				hookfunction(fn, orig)
+				limbData.neutralizedCallbacks[fn] = nil
+			end)
+		end
 	end
 
 	if activeLimb then
