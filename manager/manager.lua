@@ -182,18 +182,14 @@ function StreamObserver.new(model, onAvailable, onUnavailable)
 		_model = model,
 		_onAvailable = onAvailable,
 		_onUnavailable = onUnavailable,
-
-		_modelConns = ConnectionManager.new(),
-		_anchorConns = ConnectionManager.new(),
-
 		_active = false,
 		_destroyed = false,
-		_anchor = nil,
+		_partConn = nil,          
+		_watchConn = nil,         
+		_currentPart = nil,
 	}, StreamObserver)
 
-	self:_bindModelSignals()
-	self:_refresh()
-
+	self:_startWatching()
 	return self
 end
 
@@ -201,50 +197,82 @@ function StreamObserver:IsActive()
 	return not self._destroyed and self._active
 end
 
-function StreamObserver:_resolveAnchor()
-	local model = self._model
-	if not isLiveInstance(model) or not model:IsA("Model") then return nil end
+function StreamObserver:_getPartName()
 
-	local root = model.PrimaryPart
-	if isLiveInstance(root) then return root end
-
-	root = model:FindFirstChild("HumanoidRootPart")
-	if root and isLiveInstance(root) then return root end
-
-	return nil
+	return "HumanoidRootPart"
 end
 
-function StreamObserver:_bindModelSignals()
+function StreamObserver:_startWatching()
 	if self._destroyed then return end
 	local model = self._model
-	if not isLiveInstance(model) then return end
+	if not isLiveInstance(model) then
+		self:_setActive(false)
+		return
+	end
 
-	self._modelConns:Connect(model.AncestryChanged, function()
-		if self._destroyed then return end
-		self:_refresh()
-	end, "AncestryChanged")
-	self._modelConns:Connect(model.ChildAdded, function(child)
-		if self._destroyed then return end
-		if child.Name == "HumanoidRootPart" then self:_refresh() end
-	end, "ChildAdded")
-	self._modelConns:Connect(model.ChildRemoved, function(child)
-		if self._destroyed then return end
-		if child.Name == "HumanoidRootPart" then self:_refresh() end
-	end, "ChildRemoved")
-	self._modelConns:Connect(model:GetPropertyChangedSignal("PrimaryPart"), function()
-		if self._destroyed then return end
-		self:_refresh()
-	end, "PrimaryPart")
+	local part = model:FindFirstChild(self:_getPartName())
+	if part and isLiveInstance(part) then
+		self:_onPartFound(part)
+	else
+		
+		self._watchConn = model.ChildAdded:Connect(function(child)
+			if self._destroyed then return end
+			if child.Name == self:_getPartName() and child:IsA("BasePart") then
+				self:_onPartFound(child)
+			end
+		end)
+
+		self._modelConns = ConnectionManager.new()   
+		self._modelConns:Connect(model.AncestryChanged, function()
+			if self._destroyed then return end
+			if not isLiveInstance(model) then
+				self:_onPartLost()
+			end
+		end)
+	end
 end
 
-function StreamObserver:_bindAnchor(anchor)
-	self._anchor = anchor
-	self._anchorConns:DisconnectAll()
-	if not anchor or not isLiveInstance(anchor) then return end
-	self._anchorConns:Connect(anchor.AncestryChanged, function()
+function StreamObserver:_onPartFound(part)
+	if self._destroyed then return end
+
+	if self._watchConn then
+		self._watchConn:Disconnect()
+		self._watchConn = nil
+	end
+
+	self._currentPart = part
+	self:_setActive(true)
+
+	self._partConn = part:GetPropertyChangedSignal("Parent"):Connect(function()
 		if self._destroyed then return end
-		self:_refresh()
-	end, "AncestryChanged")
+		if not part.Parent then
+			self:_onPartLost()
+		end
+	end)
+end
+
+function StreamObserver:_onPartLost()
+	if self._destroyed then return end
+
+	if self._partConn then
+		self._partConn:Disconnect()
+		self._partConn = nil
+	end
+	self._currentPart = nil
+
+	if self._modelConns then
+		self._modelConns:Destroy()
+		self._modelConns = nil
+	end
+
+	local wasActive = self._active
+	self:_setActive(false)
+
+	if isLiveInstance(self._model) then
+		self:_startWatching()
+	else
+		
+	end
 end
 
 function StreamObserver:_setActive(active)
@@ -261,35 +289,28 @@ function StreamObserver:_setActive(active)
 	end
 end
 
-function StreamObserver:_refresh()
-	if self._destroyed then return end
-
-	local model = self._model
-	if not isLiveInstance(model) then
-		self:_bindAnchor(nil)
-		self:_setActive(false)
-		return
-	end
-
-	local anchor = self:_resolveAnchor()
-	if anchor ~= self._anchor then self:_bindAnchor(anchor) end
-
-	local available = anchor ~= nil and isLiveInstance(anchor) and isLiveInstance(model)
-	self:_setActive(available)
-end
-
 function StreamObserver:Destroy()
 	if self._destroyed then return end
 	self._destroyed = true
+
+	if self._partConn then
+		self._partConn:Disconnect()
+		self._partConn = nil
+	end
+	if self._watchConn then
+		self._watchConn:Disconnect()
+		self._watchConn = nil
+	end
+	if self._modelConns then
+		self._modelConns:Destroy()
+		self._modelConns = nil
+	end
 
 	if self._active then
 		self._active = false
 		local cb = self._onUnavailable
 		if type(cb) == "function" then pcall(cb, self._model) end
 	end
-
-	self._anchorConns:Destroy()
-	self._modelConns:Destroy()
 end
 
 local LimbObserver = {}
