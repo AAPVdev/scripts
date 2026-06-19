@@ -6,7 +6,7 @@ local function missing(t, f, fallback)
 	return fallback
 end
 
-local cloneref = missing("function", cloneref, function(obj) return obj end)
+local cloneref    = missing("function", cloneref, function(obj) return obj end)
 
 local RunService        = cloneref(game:GetService("RunService"))
 local UserInputService  = cloneref(game:GetService("UserInputService"))
@@ -23,13 +23,20 @@ end
 local abs   = math.abs
 local clamp = math.clamp
 local min   = math.min
+
 local huge  = math.huge
 local v2    = Vector2.new
 local c3    = Color3.fromRGB
 
 local VERTICES = {
-	Vector3.new(-1, -1, -1), Vector3.new(-1,  1, -1), Vector3.new(-1,  1,  1), Vector3.new(-1, -1,  1),
-	Vector3.new( 1, -1, -1), Vector3.new( 1,  1, -1), Vector3.new( 1,  1,  1), Vector3.new( 1, -1,  1),
+	Vector3.new(-1, -1, -1),
+	Vector3.new(-1,  1, -1),
+	Vector3.new(-1,  1,  1),
+	Vector3.new(-1, -1,  1),
+	Vector3.new( 1, -1, -1),
+	Vector3.new( 1,  1, -1),
+	Vector3.new( 1,  1,  1),
+	Vector3.new( 1, -1,  1),
 }
 
 local DEFAULT_LOD = {
@@ -37,7 +44,7 @@ local DEFAULT_LOD = {
 	NearDistance       = 100,
 	MediumDistance     = 250,
 	OcclusionEnabled   = true,
-	OcclusionFrequency = 8,      
+	OcclusionFrequency = 4,
 }
 
 local DEFAULT_FLAGS = {
@@ -48,16 +55,16 @@ local DEFAULT_FLAGS = {
 
 local DEFAULT_SKELETON_MAPS = {
 	R15 = {
-		{"Head","UpperTorso"}, {"UpperTorso","LowerTorso"},
-		{"UpperTorso","LeftUpperArm"},  {"LeftUpperArm","LeftLowerArm"},   {"LeftLowerArm","LeftHand"},
-		{"UpperTorso","RightUpperArm"}, {"RightUpperArm","RightLowerArm"}, {"RightLowerArm","RightHand"},
-		{"LowerTorso","LeftUpperLeg"},  {"LeftUpperLeg","LeftLowerLeg"},   {"LeftLowerLeg","LeftFoot"},
-		{"LowerTorso","RightUpperLeg"}, {"RightUpperLeg","RightLowerLeg"}, {"RightLowerLeg","RightFoot"},
+		{ "Head", "UpperTorso" }, { "UpperTorso", "LowerTorso" },
+		{ "UpperTorso", "LeftUpperArm" },  { "LeftUpperArm", "LeftLowerArm" },   { "LeftLowerArm", "LeftHand" },
+		{ "UpperTorso", "RightUpperArm" }, { "RightUpperArm", "RightLowerArm" }, { "RightLowerArm", "RightHand" },
+		{ "LowerTorso", "LeftUpperLeg" },  { "LeftUpperLeg", "LeftLowerLeg" },   { "LeftLowerLeg", "LeftFoot" },
+		{ "LowerTorso", "RightUpperLeg" }, { "RightUpperLeg", "RightLowerLeg" }, { "RightLowerLeg", "RightFoot" },
 	},
 	R6 = {
-		{"Head","Torso"},
-		{"Torso","Left Arm"}, {"Torso","Right Arm"},
-		{"Torso","Left Leg"}, {"Torso","Right Leg"},
+		{ "Head", "Torso" },
+		{ "Torso", "Left Arm" }, { "Torso", "Right Arm" },
+		{ "Torso", "Left Leg" }, { "Torso", "Right Leg" },
 	},
 }
 
@@ -73,17 +80,16 @@ local DEFAULT_OPTIONS = {
 	UseOffscreenPoint     = true,
 	FilterLocalCharacter  = true,
 	AutoUntrackMissing    = true,
-	LOD                   = DEFAULT_LOD,
-	Flags                 = DEFAULT_FLAGS,
-	SkeletonMaps          = DEFAULT_SKELETON_MAPS,
-	CanDraw               = nil,
-	TextResolver          = function(model, meta) return model.Name end,
 
-	BatchSize             = 10,
-	
-	TextRefreshFrames     = 30,
-	
-	Box3DRefreshFrames    = 15,
+	LOD          = DEFAULT_LOD,
+	Flags        = DEFAULT_FLAGS,
+	SkeletonMaps = DEFAULT_SKELETON_MAPS,
+
+	CanDraw = nil,
+
+	TextResolver = function(model, meta)
+		return model.Name
+	end,
 }
 
 local function cloneTable(src)
@@ -109,6 +115,13 @@ local function mergeDeep(dst, src)
 	return dst
 end
 
+-- FIX: replaced the old single Reset() approach with BeginFrame / EndFrame.
+-- Old behaviour: all Drawing objects were set Visible=false at the TOP of
+-- RenderStep, leaving a window where the renderer could capture a fully-dark
+-- frame before the redraws completed.
+-- New behaviour: counters are reset at the start (objects stay visible from
+-- the previous frame), drawing proceeds normally, then only the surplus
+-- objects that weren't used this frame are hidden at the very END.
 local function newPool()
 	local self = { Objects = {} }
 
@@ -127,9 +140,11 @@ local function newPool()
 			obj = ctor(kind)
 			bucket.Objects[idx] = obj
 		end
+
 		return obj
 	end
 
+	-- Call at the START of a frame: reset counters only, leave objects visible.
 	function self:BeginFrame()
 		for _, bucket in pairs(self.Objects) do
 			bucket.PrevHighWater = bucket.Counter - 1
@@ -137,24 +152,30 @@ local function newPool()
 		end
 	end
 
+	-- Call at the END of a frame: hide only objects not used this frame.
 	function self:EndFrame()
 		for _, bucket in pairs(self.Objects) do
 			local used = bucket.Counter - 1
 			local prev = bucket.PrevHighWater
 			for i = used + 1, prev do
 				local obj = bucket.Objects[i]
-				if obj then obj.Visible = false end
+				if obj then
+					obj.Visible = false
+				end
 			end
 		end
 	end
 
+	-- Full reset kept for Stop() / Destroy() calls.
 	function self:Reset()
 		for _, bucket in pairs(self.Objects) do
 			bucket.Counter = 1
 			bucket.PrevHighWater = 0
 			for i = 1, #bucket.Objects do
 				local obj = bucket.Objects[i]
-				if obj then obj.Visible = false end
+				if obj then
+					obj.Visible = false
+				end
 			end
 		end
 	end
@@ -163,12 +184,27 @@ local function newPool()
 end
 
 function SIXSEVENESP.IsCharacterModel(model)
-	if typeof(model) ~= "Instance" or not model:IsA("Model") then return false end
+	if typeof(model) ~= "Instance" or not model:IsA("Model") then
+		return false
+	end
+
 	local hum = model:FindFirstChildOfClass("Humanoid")
-	if not hum then return false end
-	if hum.RigType ~= Enum.HumanoidRigType.R6 and hum.RigType ~= Enum.HumanoidRigType.R15 then return false end
-	if not model:FindFirstChild("HumanoidRootPart") then return false end
-	if not model:FindFirstChild("Head") then return false end
+	if not hum then
+		return false
+	end
+
+	if hum.RigType ~= Enum.HumanoidRigType.R6 and hum.RigType ~= Enum.HumanoidRigType.R15 then
+		return false
+	end
+
+	if not model:FindFirstChild("HumanoidRootPart") then
+		return false
+	end
+
+	if not model:FindFirstChild("Head") then
+		return false
+	end
+
 	return true
 end
 
@@ -176,20 +212,21 @@ function SIXSEVENESP.new(config)
 	local self = setmetatable({}, SIXSEVENESP)
 
 	self.Config = cloneTable(DEFAULT_OPTIONS)
-	if config then mergeDeep(self.Config, config) end
+	if config then
+		mergeDeep(self.Config, config)
+	end
 
 	self.Enabled       = self.Config.Enabled ~= false
-	self._tracked      = {}   
-	self._modelArray   = {}   
+	self._tracked      = {}
 	self._meta         = {}
 	self._frameCache   = {}
+
 	self._bboxCache    = {}
 	self._camCache     = nil
 	self._pool         = newPool()
 	self._connections  = {}
 	self._running      = false
 	self._frameCount   = 0
-	self._batchIndex   = 0   
 
 	return self
 end
@@ -225,9 +262,7 @@ function SIXSEVENESP:Track(model)
 	if not self.IsCharacterModel(model) then
 		return false, "Model is not a valid character rig"
 	end
-	if self._tracked[model] then return true end  
 	self._tracked[model] = true
-	table.insert(self._modelArray, model)
 	return true
 end
 
@@ -241,13 +276,6 @@ function SIXSEVENESP:Untrack(model)
 	self._meta[model]       = nil
 	self._frameCache[model] = nil
 	self._bboxCache[model]  = nil
-	
-	for i, m in ipairs(self._modelArray) do
-		if m == model then
-			table.remove(self._modelArray, i)
-			break
-		end
-	end
 end
 
 function SIXSEVENESP:ClearCharacters()
@@ -257,7 +285,6 @@ function SIXSEVENESP:ClearCharacters()
 		end
 	end
 	table.clear(self._tracked)
-	table.clear(self._modelArray)
 	table.clear(self._meta)
 	table.clear(self._frameCache)
 	table.clear(self._bboxCache)
@@ -272,10 +299,14 @@ end
 
 function SIXSEVENESP:GetMeta(model)
 	local meta = self._meta[model]
-	if meta then return meta end
+	if meta then
+		return meta
+	end
 
 	local hum = model:FindFirstChildOfClass("Humanoid")
-	if not hum then return nil end
+	if not hum then
+		return nil
+	end
 
 	local rigName = hum.RigType.Name
 	local map     = self.Config.SkeletonMaps[rigName]
@@ -297,15 +328,9 @@ function SIXSEVENESP:GetMeta(model)
 		bones     = bones,
 		pts       = { false, false, false, false },
 		occluded  = false,
-		occludeAt = -999,
+		occludeAt = -self.Config.LOD.OcclusionFrequency,
 
 		ignoreList = {},
-
-		_lastTextFrame = -999,
-		_lastBox3DFrame = -999,
-		_cachedCorners  = nil,
-		_cachedValid    = nil,
-		_cachedText     = "",
 
 		opts = {
 			Color         = false,
@@ -317,6 +342,7 @@ function SIXSEVENESP:GetMeta(model)
 			Size          = 0,
 			Text          = "",
 		},
+
 		pivot = Vector3.new(),
 	}
 
@@ -334,16 +360,24 @@ end
 function SIXSEVENESP:GetOffscreenPoint(pos)
 	local cam = self:GetCamera()
 	if not cam then return nil end
+
 	local vp     = cam.ViewportSize
 	local center = vp * 0.5
 	local vec    = pos - cam.CFrame.Position
-	if vec.Magnitude == 0 then return center end
+	if vec.Magnitude == 0 then
+		return center
+	end
+
 	local dir = vec.Unit
 	local dx  = dir:Dot(cam.CFrame.RightVector)
 	local dy  = dir:Dot(cam.CFrame.UpVector)
 	local flat = v2(dx, -dy)
-	if flat.Magnitude == 0 then return center end
+	if flat.Magnitude == 0 then
+		return center
+	end
+
 	flat = flat.Unit
+
 	local sx = flat.X ~= 0 and abs(center.X / flat.X) or huge
 	local sy = flat.Y ~= 0 and abs(center.Y / flat.Y) or huge
 	return center + flat * min(sx, sy)
@@ -352,18 +386,27 @@ end
 function SIXSEVENESP:ToScreenPoint(pos, allowOffscreen)
 	local cam = self:GetCamera()
 	if not cam then return nil, false end
-	if typeof(pos) == "CFrame" then pos = pos.Position end
+
+	if typeof(pos) == "CFrame" then
+		pos = pos.Position
+	end
+
 	local p, onScreen = cam:WorldToViewportPoint(pos)
 	if not onScreen and allowOffscreen and self.Config.UseOffscreenPoint then
 		local edge = self:GetOffscreenPoint(pos)
-		if edge then return edge, false end
+		if edge then
+			return edge, false
+		end
 	end
+
 	return v2(p.X, p.Y), onScreen
 end
 
 function SIXSEVENESP:GetModelBBox(model)
 	local cached = self._bboxCache[model]
-	if cached then return cached[1], cached[2] end
+	if cached then
+		return cached[1], cached[2]
+	end
 	local cframe, size = model:GetBoundingBox()
 	self._bboxCache[model] = { cframe, size }
 	return cframe, size
@@ -371,7 +414,9 @@ end
 
 function SIXSEVENESP:Get2DBoxPoints(model, meta)
 	local cached = self._frameCache[model]
-	if cached ~= nil then return cached end
+	if cached ~= nil then
+		return cached
+	end
 
 	local cam = self:GetCamera()
 	if not cam then
@@ -381,6 +426,7 @@ function SIXSEVENESP:Get2DBoxPoints(model, meta)
 
 	local cframe, size = self:GetModelBBox(model)
 	local cfPos = cframe.Position
+
 	local pos, onScreen = cam:WorldToViewportPoint(cfPos)
 	if not onScreen or pos.Z <= 0 then
 		self._frameCache[model] = false
@@ -391,6 +437,7 @@ function SIXSEVENESP:Get2DBoxPoints(model, meta)
 	local up     = cframe.UpVector
 	local topRaw = cam:WorldToViewportPoint(cfPos + up * halfH)
 	local botRaw = cam:WorldToViewportPoint(cfPos - up * halfH)
+
 	if topRaw.Z <= 0 or botRaw.Z <= 0 then
 		self._frameCache[model] = false
 		return nil
@@ -423,9 +470,9 @@ function SIXSEVENESP:Get3DBoxCorners(model)
 		local localOffset = size * 0.5 * VERTICES[i]
 		local worldPos    = cframe:PointToWorldSpace(localOffset)
 		local screen, onScreen = cam:WorldToViewportPoint(worldPos)
-		local ok = onScreen and screen.Z > 0
-		corners[i] = v2(screen.X, screen.Y)
-		valid[i]   = ok
+		local ok             = onScreen and screen.Z > 0
+		corners[i]           = v2(screen.X, screen.Y)
+		valid[i]             = ok
 		if ok then anyVisible = true end
 	end
 
@@ -438,7 +485,7 @@ function SIXSEVENESP:IsObstructedThrottled(pivot, ignoreList, meta, frame)
 		meta.occluded = false
 		return false
 	end
-	local freq = self.Config.LOD.OcclusionFrequency or 8
+	local freq = self.Config.LOD.OcclusionFrequency
 	if frame - meta.occludeAt < freq then
 		return meta.occluded
 	end
@@ -464,50 +511,76 @@ function SIXSEVENESP:IsObstructedThrottled(pivot, ignoreList, meta, frame)
 	meta.rayParams.FilterDescendantsInstances = ignoreList
 
 	local result = Workspace:Raycast(cam.CFrame.Position, dir, meta.rayParams)
+
 	local solid = false
 	if result and result.Instance then
 		local hit = result.Instance
 		solid = hit:IsA("BasePart") and hit.Transparency < 0.7
 	end
+
 	meta.occluded = solid
 	return solid
 end
 
 function SIXSEVENESP:Draw2DBox(pts, opts)
-	local color = opts.Color or self.Config.Color
+	local color        = opts.Color or self.Config.Color
 	local tl, tr, bl, br = pts[1], pts[2], pts[3], pts[4]
 
-	local top = self:GetObject("Line")
-	top.Color = color; top.From = tl; top.To = tr; top.Visible = true
+	local top     = self:GetObject("Line")
+	top.Color     = color
+	top.From      = tl
+	top.To        = tr
+	top.Visible   = true
 
-	local bot = self:GetObject("Line")
-	bot.Color = color; bot.From = bl; bot.To = br; bot.Visible = true
+	local bot     = self:GetObject("Line")
+	bot.Color     = color
+	bot.From      = bl
+	bot.To        = br
+	bot.Visible   = true
 
-	local lft = self:GetObject("Line")
-	lft.Color = color; lft.From = tl; lft.To = bl; lft.Visible = true
+	local lft     = self:GetObject("Line")
+	lft.Color     = color
+	lft.From      = tl
+	lft.To        = bl
+	lft.Visible   = true
 
-	local rgt = self:GetObject("Line")
-	rgt.Color = color; rgt.From = tr; rgt.To = br; rgt.Visible = true
+	local rgt     = self:GetObject("Line")
+	rgt.Color     = color
+	rgt.From      = tr
+	rgt.To        = br
+	rgt.Visible   = true
 end
 
 function SIXSEVENESP:Draw3DBox(corners, valid, opts)
 	local color = opts.Box3DColor or opts.Color or self.Config.Box3DColor
+
 	for i = 1, 4 do
 		local iNext     = i == 4 and 1 or i + 1
 		local iBack     = i == 4 and 5 or i + 5
 		local iBackNext = i == 4 and 8 or i + 4
 
 		if valid[i] and valid[iNext] then
-			local line = self:GetObject("Line")
-			line.From = corners[i]; line.To = corners[iNext]; line.Color = color; line.Visible = true
+			local line1   = self:GetObject("Line")
+			line1.From    = corners[i]
+			line1.To      = corners[iNext]
+			line1.Color   = color
+			line1.Visible = true
 		end
+
 		if valid[iNext] and valid[iBack] then
-			local line = self:GetObject("Line")
-			line.From = corners[iNext]; line.To = corners[iBack]; line.Color = color; line.Visible = true
+			local line2   = self:GetObject("Line")
+			line2.From    = corners[iNext]
+			line2.To      = corners[iBack]
+			line2.Color   = color
+			line2.Visible = true
 		end
+
 		if valid[iBack] and valid[iBackNext] then
-			local line = self:GetObject("Line")
-			line.From = corners[iBack]; line.To = corners[iBackNext]; line.Color = color; line.Visible = true
+			local line3   = self:GetObject("Line")
+			line3.From    = corners[iBack]
+			line3.To      = corners[iBackNext]
+			line3.Color   = color
+			line3.Visible = true
 		end
 	end
 end
@@ -525,8 +598,8 @@ function SIXSEVENESP:DrawTracer(model, pts, opts)
 		target = sp
 	end
 
-	local origin
 	local tracerOrigin = opts.TracerOrigin
+	local origin
 	if type(tracerOrigin) == "function" then
 		origin = tracerOrigin()
 	elseif tracerOrigin ~= nil then
@@ -536,24 +609,33 @@ function SIXSEVENESP:DrawTracer(model, pts, opts)
 		origin = v2(vp.X * 0.5, vp.Y - 10)
 	end
 
-	local l = self:GetObject("Line")
-	l.Color = opts.Color or self.Config.Color
-	l.From = origin; l.To = target; l.Visible = true
+	local l     = self:GetObject("Line")
+	l.Color     = opts.Color or self.Config.Color
+	l.From      = origin
+	l.To        = target
+	l.Visible   = true
 end
 
 function SIXSEVENESP:DrawSkeleton(opts, meta)
 	local cam = self:GetCamera()
 	if not cam then return end
+
 	local color = opts.SkeletonColor or opts.Color or self.Config.SkeletonColor
 	for _, pair in ipairs(meta.bones) do
 		local partA, partB = pair[1], pair[2]
-		if partA.Parent and partB.Parent then
-			local pA, okA = cam:WorldToViewportPoint(partA.Position)
-			local pB, okB = cam:WorldToViewportPoint(partB.Position)
-			if pA.Z > 0 and pB.Z > 0 and (okA or okB) then
-				local line = self:GetObject("Line")
-				line.From = v2(pA.X, pA.Y); line.To = v2(pB.X, pB.Y); line.Color = color; line.Visible = true
-			end
+		if not partA.Parent or not partB.Parent then
+			continue
+		end
+
+		local pA, okA = cam:WorldToViewportPoint(partA.Position)
+		local pB, okB = cam:WorldToViewportPoint(partB.Position)
+		local inFront = pA.Z > 0 and pB.Z > 0
+		if inFront and (okA or okB) then
+			local line   = self:GetObject("Line")
+			line.From    = v2(pA.X, pA.Y)
+			line.To      = v2(pB.X, pB.Y)
+			line.Color   = color
+			line.Visible = true
 		end
 	end
 end
@@ -561,37 +643,49 @@ end
 function SIXSEVENESP:DrawHealth(pts, opts, meta)
 	local hum = meta.hum
 	if not hum or hum.MaxHealth <= 0 then return end
+
 	local tl, bl = pts[1], pts[3]
 	local wY = bl.Y - tl.Y
 	if wY == 0 then return end
+
 	local nudge = v2(wY * 0.1, 0)
-	local pct = clamp(hum.Health / hum.MaxHealth, 0, 1)
-	local tip = tl:Lerp(bl, 1 - pct)
+	local pct   = clamp(hum.Health / hum.MaxHealth, 0, 1)
+	local tip   = tl:Lerp(bl, 1 - pct)
 
 	if pct < 1 then
-		local bg = self:GetObject("Line")
-		bg.From = tl - nudge; bg.To = bl - nudge; bg.Color = opts.EmptyColor or self.Config.EmptyColor; bg.Visible = true
+		local bg    = self:GetObject("Line")
+		bg.From     = tl - nudge
+		bg.To       = bl - nudge
+		bg.Color    = opts.EmptyColor or self.Config.EmptyColor
+		bg.Visible  = true
 	end
+
 	if pct > 0 then
-		local bar = self:GetObject("Line")
-		bar.From = tip - nudge; bar.To = bl - nudge; bar.Color = opts.HealthColor or self.Config.HealthColor; bar.Visible = true
+		local bar   = self:GetObject("Line")
+		bar.From    = tip - nudge
+		bar.To      = bl - nudge
+		bar.Color   = opts.HealthColor or self.Config.HealthColor
+		bar.Visible = true
 	end
 end
 
 function SIXSEVENESP:DrawLabel(pts, opts)
-	local size = opts.Size or self.Config.TextSize
+	local size   = opts.Size or self.Config.TextSize
 	local tl, tr = pts[1], pts[2]
-	local cx = (tl.X + tr.X) * 0.5
+	local cx     = (tl.X + tr.X) * 0.5
 	local anchorY = tl.Y
 
-	local t = self:GetObject("Text")
-	t.Text = opts.Text or "?"
-	t.Color = opts.TextColor or self.Config.TextColor
-	t.Size = size; t.Center = true; t.Outline = true; t.Visible = true
-	t.Position = v2(cx, anchorY - size - 2)
+	local t     = self:GetObject("Text")
+	t.Text      = opts.Text or "?"
+	t.Color     = opts.TextColor or self.Config.TextColor
+	t.Size      = size
+	t.Center    = true
+	t.Outline   = true
+	t.Visible   = true
+	t.Position  = v2(cx, anchorY - size - 2)
 end
 
-function SIXSEVENESP:DrawModel(model, flags, opts, meta, frame)
+function SIXSEVENESP:DrawModel(model, flags, opts, meta)
 	local pts = self:Get2DBoxPoints(model, meta)
 
 	if flags.Box and pts then
@@ -599,16 +693,9 @@ function SIXSEVENESP:DrawModel(model, flags, opts, meta, frame)
 	end
 
 	if flags.Box3D then
-		
-		local refreshInterval = self.Config.Box3DRefreshFrames or 15
-		if frame - (meta._lastBox3DFrame or 0) >= refreshInterval then
-			local corners, valid = self:Get3DBoxCorners(model)
-			meta._cachedCorners = corners
-			meta._cachedValid = valid
-			meta._lastBox3DFrame = frame
-		end
-		if meta._cachedCorners then
-			self:Draw3DBox(meta._cachedCorners, meta._cachedValid, opts)
+		local corners, valid = self:Get3DBoxCorners(model)
+		if corners then
+			self:Draw3DBox(corners, valid, opts)
 		end
 	end
 
@@ -627,15 +714,19 @@ function SIXSEVENESP:DrawModel(model, flags, opts, meta, frame)
 	end
 
 	if flags.Label then
-		
-		local textInterval = self.Config.TextRefreshFrames or 30
-		if frame - (meta._lastTextFrame or 0) >= textInterval then
-			meta._cachedText = self.Config.TextResolver(model, meta)
-			meta._lastTextFrame = frame
-		end
-		local labelOpts = cloneTable(opts)  
-		labelOpts.Text = meta._cachedText or opts.Text
-		self:DrawLabel(pts, labelOpts)
+		self:DrawLabel(pts, opts)
+	end
+end
+
+function SIXSEVENESP:GetLODFlags(distSq, nearDistSq, mediumDistSq)
+	local flags = self.Config.Flags
+
+	if distSq <= nearDistSq then
+		return flags.Near
+	elseif distSq <= mediumDistSq then
+		return flags.Medium
+	else
+		return flags.Far
 	end
 end
 
@@ -659,66 +750,46 @@ function SIXSEVENESP:RenderStep()
 	local nearDistSq   = lod.NearDistance   * lod.NearDistance
 	local mediumDistSq = lod.MediumDistance * lod.MediumDistance
 
-	local batchSize = self.Config.BatchSize or 10
-	local nModels = #self._modelArray
-	if nModels == 0 then
-		self._pool:EndFrame()
-		return
-	end
-
-	self._batchIndex = (self._batchIndex % nModels) + 1
-
-	local processed = 0
-	local idx = self._batchIndex
 	local toUntrack = {}
-
-	while processed < batchSize do
-		local model = self._modelArray[idx]
-		idx = idx % nModels + 1
+	for model in pairs(self._tracked) do
 		if not model or not model.Parent then
 			if self.Config.AutoUntrackMissing then
 				toUntrack[#toUntrack + 1] = model
 			end
-			processed += 1
-			
-			goto continue
+			continue
 		end
 
 		if self.Config.FilterLocalCharacter and model == lpChar then
-			processed += 1
-			goto continue
+			continue
 		end
 
 		if not model:FindFirstChildOfClass("Humanoid")
 			or not model:FindFirstChild("HumanoidRootPart") then
-			processed += 1
-			goto continue
+			continue
 		end
 
 		if self.Config.CanDraw then
 			local ok = self.Config.CanDraw(model)
 			if ok == false then
-				processed += 1
-				goto continue
+				continue
 			end
 		end
 
 		local pivot = model:GetPivot().Position
-		local dx = pivot.X - camPos.X
-		local dy = pivot.Y - camPos.Y
-		local dz = pivot.Z - camPos.Z
+
+		local dx    = pivot.X - camPos.X
+		local dy    = pivot.Y - camPos.Y
+		local dz    = pivot.Z - camPos.Z
 		local distSq = dx * dx + dy * dy + dz * dz
 
 		if distSq > maxDistSq then
-			processed += 1
-			goto continue
+			continue
 		end
 
 		local flags = self:GetLODFlags(distSq, nearDistSq, mediumDistSq)
 		local meta  = self:GetMeta(model)
 		if not meta then
-			processed += 1
-			goto continue
+			continue
 		end
 
 		meta.pivot = pivot
@@ -733,8 +804,7 @@ function SIXSEVENESP:RenderStep()
 		end
 
 		if self:IsObstructedThrottled(pivot, ignoreList, meta, self._frameCount) then
-			processed += 1
-			goto continue
+			continue
 		end
 
 		local cfg  = self.Config
@@ -746,16 +816,11 @@ function SIXSEVENESP:RenderStep()
 		opts.SkeletonColor = cfg.SkeletonColor
 		opts.TextColor     = cfg.TextColor
 		opts.Size          = cfg.TextSize
-		
+		opts.Text          = cfg.TextResolver(model, meta)
 		opts.TracerOrigin  = cfg.TracerOrigin
 		opts.Pivot         = pivot
 
-		self:DrawModel(model, flags, opts, meta, self._frameCount)
-
-		processed += 1
-
-		::continue::
-		if idx == self._batchIndex then break end  
+		self:DrawModel(model, flags, opts, meta)
 	end
 
 	for _, m in ipairs(toUntrack) do
@@ -768,8 +833,6 @@ end
 function SIXSEVENESP:Start()
 	if self._running then return end
 	self._running = true
-	self._batchIndex = 0
-	self._frameCount = 0
 
 	self._connections.Render = RunService.PreRender:Connect(function()
 		if self.Enabled then
@@ -790,18 +853,12 @@ end
 function SIXSEVENESP:Destroy()
 	self:Stop()
 	self:ClearCharacters()
+
 	for _, bucket in pairs(self._pool.Objects) do
 		for _, obj in ipairs(bucket.Objects) do
 			if obj then obj:Remove() end
 		end
 	end
-end
-
-function SIXSEVENESP:GetLODFlags(distSq, nearDistSq, mediumDistSq)
-	local flags = self.Config.Flags
-	if distSq <= nearDistSq then return flags.Near
-	elseif distSq <= mediumDistSq then return flags.Medium
-	else return flags.Far end
 end
 
 return SIXSEVENESP
