@@ -98,8 +98,6 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod and h
     local _playerCache    = limbData.playerCache
     local _fakeSignals     = limbData.fakeSignals
     local _spoofedConns    = limbData.spoofedConns
-    local _partData        = limbData.partData
-
     limbData._bypassHooks = false
 
     local sampleConn = Instance_new("BindableEvent").Event:Connect(function() end)
@@ -150,58 +148,12 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod and h
         return PhysProps_new(part.Material).Density
     end
 
-    local function computePartMass(part, entry)
-        local pd = entry._partData and entry._partData[part]
-        if not pd then return part.Mass end
-        if pd.massless then return 0 end
-        local size = pd.size
-        local density = pd.density
-        return density * (size.X * size.Y * size.Z)
-    end
-
-    local function computeExtentsSize(char, entry)
-        local minVec = Vector3_new(math.huge, math.huge, math.huge)
-        local maxVec = Vector3_new(-math.huge, -math.huge, -math.huge)
-        local function expand(part, size)
-            local cf = part.CFrame
-            local half = size * 0.5
-            local corners = {
-                cf * Vector3_new( half.X,  half.Y,  half.Z),
-                cf * Vector3_new( half.X,  half.Y, -half.Z),
-                cf * Vector3_new( half.X, -half.Y,  half.Z),
-                cf * Vector3_new( half.X, -half.Y, -half.Z),
-                cf * Vector3_new(-half.X,  half.Y,  half.Z),
-                cf * Vector3_new(-half.X,  half.Y, -half.Z),
-                cf * Vector3_new(-half.X, -half.Y,  half.Z),
-                cf * Vector3_new(-half.X, -half.Y, -half.Z),
-            }
-            for _, corner in ipairs(corners) do
-                minVec = Vector3_new(math_min(minVec.X, corner.X), math_min(minVec.Y, corner.Y), math_min(minVec.Z, corner.Z))
-                maxVec = Vector3_new(math_max(maxVec.X, corner.X), math_max(maxVec.Y, corner.Y), math_max(maxVec.Z, corner.Z))
-            end
-        end
-        for _, part in ipairs(char:GetDescendants()) do
-            if part:IsA("BasePart") then
-                local size
-                if part == entry.Limb then
-                    size = entry.OriginalSize
-                elseif entry._partData and entry._partData[part] then
-                    size = entry._partData[part].size
-                else
-                    size = part.Size
-                end
-                expand(part, size)
-            end
-        end
-        return Vector3_new(maxVec.X - minVec.X, maxVec.Y - minVec.Y, maxVec.Z - minVec.Z)
-    end
-
     local oldNewIndex
     oldNewIndex = hookmetamethod(game, "__newindex", newcclosure(function(...)
         local self, key, value = ...
         if not checkcaller() then
             local data, instType = getTargetData(self)
-            if data and instType == "Part" and BLOCKED_PROPS[key] then
+            if data and instType == "Part" and self == data.Limb and BLOCKED_PROPS[key] then
                 if key == "Size" then data.OriginalSize = value
                 elseif key == "Transparency" then data.OriginalTransparency = value
                 elseif key == "CanCollide" then data.OriginalCanCollide = value
@@ -220,14 +172,6 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod and h
                 if propFake then propFake:Fire() end
 
                 return
-            elseif data and instType == "CharPart" and key == "Massless" then
-                local pd = data._partData and data._partData[self]
-                if pd then
-                    pd.massless = value
-                end
-                local changedFake = _fakeSignals[data.Limb] and _fakeSignals[data.Limb]["__Changed"]
-                if changedFake then changedFake:Fire(key) end
-                return
             end
         end
         return oldNewIndex(...)
@@ -245,7 +189,7 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod and h
 
             local data, instType = getTargetData(self)
             if data then
-                if instType == "Part" and BLOCKED_PROPS[key] then
+                if instType == "Part" and self == data.Limb and BLOCKED_PROPS[key] then
                     if key == "Size"                     then return data.OriginalSize         end
                     if key == "Transparency"             then return data.OriginalTransparency  end
                     if key == "CanCollide"               then return data.OriginalCanCollide    end
@@ -267,16 +211,9 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod and h
                     if key == "CustomPhysicalProperties" then return data.OriginalPhysProps     end
                     if key == "CurrentPhysicalProperties" then return data.OriginalPhysProps    end
                     if key == "RootPriority"             then return data.OriginalRootPriority  end
-                elseif instType == "Model" then
+                elseif instType == "Model" and self == data.Character then
                     if key == "ExtentsSize" then
-                        return computeExtentsSize(self, data)
-                    end
-                elseif instType == "CharPart" then
-                    if key == "AssemblyMass" then
-                        return computePartMass(self, data)
-                    end
-                    if key == "AssemblyCenterOfMass" then
-                        return self.Position
+                        return data.OriginalExtents
                     end
                 end
             end
@@ -294,20 +231,19 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod and h
 
             local data, instType = getTargetData(self)
             if data then
-                if instType == "Part" then
+                if instType == "Part" and self == data.Limb then
                     if method == "GetMass" then
                         local density = data.OriginalDensity or getPartDensity(self)
                         local size = data.OriginalSize
                         return density * (size.X * size.Y * size.Z)
                     end
-                elseif instType == "Model" then
+                elseif instType == "Model" and self == data.Character then
                     if method == "GetExtentsSize" then
-                        return computeExtentsSize(self, data)
+                        return data.OriginalExtents
                     end
                     if method == "GetBoundingBox" then
-                        local extents = computeExtentsSize(self, data)
                         local cf = self:GetPrimaryPartCFrame()
-                        return cf, extents
+                        return cf, data.OriginalExtents
                     end
                 end
             end
@@ -406,18 +342,6 @@ local function sharedSaveData(parent, cacheKey, char, limb)
         if entry.Character and entry.Character ~= char then
             limbData.instanceLookup[entry.Character] = nil
         end
-        if entry._charParts then
-            for _, part in ipairs(entry._charParts) do
-                limbData.instanceLookup[part] = nil
-            end
-            entry._charParts = nil
-        end
-        if entry._partData then
-            for part, _ in pairs(entry._partData) do
-                limbData.partData[part] = nil
-            end
-            entry._partData = nil
-        end
     else
         entry = {}
         cache[cacheKey] = entry
@@ -439,25 +363,6 @@ local function sharedSaveData(parent, cacheKey, char, limb)
 
     limbData.instanceLookup[limb] = { data = entry, type = "Part"  }
     limbData.instanceLookup[char] = { data = entry, type = "Model" }
-
-    entry._partData = {}
-    local charParts     = {}
-    local charPartEntry = { data = entry, type = "CharPart" }
-    for _, part in ipairs(char:GetDescendants()) do
-        if part:IsA("BasePart") then
-            if part ~= limb then
-                limbData.instanceLookup[part] = charPartEntry
-                table_insert(charParts, part)
-            end
-            entry._partData[part] = {
-                size = part.Size,
-                density = getPartDensitySafe(part),
-                massless = part.Massless,
-            }
-            limbData.partData[part] = entry._partData[part]
-        end
-    end
-    entry._charParts = charParts
 
     perPartHookGetPropertyChangedSignal(limb)
     neutralizeRealListeners(limb)
@@ -494,25 +399,11 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
         end
     end
 
-    if entry._partData then
-        for part, _ in pairs(entry._partData) do
-            limbData.partData[part] = nil
-            limbData.instanceLookup[part] = nil
-        end
-        entry._partData = nil
-    end
-
     if entry.Limb then limbData.instanceLookup[entry.Limb] = nil end
     if activeLimb and activeLimb ~= entry.Limb then
         limbData.instanceLookup[activeLimb] = nil
     end
     if entry.Character then limbData.instanceLookup[entry.Character] = nil end
-    if entry._charParts then
-        for _, part in ipairs(entry._charParts) do
-            limbData.instanceLookup[part] = nil
-        end
-        entry._charParts = nil
-    end
     cache[cacheKey] = nil
 end
 
