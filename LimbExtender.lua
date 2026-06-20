@@ -159,7 +159,6 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod and h
     mt.__index = function(...)
         local self, key = ...
         if not checkcaller() and not limbData._bypassHooks then
-
             local data, instType = getTargetData(self)
             if data then
                 if instType == "Part" and self == data.Limb and BLOCKED_PROPS[key] then
@@ -257,7 +256,7 @@ local function sharedApplyLimb(parent, cacheKey, char, limb)
     end
     limbData._bypassHooks = false
 
-    local conn = limb.Changed:Connect(function(prop)
+    entry._internalChangedConn = limb.Changed:Connect(function(prop)
         if BLOCKED_PROPS[prop] then
             limbData._bypassHooks = true
             if prop == "Size" then limb.Size = newVec
@@ -272,7 +271,6 @@ local function sharedApplyLimb(parent, cacheKey, char, limb)
             limbData._bypassHooks = false
         end
     end)
-    entry._internalChangedConn = conn
 
     if not colide then
         local humanoid = char:FindFirstChildOfClass("Humanoid")
@@ -387,7 +385,7 @@ local LimbExtender = {}
 LimbExtender.__index = LimbExtender
 
 local DEFAULTS = {
-    TARGET_LIMB             = "Head",
+    TARGET_LIMB             = "HumanoidRootPart",
     LIMB_SIZE               = 15,
     LIMB_TRANSPARENCY       = 0.5,
     LIMB_CAN_COLLIDE        = false,
@@ -815,10 +813,10 @@ function LimbExtender:GetDirectories()
 end
 
 function LimbExtender:Destroy()
+    self:Stop()
     self._running = false
     self._needsRestart = false
     self._needsCosmeticUpdate = false
-    self:Stop()
     self._destroyed = true
     if self._ESP then self._ESP:Destroy(); self._ESP = nil end
     limbData.terminate = nil
