@@ -848,16 +848,20 @@ function LimbExtender:_removeLimbs(player, char, limb)
 end
 
 function LimbExtender:_doRestart()
-    local BATCH_SIZE = 10
+    if not self._running then return end
+
+    self._suppressOnLimbLost = true
+    self._manager:Stop()
+
     local cache = self._playerCache
     local keys = {}
     for k in pairs(cache) do
         table_insert(keys, k)
     end
 
-    self._suppressOnLimbLost = true
-
+    local BATCH_SIZE = 10
     for i = 1, #keys, BATCH_SIZE do
+        if not self._running then break end
         local last = math_min(i + BATCH_SIZE - 1, #keys)
         for j = i, last do
             local key = keys[j]
@@ -872,14 +876,16 @@ function LimbExtender:_doRestart()
     self._suppressOnLimbLost = false
     table_clear(cache)
 
-    self._manager:Stop()
     if self._ESP then self._ESP:Stop() end
+
+    if not self._running then return end
 
     self._manager:Start()
     if self._ESP then self._ESP:Start() end
 end
 
 function LimbExtender:_doCosmeticUpdate()
+    if not self._running then return end
     local BATCH_SIZE = 10
     local settings = self._settings
     local entries = {}
@@ -890,7 +896,7 @@ function LimbExtender:_doCosmeticUpdate()
     end
 
     for i = 1, #entries, BATCH_SIZE do
-        if self._needsRestart then return end
+        if self._needsRestart or not self._running then return end
         local last = math_min(i + BATCH_SIZE - 1, #entries)
         for j = i, last do
             reapplyCosmeticToEntry(entries[j], settings)
@@ -900,7 +906,7 @@ function LimbExtender:_doCosmeticUpdate()
 end
 
 function LimbExtender:_processWork()
-    while self._needsRestart or self._needsCosmeticUpdate do
+    while self._running and (self._needsRestart or self._needsCosmeticUpdate) do
         if self._needsRestart then
             self._needsRestart = false
             self:_doRestart()
@@ -922,13 +928,13 @@ end
 function LimbExtender:Stop()
     if self._destroyed or not self._running then return end
     self._running = false
+    self._needsRestart = false
+    self._needsCosmeticUpdate = false
     self._manager:Stop()
-
     for cacheKey, entry in pairs(self._playerCache) do
         sharedRestoreLimb(self, cacheKey, entry.Limb)
     end
     table_clear(self._playerCache)
-
     if self._ESP then self._ESP:Stop() end
 end
 
@@ -1044,7 +1050,7 @@ function LimbExtender:Set(key, value)
         self._needsCosmeticUpdate = true
     end
 
-    if not self._workRunning then
+    if self._running and not self._workRunning then
         self._workRunning = true
         task_spawn(function()
             task_wait()
@@ -1070,6 +1076,7 @@ function LimbExtender:GetDirectories()
 end
 
 function LimbExtender:Destroy()
+    self._running = false
     self._needsRestart = false
     self._needsCosmeticUpdate = false
     self:Stop()
