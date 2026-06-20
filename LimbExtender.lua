@@ -40,9 +40,6 @@ local Vector3_new = Vector3.new
 local PhysProps_new = PhysicalProperties.new
 local CFrame_new = CFrame.new
 
-local function _safeGet(obj, key) return obj[key] end
-local function _disconnect(conn) conn:Disconnect() end
-
 limbData.playerCache    = limbData.playerCache    or {}
 limbData.instanceLookup = limbData.instanceLookup or setmetatable({}, { __mode = "k" })
 limbData.npcIdCounter   = limbData.npcIdCounter   or 0
@@ -57,7 +54,6 @@ end
 local has_newcclosure    = type(newcclosure)    == "function"
 local has_hookmetamethod = type(hookmetamethod) == "function"
 local has_loadstring     = type(loadstring)     == "function"
-local has_hookfunction   = type(hookfunction)   == "function"
 local has_httpget = pcall(function()
     local f = game.HttpGet
     if type(f) ~= "function" then error("not callable") end
@@ -75,18 +71,6 @@ local BLOCKED_PROPS = {
     CurrentPhysicalProperties = true,
     RootPriority = true,
 }
-
-local function ensureFakeSignal(part, prop)
-    local sigs = limbData.fakeSignals[part]
-    if not sigs then
-        sigs = {}
-        limbData.fakeSignals[part] = sigs
-    end
-    if not sigs[prop] then
-        sigs[prop] = Instance_new("BindableEvent")
-    end
-    return sigs[prop]
-end
 
 local ESP_SOURCE_URL = "https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/esp/SIXSEVENESP.lua"
 
@@ -121,7 +105,6 @@ local function getAdjustedPhysicalProperties(limb, origSize, newSize)
     return PhysProps_new(newDensity, origPhys.Friction, origPhys.Elasticity, origPhys.FrictionWeight, origPhys.ElasticityWeight)
 end
 
--- Global metamethod hooks (on game)
 if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod and has_checkcaller then
     limbData._spoofInstalled = true
 
@@ -146,13 +129,14 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod and h
         return nil, nil
     end
 
-    local function getPartDensity(part)
-        local phys = part.CustomPhysicalProperties
-        if phys then return phys.Density end
-        return PhysProps_new(part.Material).Density
-    end
+	local mt = getrawmetatable(game)
+	local oldnewIndex = mt.__newindex
+	local oldIndex = mt.__index
+	local oldNamecall =  mt.__namecall
 
-    local oldNewIndex = hookmetamethod(game, "__newindex", newcclosure(function(...)
+	setreadonly(mt, false)
+	
+	mt.__newindex = function(...)
         local self, key, value = ...
         if not checkcaller() and not limbData._bypassHooks then
             local data, instType = getTargetData(self)
@@ -167,23 +151,14 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod and h
                 elseif key == "CustomPhysicalProperties" then data.OriginalPhysProps = value
                 elseif key == "RootPriority" then data.OriginalRootPriority = value
                 end
-                local sigs = _fakeSignals[self]
-                if sigs then
-                    if sigs["__Changed"] then sigs["__Changed"]:Fire(key) end
-                    if sigs[key] then sigs[key]:Fire() end
-                end
-                return
             end
         end
-        return oldNewIndex(...)
-    end))
+        return oldnewIndex(...)
+	end
 
-    local oldIndex = hookmetamethod(game, "__index", newcclosure(function(...)
+    mt.__index = function(...)
         local self, key = ...
         if not checkcaller() and not limbData._bypassHooks then
-            if key == "Changed" and typeof(self) == "Instance" and self:IsA("BasePart") and self.Name == (limbData.targetLimbName or "HumanoidRootPart") then
-                return ensureFakeSignal(self, "__Changed").Event
-            end
 
             local data, instType = getTargetData(self)
             if data then
@@ -217,39 +192,8 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod and h
             end
         end
         return oldIndex(...)
-    end))
-
-    local oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(...)
-        local self = ...
-        local method = getnamecallmethod()
-        if not checkcaller() and not limbData._bypassHooks then
-            local data, instType = getTargetData(self)
-            if data then
-                if instType == "Part" and self == data.Limb then
-                    if method == "GetMass" then
-                        local density = data.OriginalDensity or getPartDensity(self)
-                        local size = data.OriginalSize
-                        return density * (size.X * size.Y * size.Z)
-                    end
-                    if method == "GetPropertyChangedSignal" then
-                        local prop = select(2, ...)
-                        if BLOCKED_PROPS[prop] then
-                            return ensureFakeSignal(self, prop).Event
-                        end
-                    end
-                elseif instType == "Model" and self == data.Character then
-                    if method == "GetExtentsSize" then
-                        return data.OriginalExtents
-                    end
-                    if method == "GetBoundingBox" then
-                        local cf = self:GetPrimaryPartCFrame()
-                        return cf, data.OriginalExtents
-                    end
-                end
-            end
-        end
-        return oldNamecall(...)
-    end))
+    end
+	setreadonly(mt, true)
 end
 
 local function sharedSaveData(parent, cacheKey, char, limb)
@@ -439,7 +383,7 @@ local LimbExtender = {}
 LimbExtender.__index = LimbExtender
 
 local DEFAULTS = {
-    TARGET_LIMB             = "HumanoidRootPart",
+    TARGET_LIMB             = "Head",
     LIMB_SIZE               = 15,
     LIMB_TRANSPARENCY       = 0.5,
     LIMB_CAN_COLLIDE        = false,
