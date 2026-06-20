@@ -243,6 +243,7 @@ local function sharedApplyLimb(parent, cacheKey, char, limb)
     local isHRP = (limb.Name == "HumanoidRootPart")
     local newPhys = isHRP and getAdjustedPhysicalProperties(limb, entry.OriginalSize, newVec) or nil
 
+    limbData._bypassHooks = true
     limb.Size = newVec
     limb.Transparency = trans
     limb.CanCollide = colide
@@ -254,9 +255,11 @@ local function sharedApplyLimb(parent, cacheKey, char, limb)
         limb.Massless = true
         limb.RootPriority = -127
     end
+    limbData._bypassHooks = false
 
     local conn = limb.Changed:Connect(function(prop)
         if BLOCKED_PROPS[prop] then
+            limbData._bypassHooks = true
             if prop == "Size" then limb.Size = newVec
             elseif prop == "Transparency" then limb.Transparency = trans
             elseif prop == "CanCollide" then limb.CanCollide = colide
@@ -266,11 +269,11 @@ local function sharedApplyLimb(parent, cacheKey, char, limb)
             if prop == "CustomPhysicalProperties" and isHRP and newPhys then
                 limb.CustomPhysicalProperties = newPhys
             end
+            limbData._bypassHooks = false
         end
     end)
     entry._internalChangedConn = conn
 
-    -- Humanoid state change listener for forced collision off
     if not colide then
         local humanoid = char:FindFirstChildOfClass("Humanoid")
         if humanoid and not entry._humanoidStateConn then
@@ -352,6 +355,7 @@ local function reapplyCosmeticToEntry(entry, settings)
 
     local conn = limb.Changed:Connect(function(prop)
         if BLOCKED_PROPS[prop] then
+            limbData._bypassHooks = true
             if prop == "Size" then limb.Size = newVec
             elseif prop == "Transparency" then limb.Transparency = trans
             elseif prop == "CanCollide" then limb.CanCollide = colide
@@ -361,11 +365,11 @@ local function reapplyCosmeticToEntry(entry, settings)
             if prop == "CustomPhysicalProperties" and isHRP and newPhys then
                 limb.CustomPhysicalProperties = newPhys
             end
+            limbData._bypassHooks = false
         end
     end)
     entry._internalChangedConn = conn
 
-    -- Re-attach humanoid state listener if collisions are still off
     if not colide then
         local humanoid = entry.Character and entry.Character:FindFirstChildOfClass("Humanoid")
         if humanoid and not entry._humanoidStateConn then
