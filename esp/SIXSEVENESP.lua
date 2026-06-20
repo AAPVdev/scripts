@@ -87,6 +87,9 @@ local DEFAULT_OPTIONS = {
 
 	CanDraw = nil,
 
+	MaxInitPerFrame             = 10,   
+	MaxOcclusionChecksPerFrame  = 5,    
+
 	TextResolver = function(model, meta)
 		return model.Name
 	end,
@@ -115,13 +118,6 @@ local function mergeDeep(dst, src)
 	return dst
 end
 
--- FIX: replaced the old single Reset() approach with BeginFrame / EndFrame.
--- Old behaviour: all Drawing objects were set Visible=false at the TOP of
--- RenderStep, leaving a window where the renderer could capture a fully-dark
--- frame before the redraws completed.
--- New behaviour: counters are reset at the start (objects stay visible from
--- the previous frame), drawing proceeds normally, then only the surplus
--- objects that weren't used this frame are hidden at the very END.
 local function newPool()
 	local self = { Objects = {} }
 
@@ -144,7 +140,6 @@ local function newPool()
 		return obj
 	end
 
-	-- Call at the START of a frame: reset counters only, leave objects visible.
 	function self:BeginFrame()
 		for _, bucket in pairs(self.Objects) do
 			bucket.PrevHighWater = bucket.Counter - 1
@@ -152,7 +147,6 @@ local function newPool()
 		end
 	end
 
-	-- Call at the END of a frame: hide only objects not used this frame.
 	function self:EndFrame()
 		for _, bucket in pairs(self.Objects) do
 			local used = bucket.Counter - 1
@@ -166,7 +160,6 @@ local function newPool()
 		end
 	end
 
-	-- Full reset kept for Stop() / Destroy() calls.
 	function self:Reset()
 		for _, bucket in pairs(self.Objects) do
 			bucket.Counter = 1
@@ -227,6 +220,9 @@ function SIXSEVENESP.new(config)
 	self._connections  = {}
 	self._running      = false
 	self._frameCount   = 0
+
+	self._initDoneThisFrame = 0
+	self._occlusionDoneThisFrame = 0
 
 	return self
 end
@@ -328,7 +324,8 @@ function SIXSEVENESP:GetMeta(model)
 		bones     = bones,
 		pts       = { false, false, false, false },
 		occluded  = false,
-		occludeAt = -self.Config.LOD.OcclusionFrequency,
+		
+		occludeAt = -self.Config.LOD.OcclusionFrequency + math.random(0, self.Config.LOD.OcclusionFrequency - 1),
 
 		ignoreList = {},
 
@@ -344,6 +341,8 @@ function SIXSEVENESP:GetMeta(model)
 		},
 
 		pivot = Vector3.new(),
+		
+		_cachedBBox = nil,
 	}
 
 	self._meta[model] = meta
@@ -353,6 +352,11 @@ function SIXSEVENESP:GetMeta(model)
 			self:Untrack(model)
 		end
 	end)
+
+	local cf, sz = model:GetBoundingBox()
+	if cf then
+		meta._cachedBBox = {cf, sz}
+	end
 
 	return meta
 end
@@ -403,12 +407,16 @@ function SIXSEVENESP:ToScreenPoint(pos, allowOffscreen)
 end
 
 function SIXSEVENESP:GetModelBBox(model)
-	local cached = self._bboxCache[model]
-	if cached then
-		return cached[1], cached[2]
+	
+	local meta = self._meta[model]
+	if meta and meta._cachedBBox then
+		return meta._cachedBBox[1], meta._cachedBBox[2]
 	end
+
 	local cframe, size = model:GetBoundingBox()
-	self._bboxCache[model] = { cframe, size }
+	if meta then
+		meta._cachedBBox = {cframe, size}
+	end
 	return cframe, size
 end
 
@@ -489,7 +497,13 @@ function SIXSEVENESP:IsObstructedThrottled(pivot, ignoreList, meta, frame)
 	if frame - meta.occludeAt < freq then
 		return meta.occluded
 	end
+
+	if self._occlusionDoneThisFrame >= self.Config.MaxOcclusionChecksPerFrame then
+		return meta.occluded   
+	end
+
 	meta.occludeAt = frame
+	self._occlusionDoneThisFrame = self._occlusionDoneThisFrame + 1
 
 	local cam = self:GetCamera()
 	if not cam then
@@ -736,6 +750,9 @@ function SIXSEVENESP:RenderStep()
 	self._pool:BeginFrame()
 	self:FlushCache()
 
+	self._initDoneThisFrame = 0
+	self._occlusionDoneThisFrame = 0
+
 	local cam = self:GetCamera()
 	if not cam then
 		self._pool:EndFrame()
@@ -751,11 +768,40 @@ function SIXSEVENESP:RenderStep()
 	local mediumDistSq = lod.MediumDistance * lod.MediumDistance
 
 	local toUntrack = {}
+
 	for model in pairs(self._tracked) do
 		if not model or not model.Parent then
 			if self.Config.AutoUntrackMissing then
 				toUntrack[#toUntrack + 1] = model
 			end
+			continue
+		end
+
+		if self._meta[model] then
+			continue
+		end
+
+		if self._initDoneThisFrame >= self.Config.MaxInitPerFrame then
+			break
+		end
+
+		if not model:FindFirstChildOfClass("Humanoid") or not model:FindFirstChild("HumanoidRootPart") then
+			continue
+		end
+
+		self:GetMeta(model)
+		self._initDoneThisFrame = self._initDoneThisFrame + 1
+	end
+
+	for model in pairs(self._tracked) do
+		if not model or not model.Parent then
+			
+			continue
+		end
+
+		local meta = self._meta[model]
+		if not meta then
+			
 			continue
 		end
 
@@ -787,10 +833,6 @@ function SIXSEVENESP:RenderStep()
 		end
 
 		local flags = self:GetLODFlags(distSq, nearDistSq, mediumDistSq)
-		local meta  = self:GetMeta(model)
-		if not meta then
-			continue
-		end
 
 		meta.pivot = pivot
 
