@@ -5,7 +5,7 @@ end
 
 local cloneref = missing("function", cloneref, function(obj) return obj end)
 
-local Players = cloneref(game:GetService("Players"))
+local Players   = cloneref(game:GetService("Players"))
 local Workspace = cloneref(game:GetService("Workspace"))
 
 local localPlayer = Players.LocalPlayer
@@ -14,14 +14,21 @@ if not localPlayer then
 	localPlayer = Players.LocalPlayer
 end
 
-local table_clear = table.clear
+local table_clear  = table.clear
 local table_remove = table.remove
 local table_insert = table.insert
-local table_clone = table.clone
-local task_spawn = task.spawn
-local task_defer = task.defer
+local table_clone  = table.clone
+local task_spawn   = task.spawn
+local task_defer   = task.defer
 local string_split = string.split
-local string_gsub = string.gsub
+local string_gsub  = string.gsub
+local os_clock     = os.clock
+
+local SCAN_FRAME_BUDGET = 0.002
+
+local function isNPCCandidate(inst)
+	return typeof(inst) == "Instance" and inst:IsA("Model")
+end
 
 local ConnectionManager = {}
 ConnectionManager.__index = ConnectionManager
@@ -71,24 +78,24 @@ function ConnectionManager:Destroy()
 end
 
 local DEFAULTS = {
-	PLAYER_ENABLED = true,
-	NPC_ENABLED = false,
-	NPC_FILTER = nil,
-	NPC_DIRECTORIES = {},
+	PLAYER_ENABLED       = true,
+	NPC_ENABLED          = false,
+	NPC_FILTER           = nil,
+	NPC_DIRECTORIES      = {},
 
-	ON_CHARACTER_ADDED = nil,
-	ON_CHARACTER_REMOVING = nil,
-	ON_NPC_ADDED = nil,
-	ON_NPC_REMOVING = nil,
+	ON_CHARACTER_ADDED   = nil,
+	ON_CHARACTER_REMOVING= nil,
+	ON_NPC_ADDED         = nil,
+	ON_NPC_REMOVING      = nil,
 
-	TARGET_LIMB = nil,
-	TEAM_CHECK = false,
-	FORCEFIELD_CHECK = false,
-	DEATH_RESTORE = false,
-	DEATH_DETECT_METHOD = "Died",
-	GET_LOCAL_TEAM = nil,
-	ON_LIMB_READY = nil,
-	ON_LIMB_LOST = nil,
+	TARGET_LIMB          = nil,
+	TEAM_CHECK           = false,
+	FORCEFIELD_CHECK     = false,
+	DEATH_RESTORE        = false,
+	DEATH_DETECT_METHOD  = "Died",
+	GET_LOCAL_TEAM       = nil,
+	ON_LIMB_READY        = nil,
+	ON_LIMB_LOST         = nil,
 }
 
 local function mergeSettings(user)
@@ -111,13 +118,13 @@ local function mergeSettings(user)
 end
 
 local function parseLimbPath(targetLimb)
-    if type(targetLimb) ~= "string" or targetLimb == "" then return nil end
-    local segs = {}
-    for seg in targetLimb:gmatch("[^%.]+") do
-        local t = seg:match("^%s*(.-)%s*$")
-        if t ~= "" then segs[#segs + 1] = t end
-    end
-    return #segs > 0 and segs or nil
+	if type(targetLimb) ~= "string" or targetLimb == "" then return nil end
+	local segs = {}
+	for seg in targetLimb:gmatch("[^%.]+") do
+		local t = seg:match("^%s*(.-)%s*$")
+		if t ~= "" then segs[#segs + 1] = t end
+	end
+	return #segs > 0 and segs or nil
 end
 
 local function normalizeDirectoryPath(path)
@@ -189,16 +196,16 @@ StreamObserver.__index = StreamObserver
 
 function StreamObserver.new(model, onAvailable, onUnavailable)
 	local self = setmetatable({
-		_model = model,
-		_onAvailable = onAvailable,
+		_model         = model,
+		_onAvailable   = onAvailable,
 		_onUnavailable = onUnavailable,
 
-		_modelConns = ConnectionManager.new(),
+		_modelConns  = ConnectionManager.new(),
 		_anchorConns = ConnectionManager.new(),
 
-		_active = false,
+		_active    = false,
 		_destroyed = false,
-		_anchor = nil,
+		_anchor    = nil,
 	}, StreamObserver)
 
 	self:_bindModelSignals()
@@ -315,15 +322,15 @@ LimbObserver.__index = LimbObserver
 
 function LimbObserver.new(manager, model, playerObject)
 	local self = setmetatable({
-		_manager = manager,
-		_model = model,
-		_player = playerObject,
-		_ready = false,
-		_limb = nil,
+		_manager   = manager,
+		_model     = model,
+		_player    = playerObject,
+		_ready     = false,
+		_limb      = nil,
 		_lifeConns = ConnectionManager.new(),
-		_conns = ConnectionManager.new(),
+		_conns     = ConnectionManager.new(),
 		_destroyed = false,
-		_segments = nil,
+		_segments  = nil,
 	}, LimbObserver)
 
 	self:_bindLifecycle()
@@ -332,65 +339,63 @@ function LimbObserver.new(manager, model, playerObject)
 end
 
 function LimbObserver:_clearPathConns()
-    local segs = self._segments
-    if not segs then return end
-    for i = 1, #segs do
-        self._conns:Disconnect("Step" .. i)
-        self._conns:Disconnect("Int"  .. i)
-    end
+	local segs = self._segments
+	if not segs then return end
+	for i = 1, #segs do
+		self._conns:Disconnect("Step" .. i)
+		self._conns:Disconnect("Int"  .. i)
+	end
 end
 
 function LimbObserver:_resolveStep(container, segs, depth)
-    if self._destroyed or self._ready then return end
-    if not isLiveInstance(container) then return end
+	if self._destroyed or self._ready then return end
+	if not isLiveInstance(container) then return end
 
-    local name    = segs[depth]
-    local isLeaf  = depth == #segs
-    local stepKey = "Step" .. depth
+	local name    = segs[depth]
+	local isLeaf  = depth == #segs
+	local stepKey = "Step" .. depth
 
-    local function proceed(child)
-        if self._destroyed or self._ready then return end
+	local function proceed(child)
+		if self._destroyed or self._ready then return end
 
-        if isLeaf then
-            if child:IsA("BasePart") then
-                
-                for i = 1, depth - 1 do
-                    self._conns:Disconnect("Int" .. i)
-                end
-                self:_onLimbFound(child)
-            end
-        else
+		if isLeaf then
+			if child:IsA("BasePart") then
+				for i = 1, depth - 1 do
+					self._conns:Disconnect("Int" .. i)
+				end
+				self:_onLimbFound(child)
+			end
+		else
+			self._conns:Connect(child:GetPropertyChangedSignal("Parent"), function()
+				if self._destroyed then return end
+				if not child:IsDescendantOf(self._model) then
+					for i = depth, #segs do
+						self._conns:Disconnect("Step" .. i)
+						self._conns:Disconnect("Int"  .. i)
+					end
+					if self._ready then
+						self:_limbRemoved()
+					else
+						self:_resolveStep(container, segs, depth)
+					end
+				end
+			end, "Int" .. depth)
 
-            self._conns:Connect(child:GetPropertyChangedSignal("Parent"), function()
-                if self._destroyed then return end
-                if not child:IsDescendantOf(self._model) then
-                    for i = depth, #segs do
-                        self._conns:Disconnect("Step" .. i)
-                        self._conns:Disconnect("Int"  .. i)
-                    end
-                    if self._ready then
-                        self:_limbRemoved()   
-                    else
-                        self:_resolveStep(container, segs, depth)
-                    end
-                end
-            end, "Int" .. depth)
+			self:_resolveStep(child, segs, depth + 1)
+		end
+	end
 
-            self:_resolveStep(child, segs, depth + 1)
-        end
-    end
-
-    local existing = container:FindFirstChild(name)
-    if existing then
-        proceed(existing)
-    else
-        self._conns:Connect(container.ChildAdded, function(child)
-            if child.Name == name then
-                self._conns:Disconnect(stepKey)
-                proceed(child)
-            end
-        end, stepKey)
-    end
+	local existing = container:FindFirstChild(name)
+	if existing then
+		proceed(existing)
+	else
+		self._conns:Connect(container.ChildAdded, function(child)
+			if child.Name == name then
+				self._conns:Disconnect(stepKey)
+				proceed(child)
+			end
+		end, stepKey)
+	end
 end
 
 function LimbObserver:_bindLifecycle()
@@ -406,56 +411,56 @@ function LimbObserver:_bindLifecycle()
 end
 
 function LimbObserver:_start()
-    if self._destroyed or self._ready then return end
-    if not isLiveInstance(self._model) then
-        self:_notifyLost()
-        return
-    end
+	if self._destroyed or self._ready then return end
+	if not isLiveInstance(self._model) then
+		self:_notifyLost()
+		return
+	end
 
-    local targetLimb = self._manager._settings.TARGET_LIMB
-    self._segments = parseLimbPath(targetLimb)
-    if not self._segments then return end
+	local targetLimb = self._manager._settings.TARGET_LIMB
+	self._segments = parseLimbPath(targetLimb)
+	if not self._segments then return end
 
-    if self._player and self._manager._settings.TEAM_CHECK then
-        local getTeam = self._manager._settings.GET_LOCAL_TEAM
-        if type(getTeam) == "function" then
-            local ok, myTeam = pcall(getTeam)
-            if ok and myTeam and self._player.Team == myTeam then return end
-        end
-    end
+	if self._player and self._manager._settings.TEAM_CHECK then
+		local getTeam = self._manager._settings.GET_LOCAL_TEAM
+		if type(getTeam) == "function" then
+			local ok, myTeam = pcall(getTeam)
+			if ok and myTeam and self._player.Team == myTeam then return end
+		end
+	end
 
-    local function beginResolve()
-        self:_resolveStep(self._model, self._segments, 1)
-    end
+	local function beginResolve()
+		self:_resolveStep(self._model, self._segments, 1)
+	end
 
-    local function watchForceField(ff)
-        self:_clearPathConns()   
-        self._conns:Connect(ff.AncestryChanged, function()
-            if not ff:IsDescendantOf(self._model) then
-                self._conns:Disconnect("ForceFieldWatcher")
-                beginResolve()
-            end
-        end, "ForceFieldWatcher")
-    end
+	local function watchForceField(ff)
+		self:_clearPathConns()
+		self._conns:Connect(ff.AncestryChanged, function()
+			if not ff:IsDescendantOf(self._model) then
+				self._conns:Disconnect("ForceFieldWatcher")
+				beginResolve()
+			end
+		end, "ForceFieldWatcher")
+	end
 
-    if self._manager._settings.FORCEFIELD_CHECK then
-        local existing = self._model:FindFirstChildOfClass("ForceField")
-        if existing then
-            watchForceField(existing)
-            return
-        end
-        self._conns:Connect(self._model.ChildAdded, function(child)
-            if child:IsA("ForceField") then
-                watchForceField(child)
-            end
-        end, "ForceFieldAppeared")
-    end
+	if self._manager._settings.FORCEFIELD_CHECK then
+		local existing = self._model:FindFirstChildOfClass("ForceField")
+		if existing then
+			watchForceField(existing)
+			return
+		end
+		self._conns:Connect(self._model.ChildAdded, function(child)
+			if child:IsA("ForceField") then
+				watchForceField(child)
+			end
+		end, "ForceFieldAppeared")
+	end
 
-    beginResolve()
+	beginResolve()
 end
 
 function LimbObserver:_onLimbFound(limb)
-	self._limb = limb
+	self._limb  = limb
 	self._ready = true
 
 	self._conns:Connect(limb:GetPropertyChangedSignal("Parent"), function()
@@ -502,10 +507,10 @@ function LimbObserver:_notifyLost()
 	if self._destroyed then return end
 
 	local wasReady = self._ready
-	local oldLimb = self._limb
+	local oldLimb  = self._limb
 
 	self._ready = false
-	self._limb = nil
+	self._limb  = nil
 	self._conns:DisconnectAll()
 
 	if wasReady then
@@ -517,10 +522,10 @@ function LimbObserver:Refresh()
 	if self._destroyed then return end
 
 	local wasReady = self._ready
-	local oldLimb = self._limb
+	local oldLimb  = self._limb
 
 	self._ready = false
-	self._limb = nil
+	self._limb  = nil
 	self._conns:DisconnectAll()
 
 	if wasReady then
@@ -534,11 +539,11 @@ function LimbObserver:Destroy()
 	if self._destroyed then return end
 	self._destroyed = true
 
-	local manager     = self._manager
-	local player      = self._player
-	local model       = self._model
-	local wasReady    = self._ready
-	local oldLimb     = self._limb
+	local manager  = self._manager
+	local player   = self._player
+	local model    = self._model
+	local wasReady = self._ready
+	local oldLimb  = self._limb
 
 	self._ready = false
 	self._limb  = nil
@@ -555,13 +560,13 @@ PlayerData.__index = PlayerData
 
 function PlayerData.new(parent, player)
 	local self = setmetatable({
-		_parent = parent,
-		player = player,
-		conns = ConnectionManager.new(),
-		_destroyed = false,
-		_character = nil,
+		_parent            = parent,
+		player             = player,
+		conns              = ConnectionManager.new(),
+		_destroyed         = false,
+		_character         = nil,
 		_characterObserver = nil,
-		_limbObserver = nil,
+		_limbObserver      = nil,
 	}, PlayerData)
 
 	self.conns:Connect(player.CharacterAdded, function(char)
@@ -654,7 +659,6 @@ end
 
 function PlayerData:_onCharacterRemoving(char)
 	if self._destroyed then return end
-
 	if self._character ~= char then return end
 
 	if self._characterObserver then
@@ -691,23 +695,23 @@ Manager.__index = Manager
 function Manager.new(userSettings)
 	local self = setmetatable({
 		_settings = mergeSettings(userSettings),
-		_playerTable = {},
-		_npcSet = {},
-		_npcLimbObservers = {},
 
-		_connections = nil,
+		_playerTable       = {},
+		_npcSet            = {},
+		_npcLimbObservers  = {},
+
+		_connections    = nil,
 		_npcConnections = nil,
 
 		_playerConnsStarted = false,
-		_npcConnsStarted = false,
+		_npcConnsStarted    = false,
 
-		_running = false,
+		_running   = false,
 		_destroyed = false,
 		_generation = 0,
 
 		_dirIdCounter = 0,
-
-		_dirUidMap = {},
+		_dirUidMap    = {},
 		_stringDirMap = {},
 		_npcDirOwners = {},
 	}, Manager)
@@ -717,25 +721,18 @@ end
 
 function Manager:_onLimbReady(player, model, limb)
 	local cb = self._settings.ON_LIMB_READY
-	if type(cb) == "function" then
-		pcall(cb, player, model, limb)
-	end
+	if type(cb) == "function" then pcall(cb, player, model, limb) end
 end
 
 function Manager:_onLimbLost(player, model, limb)
 	local cb = self._settings.ON_LIMB_LOST
-	if type(cb) == "function" then
-		pcall(cb, player, model, limb)
-	end
+	if type(cb) == "function" then pcall(cb, player, model, limb) end
 end
 
 function Manager:_isValidNPC(model)
 	if not model or not model:IsA("Model") then return false end
 	if not model:FindFirstChildOfClass("Humanoid") then return false end
-
-	if Players:GetPlayerFromCharacter(model) then
-		return false
-	end
+	if Players:GetPlayerFromCharacter(model) then return false end
 
 	local filter = self._settings.NPC_FILTER
 	if type(filter) == "function" then
@@ -795,16 +792,11 @@ end
 function Manager:_activateDirectory(dir, useDescendants)
 	self._dirIdCounter = self._dirIdCounter + 1
 	local uid = tostring(self._dirIdCounter)
-
 	self._dirUidMap[dir] = uid
-
-	local children = useDescendants and dir:GetDescendants() or dir:GetChildren()
-	for _, desc in ipairs(children) do
-		self:_registerNPC(desc, dir)
-	end
 
 	if useDescendants then
 		self._npcConnections:Connect(dir.DescendantAdded, function(desc)
+			if not isNPCCandidate(desc) then return end
 			local gen = self._generation
 			task_defer(function()
 				if self._running and self._npcConnsStarted
@@ -814,11 +806,14 @@ function Manager:_activateDirectory(dir, useDescendants)
 				end
 			end)
 		end, uid .. "_DescendantAdded")
+
 		self._npcConnections:Connect(dir.DescendantRemoving, function(desc)
+			if not isNPCCandidate(desc) then return end
 			self:_unregisterNPC(desc)
 		end, uid .. "_DescendantRemoving")
 	else
 		self._npcConnections:Connect(dir.ChildAdded, function(desc)
+			if not isNPCCandidate(desc) then return end
 			local gen = self._generation
 			task_defer(function()
 				if self._running and self._npcConnsStarted
@@ -828,10 +823,39 @@ function Manager:_activateDirectory(dir, useDescendants)
 				end
 			end)
 		end, uid .. "_ChildAdded")
+
 		self._npcConnections:Connect(dir.ChildRemoved, function(desc)
+			if not isNPCCandidate(desc) then return end
 			self:_unregisterNPC(desc)
 		end, uid .. "_ChildRemoved")
 	end
+
+	local raw = useDescendants and dir:GetDescendants() or dir:GetChildren()
+
+	local candidates = {}
+	for _, inst in ipairs(raw) do
+		if isNPCCandidate(inst) then
+			candidates[#candidates + 1] = inst
+		end
+	end
+
+	local gen = self._generation
+	task_spawn(function()
+		local t = os_clock()
+		for _, model in ipairs(candidates) do
+				
+			if not self._running or self._destroyed or self._generation ~= gen then
+				return
+			end
+
+			self:_registerNPC(model, dir)
+
+			if os_clock() - t >= SCAN_FRAME_BUDGET then
+				task.wait()
+				t = os_clock()
+			end
+		end
+	end)
 end
 
 function Manager:_refreshAllLimbObservers()
@@ -880,9 +904,11 @@ function Manager:_rescanNPCFilter()
 	for _, entry in ipairs(entries) do
 		local instance = isLiveInstance(entry) and entry or self._stringDirMap[entry]
 		if instance and isLiveInstance(instance) then
-			local children = useDescendants and instance:GetDescendants() or instance:GetChildren()
-			for _, desc in ipairs(children) do
-				self:_registerNPC(desc, instance)
+			local raw = useDescendants and instance:GetDescendants() or instance:GetChildren()
+			for _, desc in ipairs(raw) do
+				if isNPCCandidate(desc) then
+					self:_registerNPC(desc, instance)
+				end
 			end
 		end
 	end
@@ -897,6 +923,7 @@ function Manager:_startPlayerTracking()
 			self._playerTable[p] = PlayerData.new(self, p)
 		end
 	end, "PlayerAdded")
+
 	self._connections:Connect(Players.PlayerRemoving, function(p)
 		local pd = self._playerTable[p]
 		if pd then
@@ -905,11 +932,20 @@ function Manager:_startPlayerTracking()
 		end
 	end, "PlayerRemoving")
 
-	for _, p in ipairs(Players:GetPlayers()) do
-		if p ~= localPlayer and not self._playerTable[p] then
-			self._playerTable[p] = PlayerData.new(self, p)
+	local snapshot = Players:GetPlayers()
+	task_spawn(function()
+		local t = os_clock()
+		for _, p in ipairs(snapshot) do
+			if not self._running or self._destroyed or not self._playerConnsStarted then return end
+			if p ~= localPlayer and not self._playerTable[p] then
+				self._playerTable[p] = PlayerData.new(self, p)
+			end
+			if os_clock() - t >= SCAN_FRAME_BUDGET then
+				task.wait()
+				t = os_clock()
+			end
 		end
-	end
+	end)
 end
 
 function Manager:_stopPlayerTracking()
@@ -1152,9 +1188,9 @@ function Manager:Destroy()
 end
 
 return {
-	Manager = Manager,
-	ConnectionManager = ConnectionManager,
-	resolvePathAsync = resolvePathAsync,
+	Manager              = Manager,
+	ConnectionManager    = ConnectionManager,
+	resolvePathAsync     = resolvePathAsync,
 	normalizeDirectoryPath = normalizeDirectoryPath,
-	isLiveInstance = isLiveInstance,
+	isLiveInstance       = isLiveInstance,
 }
