@@ -206,6 +206,12 @@ function StreamObserver.new(model, onAvailable, onUnavailable)
 		_active    = false,
 		_destroyed = false,
 		_anchor    = nil,
+
+		-- FIX 1: guard flags so _bindModelSignals never reconnects signals it
+		-- already owns. Without these, every AncestryChanged -> _refresh() ->
+		-- _bindModelSignals() would disconnect + reconnect all 4 signals.
+		_ancestryBound     = false,
+		_childSignalsBound = false,
 	}, StreamObserver)
 
 	self:_bindModelSignals()
@@ -231,17 +237,23 @@ function StreamObserver:_resolveAnchor()
 	return nil
 end
 
+-- FIX 1: each signal group is bound exactly once for the lifetime of this
+-- observer. Signals persist on the Lua object regardless of streaming state,
+-- so there is never a need to reconnect them.
 function StreamObserver:_bindModelSignals()
 	if self._destroyed then return end
 	local model = self._model
 	if typeof(model) ~= "Instance" then return end
 
-	self._modelConns:Connect(model.AncestryChanged, function()
-		if self._destroyed then return end
-		self:_refresh()
-	end, "AncestryChanged")
+	if not self._ancestryBound then
+		self._modelConns:Connect(model.AncestryChanged, function()
+			if self._destroyed then return end
+			self:_refresh()
+		end, "AncestryChanged")
+		self._ancestryBound = true
+	end
 
-	if not isLiveInstance(model) then return end
+	if self._childSignalsBound or not isLiveInstance(model) then return end
 
 	self._modelConns:Connect(model.ChildAdded, function(child)
 		if self._destroyed then return end
@@ -257,6 +269,8 @@ function StreamObserver:_bindModelSignals()
 		if self._destroyed then return end
 		self:_refresh()
 	end, "PrimaryPart")
+
+	self._childSignalsBound = true
 end
 
 function StreamObserver:_bindAnchor(anchor)
@@ -745,8 +759,9 @@ end
 function Manager:_registerNPC(model, dir)
 	if self._destroyed or not model then return end
 	if not isLiveInstance(model) then return end
-	if model:IsA("Humanoid") then model = model.Parent end
-	if not model or self._npcSet[model] then return end
+	-- FIX 3: removed dead IsA("Humanoid") branch — all call sites pass
+	-- pre-filtered Models via isNPCCandidate so a Humanoid never arrives here.
+	if self._npcSet[model] then return end
 	if not self:_isValidNPC(model) then return end
 
 	local observer = StreamObserver.new(model,
@@ -843,7 +858,6 @@ function Manager:_activateDirectory(dir, useDescendants)
 	task_spawn(function()
 		local t = os_clock()
 		for _, model in ipairs(candidates) do
-				
 			if not self._running or self._destroyed or self._generation ~= gen then
 				return
 			end
@@ -938,7 +952,12 @@ function Manager:_startPlayerTracking()
 		for _, p in ipairs(snapshot) do
 			if not self._running or self._destroyed or not self._playerConnsStarted then return end
 			if p ~= localPlayer and not self._playerTable[p] then
-				self._playerTable[p] = PlayerData.new(self, p)
+				-- FIX 2: player may have left during the async scan; PlayerRemoving
+				-- already fired but found no _playerTable entry, so without this
+				-- guard we would create a PlayerData that is never cleaned up.
+				if isLiveInstance(p) then
+					self._playerTable[p] = PlayerData.new(self, p)
+				end
 			end
 			if os_clock() - t >= SCAN_FRAME_BUDGET then
 				task.wait()
