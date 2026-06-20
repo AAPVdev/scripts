@@ -741,7 +741,7 @@ function LimbExtender:_applyLimbs(player, char, limb)
 
 	sharedApplyLimb(self, cacheKey, char, limb)
 
-	if self._ESP then
+	if self._settings.ESP then
 		local tracked = self._ESP:Track(char)
 		if not tracked then
 			task.spawn(function()
@@ -749,6 +749,23 @@ function LimbExtender:_applyLimbs(player, char, limb)
 				while not self._ESP:Track(char) and attempts < 30 do
 					task.wait(0.1)
 					attempts = attempts + 1
+				end
+			end)
+		end
+	end
+
+	local entry = self._playerCache[cacheKey]
+	if not entry then return end
+
+	if not self._settings.LIMB_CAN_COLLIDE then
+		local humanoid = char:FindFirstChildOfClass("Humanoid")
+		if humanoid and not entry._humanoidStateConn then
+			entry._humanoidStateConn = humanoid.StateChanged:Connect(function()
+				if not isLiveInstance(char) or not char.Parent then return end
+				for _, part in ipairs(char:GetDescendants()) do
+					if part:IsA("BasePart") then
+						part.CanCollide = false
+					end
 				end
 			end)
 		end
@@ -762,6 +779,13 @@ function LimbExtender:_removeLimbs(player, char, limb)
 	else
 		cacheKey = self._npcIdMap[char]
 	end
+
+	local entry = self._playerCache[cacheKey]
+	if entry and entry._humanoidStateConn then
+		entry._humanoidStateConn:Disconnect()
+		entry._humanoidStateConn = nil
+	end
+
 	sharedRestoreLimb(self, cacheKey, limb)
 	if self._ESP and char then self._ESP:Untrack(char) end
 	if not player then
