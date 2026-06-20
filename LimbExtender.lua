@@ -49,7 +49,6 @@ limbData.playerCache    = limbData.playerCache    or {}
 limbData.instanceLookup = limbData.instanceLookup or setmetatable({}, { __mode = "k" })
 limbData.npcIdCounter   = limbData.npcIdCounter   or 0
 limbData.fakeSignals     = limbData.fakeSignals     or setmetatable({}, { __mode = "k" })
-limbData.spoofedConns    = limbData.spoofedConns    or setmetatable({}, { __mode = "k" })
 limbData.partData        = limbData.partData        or setmetatable({}, { __mode = "k" })
 
 if type(limbData.terminate) == "function" then
@@ -91,45 +90,52 @@ local function ensureFakeSignal(part, prop)
     return sigs[prop]
 end
 
+local ESP_SOURCE_URL = "https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/esp/SIXSEVENESP.lua"
+
+local function ensureESPLoaded()
+    if limbData.ESP then return limbData.ESP end
+    if not (has_loadstring and has_httpget) then return nil end
+    local ok, res = pcall(function()
+        return loadstring(game:HttpGet(ESP_SOURCE_URL))()
+    end)
+    if ok then limbData.ESP = res end
+    return limbData.ESP
+end
+
+local function getPartDensitySafe(part)
+    local ok, phys = pcall(function() return part.CustomPhysicalProperties end)
+    if ok and phys then return phys.Density end
+    local ok2, mat = pcall(function() return part.Material end)
+    if ok2 then
+        local ok3, props = pcall(PhysProps_new, mat)
+        if ok3 and props then return props.Density end
+    end
+    return 1
+end
+
+local function getAdjustedPhysicalProperties(limb, origSize, newSize)
+    local origPhys = limb.CustomPhysicalProperties or PhysProps_new(limb.Material)
+    local origVol = origSize.X * origSize.Y * origSize.Z
+    local newVol  = newSize.X  * newSize.Y  * newSize.Z
+    if newVol <= 0 then newVol = 1 end
+    local ratio      = origVol / newVol
+    local newDensity = math_max(0.01, origPhys.Density * ratio)
+    return PhysProps_new(newDensity, origPhys.Friction, origPhys.Elasticity, origPhys.FrictionWeight, origPhys.ElasticityWeight)
+end
+
+-- Global metamethod hooks (on game)
 if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod and has_checkcaller then
     limbData._spoofInstalled = true
 
     local _instanceLookup = limbData.instanceLookup
     local _playerCache    = limbData.playerCache
     local _fakeSignals     = limbData.fakeSignals
-    local _spoofedConns    = limbData.spoofedConns
     limbData._bypassHooks = false
-
-    local sampleConn = Instance_new("BindableEvent").Event:Connect(function() end)
-    local connMeta = debug.getmetatable(sampleConn)
-    sampleConn:Disconnect()
-    local oldConnIndex = connMeta.__index
-
-    local spoofedConnectedProxy = {}
-    do
-        local dummy = function() end
-        setmetatable(spoofedConnectedProxy, {
-            __index = function(_, k) return dummy end,
-            __tostring = function() return "true" end,
-            __call = function() end,
-        })
-    end
-
-    local function connIndexHook(self, key)
-        if key == "Connected" and _spoofedConns[self] then
-            return spoofedConnectedProxy
-        end
-        return oldConnIndex(self, key)
-    end
-    setreadonly(connMeta, false)
-    connMeta.__index = connIndexHook
-    setreadonly(connMeta, true)
 
     local function getTargetData(instance)
         if typeof(instance) ~= "Instance" then return nil, nil end
         local cached = _instanceLookup[instance]
         if cached then return cached.data, cached.type end
-
         for _, cache in pairs(_playerCache) do
             if cache.Limb == instance then
                 _instanceLookup[instance] = { data = cache, type = "Part" }
@@ -148,10 +154,9 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod and h
         return PhysProps_new(part.Material).Density
     end
 
-    local oldNewIndex
-    oldNewIndex = hookmetamethod(game, "__newindex", newcclosure(function(...)
+    local oldNewIndex = hookmetamethod(game, "__newindex", newcclosure(function(...)
         local self, key, value = ...
-        if not checkcaller() then
+        if not checkcaller() and not limbData._bypassHooks then
             local data, instType = getTargetData(self)
             if data and instType == "Part" and self == data.Limb and BLOCKED_PROPS[key] then
                 if key == "Size" then data.OriginalSize = value
@@ -164,25 +169,20 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod and h
                 elseif key == "CustomPhysicalProperties" then data.OriginalPhysProps = value
                 elseif key == "RootPriority" then data.OriginalRootPriority = value
                 end
-
-                local changedFake = _fakeSignals[self] and _fakeSignals[self]["__Changed"]
-                if changedFake then changedFake:Fire(key) end
-
-                local propFake = _fakeSignals[self] and _fakeSignals[self][key]
-                if propFake then propFake:Fire() end
-
+                local sigs = _fakeSignals[self]
+                if sigs then
+                    if sigs["__Changed"] then sigs["__Changed"]:Fire(key) end
+                    if sigs[key] then sigs[key]:Fire() end
+                end
                 return
             end
         end
         return oldNewIndex(...)
     end))
 
-    local oldIndex
-    oldIndex = hookmetamethod(game, "__index", newcclosure(function(...)
+    local oldIndex = hookmetamethod(game, "__index", newcclosure(function(...)
         local self, key = ...
-        if not checkcaller() then
-            if limbData._bypassHooks then return oldIndex(...) end
-
+        if not checkcaller() and not limbData._bypassHooks then
             if key == "Changed" and typeof(self) == "Instance" and self:IsA("BasePart") and self.Name == (limbData.targetLimbName or "HumanoidRootPart") then
                 return ensureFakeSignal(self, "__Changed").Event
             end
@@ -221,14 +221,10 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod and h
         return oldIndex(...)
     end))
 
-    local oldNamecall
-    oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(...)
+    local oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(...)
         local self = ...
         local method = getnamecallmethod()
-
-        if not checkcaller() then
-            if limbData._bypassHooks then return oldNamecall(...) end
-
+        if not checkcaller() and not limbData._bypassHooks then
             local data, instType = getTargetData(self)
             if data then
                 if instType == "Part" and self == data.Limb then
@@ -236,6 +232,12 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod and h
                         local density = data.OriginalDensity or getPartDensity(self)
                         local size = data.OriginalSize
                         return density * (size.X * size.Y * size.Z)
+                    end
+                    if method == "GetPropertyChangedSignal" then
+                        local prop = select(2, ...)
+                        if BLOCKED_PROPS[prop] then
+                            return ensureFakeSignal(self, prop).Event
+                        end
                     end
                 elseif instType == "Model" and self == data.Character then
                     if method == "GetExtentsSize" then
@@ -252,89 +254,9 @@ if not limbData._spoofInstalled and has_newcclosure and has_hookmetamethod and h
     end))
 end
 
-local ESP_SOURCE_URL = "https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/esp/SIXSEVENESP.lua"
-
-local function ensureESPLoaded()
-    if limbData.ESP then return limbData.ESP end
-    if not (has_loadstring and has_httpget) then return nil end
-    local ok, res = pcall(function()
-        return loadstring(game:HttpGet(ESP_SOURCE_URL))()
-    end)
-    if ok then limbData.ESP = res end
-    return limbData.ESP
-end
-
-local function getAdjustedPhysicalProperties(limb, origSize, newSize)
-    local origPhys = limb.CustomPhysicalProperties or PhysProps_new(limb.Material)
-    local origVol = origSize.X * origSize.Y * origSize.Z
-    local newVol  = newSize.X  * newSize.Y  * newSize.Z
-    if newVol <= 0 then newVol = 1 end
-    local ratio      = origVol / newVol
-    local newDensity = math_max(0.01, origPhys.Density * ratio)
-    return PhysProps_new(newDensity, origPhys.Friction, origPhys.Elasticity, origPhys.FrictionWeight, origPhys.ElasticityWeight)
-end
-
-limbData.neutralizedCallbacks = limbData.neutralizedCallbacks or setmetatable({}, { __mode = "k" })
-
-local function neutralizeRealListeners(part)
-    if type(getconnections) ~= "function" then return end
-    if type(hookfunction) ~= "function" then return end
-
-    limbData._bypassHooks = true
-
-    pcall(function()
-        local realChanged = part.Changed
-        for _, conn in ipairs(getconnections(realChanged)) do
-            local fn = conn.Function
-            if fn and not limbData.neutralizedCallbacks[fn] then
-                local orig = hookfunction(fn, function() end)
-                limbData.neutralizedCallbacks[fn] = orig
-            end
-        end
-    end)
-
-    for prop in pairs(BLOCKED_PROPS) do
-        pcall(function()
-            local realSig = part:GetPropertyChangedSignal(prop)
-            for _, conn in ipairs(getconnections(realSig)) do
-                local fn = conn.Function
-                if fn and not limbData.neutralizedCallbacks[fn] then
-                    local orig = hookfunction(fn, function() end)
-                    limbData.neutralizedCallbacks[fn] = orig
-                end
-            end
-        end)
-    end
-
-    limbData._bypassHooks = false
-end
-
-local function getPartDensitySafe(part)
-    local ok, phys = pcall(function() return part.CustomPhysicalProperties end)
-    if ok and phys then return phys.Density end
-    local ok2, mat = pcall(function() return part.Material end)
-    if ok2 then
-        local ok3, props = pcall(PhysProps_new, mat)
-        if ok3 and props then return props.Density end
-    end
-    return 1
-end
-
-local function perPartHookGetPropertyChangedSignal(limb)
-    if not has_hookfunction then return end
-    local originalGPS = limb.GetPropertyChangedSignal
-    hookfunction(limb, "GetPropertyChangedSignal", function(_, prop)
-        if BLOCKED_PROPS[prop] then
-            return ensureFakeSignal(limb, prop).Event
-        end
-        return originalGPS(limb, prop)
-    end)
-end
-
 local function sharedSaveData(parent, cacheKey, char, limb)
     local cache = parent._playerCache
     local entry = cache[cacheKey]
-
     if entry then
         if entry.Limb and entry.Limb ~= limb then
             limbData.instanceLookup[entry.Limb] = nil
@@ -361,11 +283,65 @@ local function sharedSaveData(parent, cacheKey, char, limb)
     entry.OriginalRootPriority = limb.RootPriority or 0
     entry.OriginalDensity      = getPartDensitySafe(limb)
 
-    limbData.instanceLookup[limb] = { data = entry, type = "Part"  }
+    limbData.instanceLookup[limb] = { data = entry, type = "Part" }
     limbData.instanceLookup[char] = { data = entry, type = "Model" }
+end
 
-    perPartHookGetPropertyChangedSignal(limb)
-    neutralizeRealListeners(limb)
+local function sharedApplyLimb(parent, cacheKey, char, limb)
+    if not limb or not limb.Parent then return end
+    sharedSaveData(parent, cacheKey, char, limb)
+
+    local entry = parent._playerCache[cacheKey]
+    if not entry then return end
+    local settings = parent._settings
+
+    local newVec = Vector3_new(settings.LIMB_SIZE, settings.LIMB_SIZE, settings.LIMB_SIZE)
+    local trans = settings.LIMB_TRANSPARENCY
+    local colide = settings.LIMB_CAN_COLLIDE
+    local isHRP = (limb.Name == "HumanoidRootPart")
+    local newPhys = isHRP and getAdjustedPhysicalProperties(limb, entry.OriginalSize, newVec) or nil
+
+    limb.Size = newVec
+    limb.Transparency = trans
+    limb.CanCollide = colide
+
+    if isHRP then
+        limb.Massless = false
+        if newPhys then limb.CustomPhysicalProperties = newPhys end
+    else
+        limb.Massless = true
+        limb.RootPriority = -127
+    end
+
+    local conn = limb.Changed:Connect(function(prop)
+        if BLOCKED_PROPS[prop] then
+            if prop == "Size" then limb.Size = newVec
+            elseif prop == "Transparency" then limb.Transparency = trans
+            elseif prop == "CanCollide" then limb.CanCollide = colide
+            elseif prop == "Massless" then limb.Massless = isHRP and false or true
+            elseif prop == "RootPriority" and not isHRP then limb.RootPriority = -127
+            end
+            if prop == "CustomPhysicalProperties" and isHRP and newPhys then
+                limb.CustomPhysicalProperties = newPhys
+            end
+        end
+    end)
+    entry._internalChangedConn = conn
+
+    -- Humanoid state change listener for forced collision off
+    if not colide then
+        local humanoid = char:FindFirstChildOfClass("Humanoid")
+        if humanoid and not entry._humanoidStateConn then
+            local function forceCollisions()
+                if not isLiveInstance(limb) or not limb.Parent then return end
+                limb.CanCollide = false
+            end
+            entry._humanoidStateConn = humanoid.StateChanged:Connect(forceCollisions)
+            forceCollisions()
+        end
+    end
+
+    return newVec
 end
 
 local function sharedRestoreLimb(parent, cacheKey, activeLimb)
@@ -377,6 +353,10 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
         if entry._internalChangedConn then
             pcall(function() entry._internalChangedConn:Disconnect() end)
             entry._internalChangedConn = nil
+        end
+        if entry._humanoidStateConn then
+            pcall(function() entry._humanoidStateConn:Disconnect() end)
+            entry._humanoidStateConn = nil
         end
         limbData._bypassHooks = true
         pcall(function()
@@ -390,74 +370,10 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
         limbData._bypassHooks = false
     end
 
-    if limbData.neutralizedCallbacks then
-        for fn, orig in pairs(limbData.neutralizedCallbacks) do
-            pcall(function()
-                hookfunction(fn, orig)
-                limbData.neutralizedCallbacks[fn] = nil
-            end)
-        end
-    end
-
     if entry.Limb then limbData.instanceLookup[entry.Limb] = nil end
-    if activeLimb and activeLimb ~= entry.Limb then
-        limbData.instanceLookup[activeLimb] = nil
-    end
+    if activeLimb and activeLimb ~= entry.Limb then limbData.instanceLookup[activeLimb] = nil end
     if entry.Character then limbData.instanceLookup[entry.Character] = nil end
     cache[cacheKey] = nil
-end
-
-local function sharedApplyLimb(parent, cacheKey, char, limb)
-    if not limb or not limb.Parent then return end
-
-    local ok, err = pcall(sharedSaveData, parent, cacheKey, char, limb)
-
-    local entry = parent._playerCache[cacheKey]
-    if not entry then return end
-    local cfg   = parent._settings
-
-    local newVec = Vector3_new(cfg.LIMB_SIZE, cfg.LIMB_SIZE, cfg.LIMB_SIZE)
-    local trans  = cfg.LIMB_TRANSPARENCY
-    local colide = cfg.LIMB_CAN_COLLIDE
-    local isHRP  = (limb.Name == "HumanoidRootPart")
-    local newPhys = nil
-    if isHRP then
-        newPhys = getAdjustedPhysicalProperties(limb, entry.OriginalSize, newVec)
-    end
-
-    limb.Size         = newVec
-    limb.Transparency = trans
-    limb.CanCollide   = colide
-
-    if isHRP then
-        limb.Massless = false
-        if newPhys then limb.CustomPhysicalProperties = newPhys end
-    else
-        limb.Massless     = true
-        limb.RootPriority = -127
-    end
-
-    local conn = limb.Changed:Connect(function(prop)
-        if BLOCKED_PROPS[prop] then
-            if prop == "Size" then
-                limb.Size = newVec
-            elseif prop == "Transparency" then
-                limb.Transparency = trans
-            elseif prop == "CanCollide" then
-                limb.CanCollide = colide
-            elseif prop == "Massless" then
-                limb.Massless = isHRP and false or true
-            elseif prop == "RootPriority" and not isHRP then
-                limb.RootPriority = -127
-            end
-            if prop == "CustomPhysicalProperties" and isHRP and newPhys then
-                limb.CustomPhysicalProperties = newPhys
-            end
-        end
-    end)
-    entry._internalChangedConn = conn
-
-    return newVec
 end
 
 local function reapplyCosmeticToEntry(entry, settings)
@@ -468,15 +384,16 @@ local function reapplyCosmeticToEntry(entry, settings)
         pcall(function() entry._internalChangedConn:Disconnect() end)
         entry._internalChangedConn = nil
     end
+    if entry._humanoidStateConn then
+        pcall(function() entry._humanoidStateConn:Disconnect() end)
+        entry._humanoidStateConn = nil
+    end
 
     local newVec = Vector3_new(settings.LIMB_SIZE, settings.LIMB_SIZE, settings.LIMB_SIZE)
     local trans = settings.LIMB_TRANSPARENCY
     local colide = settings.LIMB_CAN_COLLIDE
     local isHRP = (limb.Name == "HumanoidRootPart")
-    local newPhys = nil
-    if isHRP then
-        newPhys = getAdjustedPhysicalProperties(limb, entry.OriginalSize, newVec)
-    end
+    local newPhys = isHRP and getAdjustedPhysicalProperties(limb, entry.OriginalSize, newVec) or nil
 
     limbData._bypassHooks = true
     limb.Size = newVec
@@ -493,16 +410,11 @@ local function reapplyCosmeticToEntry(entry, settings)
 
     local conn = limb.Changed:Connect(function(prop)
         if BLOCKED_PROPS[prop] then
-            if prop == "Size" then
-                limb.Size = newVec
-            elseif prop == "Transparency" then
-                limb.Transparency = trans
-            elseif prop == "CanCollide" then
-                limb.CanCollide = colide
-            elseif prop == "Massless" then
-                limb.Massless = isHRP and false or true
-            elseif prop == "RootPriority" and not isHRP then
-                limb.RootPriority = -127
+            if prop == "Size" then limb.Size = newVec
+            elseif prop == "Transparency" then limb.Transparency = trans
+            elseif prop == "CanCollide" then limb.CanCollide = colide
+            elseif prop == "Massless" then limb.Massless = isHRP and false or true
+            elseif prop == "RootPriority" and not isHRP then limb.RootPriority = -127
             end
             if prop == "CustomPhysicalProperties" and isHRP and newPhys then
                 limb.CustomPhysicalProperties = newPhys
@@ -510,6 +422,19 @@ local function reapplyCosmeticToEntry(entry, settings)
         end
     end)
     entry._internalChangedConn = conn
+
+    -- Re-attach humanoid state listener if collisions are still off
+    if not colide then
+        local humanoid = entry.Character and entry.Character:FindFirstChildOfClass("Humanoid")
+        if humanoid and not entry._humanoidStateConn then
+            local function forceCollisions()
+                if not isLiveInstance(limb) or not limb.Parent then return end
+                limb.CanCollide = false
+            end
+            entry._humanoidStateConn = humanoid.StateChanged:Connect(forceCollisions)
+            forceCollisions()
+        end
+    end
 end
 
 local LimbExtender = {}
@@ -671,71 +596,48 @@ function LimbExtender:_buildESPConfig()
 end
 
 function LimbExtender:_applyLimbs(player, char, limb)
-	if not isLiveInstance(limb) or not limb.Parent then return end
+    if not isLiveInstance(limb) or not limb.Parent then return end
 
-	local cacheKey
-	if player then
-		cacheKey = player.Name
-	else
-		if not self._npcIdMap[char] then
-			limbData.npcIdCounter = limbData.npcIdCounter + 1
-			self._npcIdMap[char] = "__npc_" .. limbData.npcIdCounter
-		end
-		cacheKey = self._npcIdMap[char]
-	end
+    local cacheKey
+    if player then
+        cacheKey = player.Name
+    else
+        if not self._npcIdMap[char] then
+            limbData.npcIdCounter = limbData.npcIdCounter + 1
+            self._npcIdMap[char] = "__npc_" .. limbData.npcIdCounter
+        end
+        cacheKey = self._npcIdMap[char]
+    end
 
-	sharedApplyLimb(self, cacheKey, char, limb)
+    sharedApplyLimb(self, cacheKey, char, limb)
 
-	if self._settings.ESP then
-		local tracked = self._ESP:Track(char)
-		if not tracked then
-			task.spawn(function()
-				local attempts = 0
-				while not self._ESP:Track(char) and attempts < 30 do
-					task.wait(0.1)
-					attempts = attempts + 1
-				end
-			end)
-		end
-	end
-
-	local entry = self._playerCache[cacheKey]
-	if not entry then return end
-
-	if not self._settings.LIMB_CAN_COLLIDE then
-		local humanoid = char:FindFirstChildOfClass("Humanoid")
-		if humanoid then
-			local function forceCollisions()
-				if not isLiveInstance(limb) or not limb.Parent then return end
-				limb.CanCollide = false
-			end
-			if not entry._humanoidStateConn then
-				entry._humanoidStateConn = humanoid.StateChanged:Connect(forceCollisions)
-			end
-			forceCollisions()
-		end
-	end
+    if self._settings.ESP then
+        local tracked = self._ESP:Track(char)
+        if not tracked then
+            task.spawn(function()
+                local attempts = 0
+                while not self._ESP:Track(char) and attempts < 30 do
+                    task.wait(0.1)
+                    attempts = attempts + 1
+                end
+            end)
+        end
+    end
 end
 
 function LimbExtender:_removeLimbs(player, char, limb)
-	local cacheKey
-	if player then
-		cacheKey = player.Name
-	else
-		cacheKey = self._npcIdMap[char]
-	end
+    local cacheKey
+    if player then
+        cacheKey = player.Name
+    else
+        cacheKey = self._npcIdMap[char]
+    end
 
-	local entry = self._playerCache[cacheKey]
-	if entry and entry._humanoidStateConn then
-		entry._humanoidStateConn:Disconnect()
-		entry._humanoidStateConn = nil
-	end
-
-	sharedRestoreLimb(self, cacheKey, limb)
-	if self._ESP and char then self._ESP:Untrack(char) end
-	if not player then
-		self._npcIdMap[char] = nil
-	end
+    sharedRestoreLimb(self, cacheKey, limb)
+    if self._ESP and char then self._ESP:Untrack(char) end
+    if not player then
+        self._npcIdMap[char] = nil
+    end
 end
 
 function LimbExtender:_doRestart()
