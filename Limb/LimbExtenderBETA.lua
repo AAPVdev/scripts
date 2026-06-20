@@ -176,9 +176,7 @@ local function hookInstanceMetatable(instance, entry, settings)
     if limbData._instanceHooks[instance] then
         unhookInstanceMetatable(instance)
     end
-    local hooks = {}
-    limbData._instanceHooks[instance] = hooks
-
+	
     local isModel = instance:IsA("Model")
     local isLimb = (instance == entry.Limb)
     local newVec = isLimb and Vector3_new(settings.LIMB_SIZE, settings.LIMB_SIZE, settings.LIMB_SIZE) or nil
@@ -195,44 +193,38 @@ local function hookInstanceMetatable(instance, entry, settings)
         entry._spoofedRootPriority = isHRP and 0 or -127
     end
 
-    hooks.__newindex = true
-    hooks.__newindex = hookmetamethod(instance, "__newindex", newcclosure(function(...)
+	local mt = getrawmetatable(instance)
+	local oldnewIndex = mt.__newindex
+	local oldIndex = mt.__index
+	
+	setreadonly(mt, false)
+	
+   	mt.__newindex = newcclosure(function(...)
         local t, k, v = ...
         if not checkcaller() then
-            if BLOCKED_PROPS[k] and not isModel then
-                if isLimb then
-                    if k == "Size" then entry._spoofedSize = v
-                    elseif k == "Transparency" then entry._spoofedTransparency = v
-                    elseif k == "CanCollide" then entry._spoofedCanCollide = v
-                    elseif k == "Massless" then entry._spoofedMassless = v
-                    elseif k == "Mass" then entry.OriginalMass = v
-                    elseif k == "AssemblyMass" then entry.OriginalAssemblyMass = v
-                    elseif k == "AssemblyCenterOfMass" then entry.OriginalAssemblyCOM = v
-                    elseif k == "CustomPhysicalProperties" then entry.OriginalPhysProps = v
-                    elseif k == "RootPriority" then entry._spoofedRootPriority = v
-                    end
+            if BLOCKED_PROPS[k] and isLimb and not isModel then
+				if k == "Size" then entry._spoofedSize = v
+				elseif k == "Transparency" then entry._spoofedTransparency = v
+				elseif k == "CanCollide" then entry._spoofedCanCollide = v
+				elseif k == "Massless" then entry._spoofedMassless = v
+				elseif k == "Mass" then entry.OriginalMass = v
+				elseif k == "AssemblyMass" then entry.OriginalAssemblyMass = v
+				elseif k == "AssemblyCenterOfMass" then entry.OriginalAssemblyCOM = v
+				elseif k == "CustomPhysicalProperties" then entry.OriginalPhysProps = v
+				elseif k == "RootPriority" then entry._spoofedRootPriority = v
                 end
-                local sigs = limbData.fakeSignals[instance]
-                if sigs then
-                    if sigs["__Changed"] then sigs["__Changed"]:Fire(k) end
-                    if sigs[k] then sigs[k]:Fire() end
-                end
-                return
             end
         end
-        return hooks.__newindex(...)
-    end))
+        return oldnewIndex(...)
+    end)
 
-    hooks.__index = true
-    hooks.__index = hookmetamethod(instance, "__index", newcclosure(function(...)
+	mt.__index = newcclosure(function(...)
         local t, k = ...
         if not checkcaller() then
             if isModel then
                 if k == "ExtentsSize" then
                     return computeExtentsSize(instance, entry)
                 end
-            elseif isLimb and k == "Changed" then
-                return ensureFakeSignal(instance, "__Changed").Event
             elseif BLOCKED_PROPS[k] then
                 if isLimb then
                     if k == "Size" then return entry._spoofedSize
@@ -260,37 +252,9 @@ local function hookInstanceMetatable(instance, entry, settings)
                 end
             end
         end
-        return hooks.__index(...)
-    end))
-
-    hooks.__namecall = true
-    hooks.__namecall = hookmetamethod(instance, "__namecall", newcclosure(function(...)
-        local self = ...
-        local method = getnamecallmethod()
-        if not checkcaller() then
-            if isModel then
-                if method == "GetExtentsSize" then
-                    return computeExtentsSize(self, entry)
-                elseif method == "GetBoundingBox" then
-                    local extents = computeExtentsSize(self, entry)
-                    local cf = self:GetPrimaryPartCFrame()
-                    return cf, extents
-                end
-            else
-                if method == "GetPropertyChangedSignal" then
-                    local prop = select(2, ...)
-                    if BLOCKED_PROPS[prop] then
-                        return ensureFakeSignal(self, prop).Event
-                    end
-                elseif isLimb and method == "GetMass" then
-                    local density = entry.OriginalDensity
-                    local size = entry.OriginalSize
-                    return density * (size.X * size.Y * size.Z)
-                end
-            end
-        end
-        return hooks.__namecall(...)
-    end))
+        return oldIndex(...)
+    end)
+	setreadonly(mt, true)
 end
 
 local function unhookInstanceMetatable(instance)
