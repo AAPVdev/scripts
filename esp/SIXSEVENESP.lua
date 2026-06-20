@@ -87,9 +87,10 @@ local DEFAULT_OPTIONS = {
 
 	CanDraw = nil,
 
-	-- Work‑spreading limits
-	MaxInitPerFrame             = 10,   -- new models per frame
-	MaxOcclusionChecksPerFrame  = 5,    -- raycasts per frame
+	-- Work‑spreading limits (tweak these for your game)
+	MaxInitPerFrame             = 10,   -- models fully initialized per frame
+	MaxOcclusionChecksPerFrame  = 15,   -- raycasts per frame (higher = more accurate, but heavier)
+	TracerOnOffscreen           = false, -- set to true if you want tracers to screen edges
 
 	TextResolver = function(model, meta)
 		return model.Name
@@ -119,7 +120,7 @@ local function mergeDeep(dst, src)
 	return dst
 end
 
--- Pooling (BeginFrame / EndFrame pattern)
+-- Pool (BeginFrame / EndFrame pattern)
 local function newPool()
 	local self = { Objects = {} }
 
@@ -326,7 +327,7 @@ function SIXSEVENESP:GetMeta(model)
 		bones     = bones,
 		pts       = { false, false, false, false },
 		occluded  = false,
-		-- Stagger first occlusion check
+		-- Stagger first occlusion check so they don't all hit the same frame
 		occludeAt = -self.Config.LOD.OcclusionFrequency + math.random(0, self.Config.LOD.OcclusionFrequency - 1),
 
 		ignoreList = {},
@@ -401,7 +402,7 @@ function SIXSEVENESP:ToScreenPoint(pos, allowOffscreen)
 	return v2(p.X, p.Y), onScreen
 end
 
--- Per‑frame bounding box (computed fresh each frame, cached only for the frame)
+-- Fresh bounding box each frame (cached only for the frame)
 function SIXSEVENESP:GetModelBBox(model)
 	local cached = self._bboxCache[model]
 	if cached then
@@ -485,14 +486,15 @@ function SIXSEVENESP:IsObstructedThrottled(pivot, ignoreList, meta, frame)
 		meta.occluded = false
 		return false
 	end
+
 	local freq = self.Config.LOD.OcclusionFrequency
 	if frame - meta.occludeAt < freq then
 		return meta.occluded
 	end
 
-	-- Cap reached → assume NOT occluded (better to draw through walls than hide valid targets)
+	-- Cap hit: skip raycast, keep previous occlusion state
 	if self._occlusionDoneThisFrame >= self.Config.MaxOcclusionChecksPerFrame then
-		return false
+		return meta.occluded
 	end
 
 	meta.occludeAt = frame
@@ -529,7 +531,7 @@ function SIXSEVENESP:IsObstructedThrottled(pivot, ignoreList, meta, frame)
 	return solid
 end
 
--- Drawing functions (unchanged)
+-- Drawing helpers
 function SIXSEVENESP:Draw2DBox(pts, opts)
 	local color        = opts.Color or self.Config.Color
 	local tl, tr, bl, br = pts[1], pts[2], pts[3], pts[4]
@@ -597,13 +599,19 @@ function SIXSEVENESP:DrawTracer(model, pts, opts)
 	local cam = self:GetCamera()
 	if not cam then return end
 
+	-- Respect off‑screen tracer toggle
 	local target
 	if pts then
+		-- On‑screen, use bottom center of box
 		target = (pts[3] + pts[4]) * 0.5
-	else
-		local sp, onScr = self:ToScreenPoint(opts.Pivot, true)
+	elseif self.Config.TracerOnOffscreen then
+		-- Allow off‑screen tracers (edge of screen)
+		local sp, _ = self:ToScreenPoint(opts.Pivot, true)
 		if not sp then return end
 		target = sp
+	else
+		-- No on‑screen box and off‑screen tracers disabled → don't draw
+		return
 	end
 
 	local tracerOrigin = opts.TracerOrigin
@@ -744,7 +752,6 @@ function SIXSEVENESP:RenderStep()
 	self._pool:BeginFrame()
 	self:FlushCache()
 
-	-- Reset per‑frame counters
 	self._initDoneThisFrame = 0
 	self._occlusionDoneThisFrame = 0
 
@@ -764,7 +771,7 @@ function SIXSEVENESP:RenderStep()
 
 	local toUntrack = {}
 
-	-- Pass 1: initialise a limited number of new models (spread load)
+	-- Pass 1: initialise new models (up to MaxInitPerFrame)
 	for model in pairs(self._tracked) do
 		if not model or not model.Parent then
 			if self.Config.AutoUntrackMissing then
@@ -773,12 +780,10 @@ function SIXSEVENESP:RenderStep()
 			continue
 		end
 
-		-- Already initialised → skip
 		if self._meta[model] then
 			continue
 		end
 
-		-- Stop if we’ve hit the per‑frame limit
 		if self._initDoneThisFrame >= self.Config.MaxInitPerFrame then
 			break
 		end
@@ -794,12 +799,12 @@ function SIXSEVENESP:RenderStep()
 	-- Pass 2: draw all initialised models
 	for model in pairs(self._tracked) do
 		if not model or not model.Parent then
-			continue  -- already collected for untracking
+			continue
 		end
 
 		local meta = self._meta[model]
 		if not meta then
-			continue  -- not yet initialised, will be drawn in a future frame
+			continue
 		end
 
 		if self.Config.FilterLocalCharacter and model == lpChar then
