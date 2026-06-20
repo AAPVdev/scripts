@@ -28,7 +28,6 @@ local isLiveInstance = BaseModule.isLiveInstance
 local type, typeof = type, typeof
 local pcall = pcall
 local pairs, ipairs = pairs, ipairs
-local setmetatable = setmetatable
 local math_max = math.max
 local math_min = math.min
 local task_spawn = task.spawn
@@ -38,7 +37,6 @@ local table_insert = table.insert
 local table_clone = table.clone
 local Instance_new = Instance.new
 local Vector3_new = Vector3.new
-local Vector3_zero = Vector3_new()
 local PhysProps_new = PhysicalProperties.new
 local CFrame_new = CFrame.new
 
