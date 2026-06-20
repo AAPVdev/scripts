@@ -87,8 +87,9 @@ local DEFAULT_OPTIONS = {
 
 	CanDraw = nil,
 
-	MaxInitPerFrame             = 10,   
-	MaxOcclusionChecksPerFrame  = 5,    
+	-- Work‑spreading limits
+	MaxInitPerFrame             = 10,   -- new models per frame
+	MaxOcclusionChecksPerFrame  = 5,    -- raycasts per frame
 
 	TextResolver = function(model, meta)
 		return model.Name
@@ -118,6 +119,7 @@ local function mergeDeep(dst, src)
 	return dst
 end
 
+-- Pooling (BeginFrame / EndFrame pattern)
 local function newPool()
 	local self = { Objects = {} }
 
@@ -324,7 +326,7 @@ function SIXSEVENESP:GetMeta(model)
 		bones     = bones,
 		pts       = { false, false, false, false },
 		occluded  = false,
-		
+		-- Stagger first occlusion check
 		occludeAt = -self.Config.LOD.OcclusionFrequency + math.random(0, self.Config.LOD.OcclusionFrequency - 1),
 
 		ignoreList = {},
@@ -341,8 +343,6 @@ function SIXSEVENESP:GetMeta(model)
 		},
 
 		pivot = Vector3.new(),
-		
-		_cachedBBox = nil,
 	}
 
 	self._meta[model] = meta
@@ -352,11 +352,6 @@ function SIXSEVENESP:GetMeta(model)
 			self:Untrack(model)
 		end
 	end)
-
-	local cf, sz = model:GetBoundingBox()
-	if cf then
-		meta._cachedBBox = {cf, sz}
-	end
 
 	return meta
 end
@@ -406,17 +401,14 @@ function SIXSEVENESP:ToScreenPoint(pos, allowOffscreen)
 	return v2(p.X, p.Y), onScreen
 end
 
+-- Per‑frame bounding box (computed fresh each frame, cached only for the frame)
 function SIXSEVENESP:GetModelBBox(model)
-	
-	local meta = self._meta[model]
-	if meta and meta._cachedBBox then
-		return meta._cachedBBox[1], meta._cachedBBox[2]
+	local cached = self._bboxCache[model]
+	if cached then
+		return cached[1], cached[2]
 	end
-
 	local cframe, size = model:GetBoundingBox()
-	if meta then
-		meta._cachedBBox = {cframe, size}
-	end
+	self._bboxCache[model] = { cframe, size }
 	return cframe, size
 end
 
@@ -498,8 +490,9 @@ function SIXSEVENESP:IsObstructedThrottled(pivot, ignoreList, meta, frame)
 		return meta.occluded
 	end
 
+	-- Cap reached → assume NOT occluded (better to draw through walls than hide valid targets)
 	if self._occlusionDoneThisFrame >= self.Config.MaxOcclusionChecksPerFrame then
-		return meta.occluded   
+		return false
 	end
 
 	meta.occludeAt = frame
@@ -536,6 +529,7 @@ function SIXSEVENESP:IsObstructedThrottled(pivot, ignoreList, meta, frame)
 	return solid
 end
 
+-- Drawing functions (unchanged)
 function SIXSEVENESP:Draw2DBox(pts, opts)
 	local color        = opts.Color or self.Config.Color
 	local tl, tr, bl, br = pts[1], pts[2], pts[3], pts[4]
@@ -750,6 +744,7 @@ function SIXSEVENESP:RenderStep()
 	self._pool:BeginFrame()
 	self:FlushCache()
 
+	-- Reset per‑frame counters
 	self._initDoneThisFrame = 0
 	self._occlusionDoneThisFrame = 0
 
@@ -769,6 +764,7 @@ function SIXSEVENESP:RenderStep()
 
 	local toUntrack = {}
 
+	-- Pass 1: initialise a limited number of new models (spread load)
 	for model in pairs(self._tracked) do
 		if not model or not model.Parent then
 			if self.Config.AutoUntrackMissing then
@@ -777,10 +773,12 @@ function SIXSEVENESP:RenderStep()
 			continue
 		end
 
+		-- Already initialised → skip
 		if self._meta[model] then
 			continue
 		end
 
+		-- Stop if we’ve hit the per‑frame limit
 		if self._initDoneThisFrame >= self.Config.MaxInitPerFrame then
 			break
 		end
@@ -793,16 +791,15 @@ function SIXSEVENESP:RenderStep()
 		self._initDoneThisFrame = self._initDoneThisFrame + 1
 	end
 
+	-- Pass 2: draw all initialised models
 	for model in pairs(self._tracked) do
 		if not model or not model.Parent then
-			
-			continue
+			continue  -- already collected for untracking
 		end
 
 		local meta = self._meta[model]
 		if not meta then
-			
-			continue
+			continue  -- not yet initialised, will be drawn in a future frame
 		end
 
 		if self.Config.FilterLocalCharacter and model == lpChar then
