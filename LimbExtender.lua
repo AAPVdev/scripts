@@ -4,8 +4,7 @@ local function missing(t, f, fallback)
 end
 
 local cloneref = missing("function", cloneref, function(obj) return obj end)
-local has_checkcaller = type(checkcaller) == "function"
-local checkcaller = has_checkcaller and checkcaller or function() return true end
+local checkcaller = type(checkcaller) == "function" and checkcaller or function() return true end
 
 local Players = cloneref(game:GetService("Players"))
 local localPlayer = Players.LocalPlayer
@@ -36,16 +35,12 @@ local CFrame_new = CFrame.new
 limbData.playerCache    = limbData.playerCache    or {}
 limbData.instanceLookup = limbData.instanceLookup or setmetatable({}, { __mode = "k" })
 limbData.npcIdCounter   = limbData.npcIdCounter   or 0
-limbData.fakeSignals     = limbData.fakeSignals     or setmetatable({}, { __mode = "k" })
-limbData.partData        = limbData.partData        or setmetatable({}, { __mode = "k" })
 
 if type(limbData.terminate) == "function" then
     limbData.terminate()
     limbData.terminate = nil
 end
 
-local has_newcclosure    = type(newcclosure)    == "function"
-local has_hookmetamethod = type(hookmetamethod) == "function"
 local has_loadstring     = type(loadstring)     == "function"
 local has_httpget = pcall(function()
     local f = game.HttpGet
@@ -122,11 +117,10 @@ local function retrofitExisting(hrp, monitoredProps)
     local function wrapSignal(signal)
         if typeof(signal) ~= "RBXScriptSignal" then return end
         for _, conn in ipairs(getconnections(signal)) do
-            local proxy = conn
-            local getter = proxy.Function
-            if type(getter) ~= "function" then return end
-            local origFunc = getter(proxy)
-            if type(origFunc) ~= "function" or alreadyHooked[origFunc] then return end
+            local getter = conn.Function
+            if type(getter) ~= "function" then goto continue end
+            local origFunc = getter(conn)
+            if type(origFunc) ~= "function" or alreadyHooked[origFunc] then goto continue end
 
             local origRef = origFunc
             local wrapper = newcclosure(function(...)
@@ -137,6 +131,7 @@ local function retrofitExisting(hrp, monitoredProps)
             local realOrig = hookfunction(origFunc, wrapper)
             origRef = realOrig
             alreadyHooked[origFunc] = true
+            ::continue::
         end
     end
     wrapSignal(hrp.Changed)
@@ -183,9 +178,6 @@ if not limbData._bypassInstalled then
                 if key == "Transparency" then data.OriginalTransparency = value end
                 if key == "CanCollide" then data.OriginalCanCollide = value end
                 if key == "Massless" then data.OriginalMassless = value end
-                if key == "Mass" then data.OriginalMass = value end
-                if key == "AssemblyMass" then data.OriginalAssemblyMass = value end
-                if key == "AssemblyCenterOfMass" then data.OriginalAssemblyCOM = value end
                 if key == "CustomPhysicalProperties" then data.OriginalPhysProps = value end
                 if key == "RootPriority" then data.OriginalRootPriority = value end
             end
@@ -254,6 +246,16 @@ local DEFAULTS = {
     ESP_CAN_DRAW      = nil,
     ESP_TRACER_ORIGIN = nil,
 }
+
+local function mergeTables(target, source)
+    for k, v in pairs(source) do
+        if type(v) == "table" and type(target[k]) == "table" then
+            mergeTables(target[k], v)
+        else
+            target[k] = v
+        end
+    end
+end
 
 local function mergeSettings(user)
     local s = table_clone(DEFAULTS)
@@ -331,7 +333,7 @@ function LimbExtender.new(userSettings)
     end
 
     local function sharedApplyLimb(parent, cacheKey, char, limb)
-        if not isLiveInstance(limb) or not limb.Parent then return end
+        if not isLiveInstance(limb) then return end
         sharedSaveData(parent, cacheKey, char, limb)
         local entry = parent._playerCache[cacheKey]
         if not entry then return end
@@ -377,7 +379,7 @@ function LimbExtender.new(userSettings)
             local humanoid = char:FindFirstChildOfClass("Humanoid")
             if humanoid and not entry._humanoidStateConn then
                 local function forceCollisions()
-                    if not isLiveInstance(limb) or not limb.Parent then return end
+                    if not isLiveInstance(limb) then return end
                     silentWrite(limb, { CanCollide = false })
                 end
                 entry._humanoidStateConn = humanoid.StateChanged:Connect(forceCollisions)
@@ -390,7 +392,7 @@ function LimbExtender.new(userSettings)
         local cache = parent._playerCache
         local entry = cache[cacheKey]
         if not entry then return end
-        if activeLimb and isLiveInstance(activeLimb) and activeLimb.Parent then
+        if activeLimb and isLiveInstance(activeLimb) then
             if entry._internalChangedConn then pcall(function() entry._internalChangedConn:Disconnect() end) end
             if entry._humanoidStateConn then pcall(function() entry._humanoidStateConn:Disconnect() end) end
             local props = {
@@ -411,7 +413,7 @@ function LimbExtender.new(userSettings)
 
     local function reapplyCosmeticToEntry(entry, settings)
         local limb = entry.Limb
-        if not isLiveInstance(limb) or not limb.Parent then return end
+        if not isLiveInstance(limb) then return end
         if entry._internalChangedConn then pcall(function() entry._internalChangedConn:Disconnect() end) end
         if entry._humanoidStateConn then pcall(function() entry._humanoidStateConn:Disconnect() end) end
         local newVec = Vector3_new(settings.LIMB_SIZE, settings.LIMB_SIZE, settings.LIMB_SIZE)
@@ -447,7 +449,7 @@ function LimbExtender.new(userSettings)
             local humanoid = entry.Character and entry.Character:FindFirstChildOfClass("Humanoid")
             if humanoid and not entry._humanoidStateConn then
                 local function forceCollisions()
-                    if not isLiveInstance(limb) or not limb.Parent then return end
+                    if not isLiveInstance(limb) then return end
                     silentWrite(limb, { CanCollide = false })
                 end
                 entry._humanoidStateConn = humanoid.StateChanged:Connect(forceCollisions)
@@ -457,7 +459,7 @@ function LimbExtender.new(userSettings)
     end
 
     function self:_applyLimbs(player, char, limb)
-        if not isLiveInstance(limb) or not limb.Parent then return end
+        if not isLiveInstance(limb) then return end
         local cacheKey
         if player then cacheKey = player.Name
         else
@@ -623,11 +625,6 @@ function LimbExtender:Restart()
 end
 
 function LimbExtender:Set(key, value)
-    local function mergeTables(target, source)
-        for k, v in pairs(source) do
-            if type(v) == "table" and type(target[k]) == "table" then mergeTables(target[k], v) else target[k] = v end
-        end
-    end
     local isLodKey = (key == "ESP_NEAR_FLAGS" or key == "ESP_MEDIUM_FLAGS" or key == "ESP_FAR_FLAGS")
     if isLodKey then
         if type(self._settings[key]) ~= "table" then self._settings[key] = {} end
@@ -653,9 +650,6 @@ function LimbExtender:Set(key, value)
     if type(key) == "string" and key:sub(1,4) == "ESP_" then
         if self._ESP then
             self._ESP:SetOptions(self:_buildESPConfig())
-            if key == "ESP_CAN_DRAW" then self._ESP.Config.CanDraw = value
-            elseif key == "ESP_TEXT_RESOLVER" then self._ESP.Config.TextResolver = value
-            elseif key == "ESP_TRACER_ORIGIN" then self._ESP.Config.TracerOrigin = value end
         end
         return
     end
