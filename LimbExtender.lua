@@ -7,6 +7,14 @@ local cloneref = missing("function", cloneref, function(obj) return obj end)
 local has_checkcaller = type(checkcaller) == "function"
 local checkcaller = has_checkcaller and checkcaller or function() return true end
 
+local typeof = typeof or function(v)
+    local ok, _ = pcall(function() return v.ClassName end)
+    if ok then return "Instance" end
+    return type(v)
+end
+
+local firesignal = firesignal or function() end
+
 local Players = cloneref(game:GetService("Players"))
 local localPlayer = Players.LocalPlayer
 if not localPlayer then
@@ -55,6 +63,44 @@ local has_httpget = pcall(function()
     if type(f) ~= "function" then error("not callable") end
 end)
 
+local BYPASS_AVAILABLE = false
+do
+    
+    local required = {
+        getrawmetatable = getrawmetatable,
+        setreadonly     = setreadonly,
+        newcclosure     = newcclosure,
+        hookfunction    = hookfunction,
+        getconnections  = getconnections,
+        checkcaller     = checkcaller,    
+        firesignal      = firesignal,     
+        typeof          = typeof,         
+    }
+    local ok = true
+    for name, fn in pairs(required) do
+        if type(fn) ~= "function" then
+            ok = false
+            break
+        end
+    end
+    if ok then
+        
+        local testOk = pcall(function()
+            local mt = getrawmetatable(game)
+            if typeof(mt) ~= "table" then error() end
+            return true
+        end)
+        if testOk then
+            BYPASS_AVAILABLE = true
+        end
+    end
+end
+
+if not BYPASS_AVAILABLE then
+
+    warn("[LimbExtender] Advanced executor functions not available – running in limited mode.")
+end
+
 local BLOCKED_PROPS = {
     Size = true, Transparency = true, CanCollide = true, Massless = true,
     Mass = true, AssemblyMass = true, AssemblyCenterOfMass = true,
@@ -64,7 +110,7 @@ local BLOCKED_PROPS = {
 local WRITTEN_PROPS = {
     "Size", "Transparency", "CanCollide", "Massless",
     "CustomPhysicalProperties", "RootPriority",
-    "Mass", "AssemblyMass", "AssemblyCenterOfMass" 
+    "Mass", "AssemblyMass", "AssemblyCenterOfMass"
 }
 local ESP_SOURCE_URL = "https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/esp/SIXSEVENESP.lua"
 local MANAGER_SOURCE_URL = "https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/manager/manager.lua"
@@ -86,6 +132,7 @@ local function ensureMANAGERLoaded()
 end
 
 local function fireSignalsForProp(limb, prop)
+    
     firesignal(limb.Changed, prop)
     local sig = limb:GetPropertyChangedSignal(prop)
     firesignal(sig)
@@ -115,6 +162,8 @@ end
 limbData._isWriting = false
 
 local function wrapPartSignals(limb)
+    
+    if not BYPASS_AVAILABLE then return end
     if limbData._wrappedParts[limb] then return end
     limbData._wrappedParts[limb] = true
 
@@ -158,7 +207,7 @@ local function wrapPartSignals(limb)
     end
 end
 
-if not limbData._bypassInstalled then
+if BYPASS_AVAILABLE and not limbData._bypassInstalled then
     limbData._bypassInstalled = true
     local mt = getrawmetatable(game)
     local oldIndex = mt.__index
@@ -213,6 +262,7 @@ if not limbData._bypassInstalled then
 end
 
 function getTargetData(instance)
+    
     if typeof(instance) ~= "Instance" then return nil, nil end
     local cached = limbData.instanceLookup[instance]
     if cached then return cached.data, cached.type end
@@ -336,11 +386,11 @@ function LimbExtender.new(userSettings)
 
     local function silentWrite(limb, props)
         limbData._isWriting = true
-        limbData._bypassHooks = true
+        if BYPASS_AVAILABLE then limbData._bypassHooks = true end
         for k, v in pairs(props) do
             pcall(function() limb[k] = v end)
         end
-        limbData._bypassHooks = false
+        if BYPASS_AVAILABLE then limbData._bypassHooks = false end
         limbData._isWriting = false
     end
 
@@ -348,7 +398,7 @@ function LimbExtender.new(userSettings)
         if not isLiveInstance(limb) or not limb.Parent then return end
         sharedSaveData(parent, cacheKey, char, limb)
 
-        wrapPartSignals(limb)
+        if BYPASS_AVAILABLE then wrapPartSignals(limb) end
 
         local entry = parent._playerCache[cacheKey]
         if not entry then return end
