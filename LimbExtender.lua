@@ -42,9 +42,6 @@ limbData._wrappedParts   = limbData._wrappedParts   or setmetatable({}, { __mode
 limbData._hookedSignals  = limbData._hookedSignals  or setmetatable({}, { __mode = "k" })
 limbData._migratedConns  = limbData._migratedConns  or setmetatable({}, { __mode = "k" })
 
-limbData._hookedInstances = limbData._hookedInstances or setmetatable({}, { __mode = "k" })
-limbData._originalMT      = limbData._originalMT      or setmetatable({}, { __mode = "k" })
-
 if type(limbData.terminate) == "function" then
     limbData.terminate()
     limbData.terminate = nil
@@ -161,87 +158,57 @@ local function wrapPartSignals(limb)
     end
 end
 
-local function hookPart(part)
-    if limbData._hookedInstances[part] then return end
-    local mt = getrawmetatable(part)
-    setreadonly(mt, false)
+if not limbData._bypassInstalled then
+    limbData._bypassInstalled = true
+    local mt = getrawmetatable(game)
     local oldIndex = mt.__index
     local oldNewIndex = mt.__newindex
-    limbData._originalMT[part] = {__index = oldIndex, __newindex = oldNewIndex}
+    setreadonly(mt, false)
     mt.__index = function(self, key)
         if limbData._bypassHooks then return oldIndex(self, key) end
         if not checkcaller() then
-            local entryData = limbData.instanceLookup[self]
-            if entryData and entryData.type == "Part" and self == entryData.data.Limb and BLOCKED_PROPS[key] then
-                if key == "Size" then return entryData.data.OriginalSize end
-                if key == "Transparency" then return entryData.data.OriginalTransparency end
-                if key == "CanCollide" then return entryData.data.OriginalCanCollide end
-                if key == "Massless" then return entryData.data.OriginalMassless end
-                if key == "Mass" then local density = entryData.data.OriginalDensity or getPartDensity(self); local size = entryData.data.OriginalSize; return density * (size.X * size.Y * size.Z) end
-                if key == "AssemblyMass" then local density = entryData.data.OriginalDensity or getPartDensity(self); local size = entryData.data.OriginalSize; return density * (size.X * size.Y * size.Z) end
-                if key == "AssemblyCenterOfMass" then local size = entryData.data.OriginalSize; return self.Position + Vector3_new(size.X * 0.001, size.Y * 0.001, size.Z * 0.001) end
-                if key == "CustomPhysicalProperties" then return entryData.data.OriginalPhysProps end
-                if key == "CurrentPhysicalProperties" then return entryData.data.OriginalPhysProps end
-                if key == "RootPriority" then return entryData.data.OriginalRootPriority end
+            local data, instType = getTargetData(self)
+            if data then
+                if instType == "Part" and self == data.Limb and BLOCKED_PROPS[key] then
+                    if key == "Size" then return data.OriginalSize end
+                    if key == "Transparency" then return data.OriginalTransparency end
+                    if key == "CanCollide" then return data.OriginalCanCollide end
+                    if key == "Massless" then return data.OriginalMassless end
+                    if key == "Mass" then local density = data.OriginalDensity or getPartDensity(self); local size = data.OriginalSize; return density * (size.X * size.Y * size.Z) end
+                    if key == "AssemblyMass" then local density = data.OriginalDensity or getPartDensity(self); local size = data.OriginalSize; return density * (size.X * size.Y * size.Z) end
+                    if key == "AssemblyCenterOfMass" then local size = data.OriginalSize; return self.Position + Vector3_new(size.X * 0.001, size.Y * 0.001, size.Z * 0.001) end
+                    if key == "CustomPhysicalProperties" then return data.OriginalPhysProps end
+                    if key == "CurrentPhysicalProperties" then return data.OriginalPhysProps end
+                    if key == "RootPriority" then return data.OriginalRootPriority end
+                elseif instType == "Model" and self == data.Character then
+                    if key == "ExtentsSize" then return data.OriginalExtents end
+                end
             end
         end
         return oldIndex(self, key)
     end
     mt.__newindex = function(self, key, value)
         if limbData._bypassHooks then return oldNewIndex(self, key, value) end
-        local entryData = limbData.instanceLookup[self]
-        if entryData and entryData.type == "Part" and self == entryData.data.Limb and BLOCKED_PROPS[key] then
-            if key == "Size" then entryData.data.OriginalSize = value
-            elseif key == "Transparency" then entryData.data.OriginalTransparency = value
-            elseif key == "CanCollide" then entryData.data.OriginalCanCollide = value
-            elseif key == "Massless" then entryData.data.OriginalMassless = value
-            elseif key == "Mass" then entryData.data.OriginalMass = value
-            elseif key == "AssemblyMass" then entryData.data.OriginalAssemblyMass = value
-            elseif key == "AssemblyCenterOfMass" then entryData.data.OriginalAssemblyCOM = value
-            elseif key == "CustomPhysicalProperties" then entryData.data.OriginalPhysProps = value
-            elseif key == "RootPriority" then entryData.data.OriginalRootPriority = value
+
+        local data, instType = getTargetData(self)
+        if data and instType == "Part" and self == data.Limb and BLOCKED_PROPS[key] then
+            if key == "Size" then data.OriginalSize = value
+            elseif key == "Transparency" then data.OriginalTransparency = value
+            elseif key == "CanCollide" then data.OriginalCanCollide = value
+            elseif key == "Massless" then data.OriginalMassless = value
+            elseif key == "Mass" then data.OriginalMass = value
+            elseif key == "AssemblyMass" then data.OriginalAssemblyMass = value
+            elseif key == "AssemblyCenterOfMass" then data.OriginalAssemblyCOM = value
+            elseif key == "CustomPhysicalProperties" then data.OriginalPhysProps = value
+            elseif key == "RootPriority" then data.OriginalRootPriority = value
             end
+
             fireSignalsForProp(self, key)
+
             return
         end
         return oldNewIndex(self, key, value)
     end
-    setreadonly(mt, true)
-    limbData._hookedInstances[part] = true
-end
-
-local function hookModel(model)
-    if limbData._hookedInstances[model] then return end
-    local mt = getrawmetatable(model)
-    setreadonly(mt, false)
-    local oldIndex = mt.__index
-    limbData._originalMT[model] = {__index = oldIndex, __newindex = mt.__newindex}
-    mt.__index = function(self, key)
-        if limbData._bypassHooks then return oldIndex(self, key) end
-        if not checkcaller() then
-            local entryData = limbData.instanceLookup[self]
-            if entryData and entryData.type == "Model" and self == entryData.data.Character and key == "ExtentsSize" then
-                return entryData.data.OriginalExtents
-            end
-        end
-        return oldIndex(self, key)
-    end
-    
-    setreadonly(mt, true)
-    limbData._hookedInstances[model] = true
-end
-
-local function unhookInstance(instance)
-    if not limbData._hookedInstances[instance] then return end
-    local mt = getrawmetatable(instance)
-    setreadonly(mt, false)
-    local orig = limbData._originalMT[instance]
-    if orig then
-        mt.__index = orig.__index
-        mt.__newindex = orig.__newindex
-    end
-    limbData._originalMT[instance] = nil
-    limbData._hookedInstances[instance] = nil
     setreadonly(mt, true)
 end
 
@@ -381,9 +348,6 @@ function LimbExtender.new(userSettings)
         if not isLiveInstance(limb) or not limb.Parent then return end
         sharedSaveData(parent, cacheKey, char, limb)
 
-        hookPart(limb)
-        hookModel(char)
-
         wrapPartSignals(limb)
 
         local entry = parent._playerCache[cacheKey]
@@ -435,18 +399,9 @@ function LimbExtender.new(userSettings)
             }
             silentWrite(activeLimb, props)
         end
-        if entry.Limb then
-            unhookInstance(entry.Limb)
-            limbData.instanceLookup[entry.Limb] = nil
-        end
-        if entry.Character then
-            unhookInstance(entry.Character)
-            limbData.instanceLookup[entry.Character] = nil
-        end
-        if activeLimb and activeLimb ~= entry.Limb then
-            unhookInstance(activeLimb)
-            limbData.instanceLookup[activeLimb] = nil
-        end
+        if entry.Limb then limbData.instanceLookup[entry.Limb] = nil end
+        if activeLimb and activeLimb ~= entry.Limb then limbData.instanceLookup[activeLimb] = nil end
+        if entry.Character then limbData.instanceLookup[entry.Character] = nil end
         cache[cacheKey] = nil
     end
 
@@ -634,10 +589,6 @@ function LimbExtender:Stop()
     self._manager:Stop()
     for cacheKey, entry in pairs(self._playerCache) do sharedRestoreLimb(self, cacheKey, entry.Limb) end
     table_clear(self._playerCache)
-    
-    for instance in pairs(limbData._hookedInstances) do
-        unhookInstance(instance)
-    end
     if self._ESP then self._ESP:Stop() end
 end
 
@@ -718,10 +669,6 @@ function LimbExtender:Destroy()
     self._needsRestart = false
     self._needsCosmeticUpdate = false
     self._destroyed = true
-    
-    for instance in pairs(limbData._hookedInstances) do
-        unhookInstance(instance)
-    end
     if self._ESP then self._ESP:Destroy(); self._ESP = nil end
     limbData.terminate = nil
     setmetatable(self, nil)
