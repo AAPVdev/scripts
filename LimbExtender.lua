@@ -38,6 +38,9 @@ limbData.instanceLookup = limbData.instanceLookup or setmetatable({}, { __mode =
 limbData.npcIdCounter   = limbData.npcIdCounter   or 0
 limbData.fakeSignals     = limbData.fakeSignals     or setmetatable({}, { __mode = "k" })
 limbData.partData        = limbData.partData        or setmetatable({}, { __mode = "k" })
+limbData._wrappedParts   = limbData._wrappedParts   or setmetatable({}, { __mode = "k" })
+limbData._hookedSignals  = limbData._hookedSignals  or setmetatable({}, { __mode = "k" })
+limbData._migratedConns  = limbData._migratedConns  or setmetatable({}, { __mode = "k" })
 
 if type(limbData.terminate) == "function" then
     limbData.terminate()
@@ -58,6 +61,11 @@ local BLOCKED_PROPS = {
     CustomPhysicalProperties = true, CurrentPhysicalProperties = true, RootPriority = true,
 }
 
+local WRITTEN_PROPS = {
+    "Size", "Transparency", "CanCollide", "Massless",
+    "CustomPhysicalProperties", "RootPriority",
+    "Mass", "AssemblyMass", "AssemblyCenterOfMass" 
+}
 local ESP_SOURCE_URL = "https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/esp/SIXSEVENESP.lua"
 local MANAGER_SOURCE_URL = "https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/manager/manager.lua"
 
@@ -75,6 +83,12 @@ local function ensureMANAGERLoaded()
     local ok, res = pcall(function() return loadstring(game:HttpGet(MANAGER_SOURCE_URL))() end)
     if ok then limbData.manager = res end
     return limbData.manager
+end
+
+local function fireSignalsForProp(limb, prop)
+    firesignal(limb.Changed, prop)
+    local sig = limb:GetPropertyChangedSignal(prop)
+    firesignal(sig)
 end
 
 local function getPartDensitySafe(part)
@@ -100,48 +114,47 @@ end
 
 limbData._isWriting = false
 
-do
-    local signalMt = getrawmetatable(game:GetService("Players").LocalPlayer.Changed)
-    if signalMt then
-        local oldConnect = signalMt.Connect
-        setreadonly(signalMt, false)
-        signalMt.Connect = newcclosure(function(self, callback)
+local function wrapPartSignals(limb)
+    if limbData._wrappedParts[limb] then return end
+    limbData._wrappedParts[limb] = true
+
+    local function hookSignalConnect(signal, signalName)
+        if limbData._hookedSignals[signal] then return end
+        limbData._hookedSignals[signal] = true
+
+        local origConnect = signal.Connect
+        local function newConnect(self, callback)
             local wrapped = newcclosure(function(...)
                 if not limbData._isWriting then
-                    callback(...)
+                    return callback(...)
                 end
             end)
-            return oldConnect(self, wrapped)
-        end)
-        setreadonly(signalMt, true)
-    end
-end
+            return origConnect(self, wrapped)
+        end
+        origConnect = hookfunction(origConnect, newConnect)
 
-local alreadyHooked = setmetatable({}, { __mode = "k" })
-local function retrofitExisting(hrp, monitoredProps)
-    local function wrapSignal(signal)
-        if typeof(signal) ~= "RBXScriptSignal" then return end
-        for _, conn in ipairs(getconnections(signal)) do
-            local proxy = conn
-            local getter = proxy.Function
-            if type(getter) ~= "function" then return end
-            local origFunc = getter(proxy)
-            if type(origFunc) ~= "function" or alreadyHooked[origFunc] then return end
-
-            local origRef = origFunc
-            local wrapper = newcclosure(function(...)
-                if not limbData._isWriting then
-                    return origRef(...)
+        local connections = getconnections(signal)
+        for _, conn in ipairs(connections) do
+            local origCallback = conn.Function
+            if origCallback and not limbData._migratedConns[conn] then
+                local function wrappedCallback(...)
+                    if not limbData._isWriting then
+                        return origCallback(...)
+                    end
                 end
-            end)
-            local realOrig = hookfunction(origFunc, wrapper)
-            origRef = realOrig
-            alreadyHooked[origFunc] = true
+                origCallback = hookfunction(origCallback, wrappedCallback)
+                limbData._migratedConns[conn] = true
+            end
         end
     end
-    wrapSignal(hrp.Changed)
-    for _, prop in ipairs(monitoredProps) do
-        wrapSignal(hrp:GetPropertyChangedSignal(prop))
+
+    hookSignalConnect(limb.Changed, ".Changed")
+
+    for _, prop in ipairs(WRITTEN_PROPS) do
+        local ok, sig = pcall(limb.GetPropertyChangedSignal, limb, prop)
+        if ok and sig then
+            hookSignalConnect(sig, "GPC:" .. prop)
+        end
     end
 end
 
@@ -176,19 +189,23 @@ if not limbData._bypassInstalled then
     end
     mt.__newindex = function(self, key, value)
         if limbData._bypassHooks then return oldNewIndex(self, key, value) end
-        if not checkcaller() then
-            local data, instType = getTargetData(self)
-            if data and instType == "Part" and self == data.Limb and BLOCKED_PROPS[key] then
-                if key == "Size" then data.OriginalSize = value end
-                if key == "Transparency" then data.OriginalTransparency = value end
-                if key == "CanCollide" then data.OriginalCanCollide = value end
-                if key == "Massless" then data.OriginalMassless = value end
-                if key == "Mass" then data.OriginalMass = value end
-                if key == "AssemblyMass" then data.OriginalAssemblyMass = value end
-                if key == "AssemblyCenterOfMass" then data.OriginalAssemblyCOM = value end
-                if key == "CustomPhysicalProperties" then data.OriginalPhysProps = value end
-                if key == "RootPriority" then data.OriginalRootPriority = value end
+
+        local data, instType = getTargetData(self)
+        if data and instType == "Part" and self == data.Limb and BLOCKED_PROPS[key] then
+            if key == "Size" then data.OriginalSize = value
+            elseif key == "Transparency" then data.OriginalTransparency = value
+            elseif key == "CanCollide" then data.OriginalCanCollide = value
+            elseif key == "Massless" then data.OriginalMassless = value
+            elseif key == "Mass" then data.OriginalMass = value
+            elseif key == "AssemblyMass" then data.OriginalAssemblyMass = value
+            elseif key == "AssemblyCenterOfMass" then data.OriginalAssemblyCOM = value
+            elseif key == "CustomPhysicalProperties" then data.OriginalPhysProps = value
+            elseif key == "RootPriority" then data.OriginalRootPriority = value
             end
+
+            fireSignalsForProp(self, key)
+
+            return
         end
         return oldNewIndex(self, key, value)
     end
@@ -290,11 +307,6 @@ function LimbExtender.new(userSettings)
     end
     local Manager = managerModule.Manager
 
-    local monitoredPropsList = {
-        "Size", "Transparency", "CanCollide", "Massless",
-        "Mass", "AssemblyMass", "AssemblyCenterOfMass", "RootPriority"
-    }
-
     local function sharedSaveData(parent, cacheKey, char, limb)
         local cache = parent._playerCache
         local entry = cache[cacheKey]
@@ -325,7 +337,9 @@ function LimbExtender.new(userSettings)
     local function silentWrite(limb, props)
         limbData._isWriting = true
         limbData._bypassHooks = true
-        for k, v in pairs(props) do pcall(function() limb[k] = v end) end
+        for k, v in pairs(props) do
+            pcall(function() limb[k] = v end)
+        end
         limbData._bypassHooks = false
         limbData._isWriting = false
     end
@@ -333,8 +347,12 @@ function LimbExtender.new(userSettings)
     local function sharedApplyLimb(parent, cacheKey, char, limb)
         if not isLiveInstance(limb) or not limb.Parent then return end
         sharedSaveData(parent, cacheKey, char, limb)
+
+        wrapPartSignals(limb)
+
         local entry = parent._playerCache[cacheKey]
         if not entry then return end
+
         local settings = parent._settings
         local newVec = Vector3_new(settings.LIMB_SIZE, settings.LIMB_SIZE, settings.LIMB_SIZE)
         local trans = settings.LIMB_TRANSPARENCY
@@ -350,32 +368,11 @@ function LimbExtender.new(userSettings)
             props.RootPriority = -127
         end
 
-        if not entry._retrofitted then
-            entry._retrofitted = true
-            retrofitExisting(limb, monitoredPropsList)
-        end
-
         silentWrite(limb, props)
-
-        limbData._bypassHooks = true
-        entry._internalChangedConn = limb.Changed:Connect(function(prop)
-            if BLOCKED_PROPS[prop] then
-                local p = {}
-                if prop == "Size" then p.Size = newVec
-                elseif prop == "Transparency" then p.Transparency = trans
-                elseif prop == "CanCollide" then p.CanCollide = colide
-                elseif prop == "Massless" then p.Massless = isHRP and false or true
-                elseif prop == "RootPriority" and not isHRP then p.RootPriority = -127
-                end
-                if prop == "CustomPhysicalProperties" and isHRP and newPhys then p.CustomPhysicalProperties = newPhys end
-                if next(p) then silentWrite(limb, p) end
-            end
-        end)
-        limbData._bypassHooks = false
 
         if not colide then
             local humanoid = char:FindFirstChildOfClass("Humanoid")
-            if humanoid and not entry._humanoidStateConn then
+            if humanoid then
                 local function forceCollisions()
                     if not isLiveInstance(limb) or not limb.Parent then return end
                     silentWrite(limb, { CanCollide = false })
@@ -391,7 +388,6 @@ function LimbExtender.new(userSettings)
         local entry = cache[cacheKey]
         if not entry then return end
         if activeLimb and isLiveInstance(activeLimb) and activeLimb.Parent then
-            if entry._internalChangedConn then pcall(function() entry._internalChangedConn:Disconnect() end) end
             if entry._humanoidStateConn then pcall(function() entry._humanoidStateConn:Disconnect() end) end
             local props = {
                 Size = entry.OriginalSize,
@@ -412,7 +408,6 @@ function LimbExtender.new(userSettings)
     local function reapplyCosmeticToEntry(entry, settings)
         local limb = entry.Limb
         if not isLiveInstance(limb) or not limb.Parent then return end
-        if entry._internalChangedConn then pcall(function() entry._internalChangedConn:Disconnect() end) end
         if entry._humanoidStateConn then pcall(function() entry._humanoidStateConn:Disconnect() end) end
         local newVec = Vector3_new(settings.LIMB_SIZE, settings.LIMB_SIZE, settings.LIMB_SIZE)
         local trans = settings.LIMB_TRANSPARENCY
@@ -428,24 +423,10 @@ function LimbExtender.new(userSettings)
             props.RootPriority = -127
         end
         silentWrite(limb, props)
-        limbData._bypassHooks = true
-        entry._internalChangedConn = limb.Changed:Connect(function(prop)
-            if BLOCKED_PROPS[prop] then
-                local p = {}
-                if prop == "Size" then p.Size = newVec
-                elseif prop == "Transparency" then p.Transparency = trans
-                elseif prop == "CanCollide" then p.CanCollide = colide
-                elseif prop == "Massless" then p.Massless = isHRP and false or true
-                elseif prop == "RootPriority" and not isHRP then p.RootPriority = -127
-                end
-                if prop == "CustomPhysicalProperties" and isHRP and newPhys then p.CustomPhysicalProperties = newPhys end
-                if next(p) then silentWrite(limb, p) end
-            end
-        end)
-        limbData._bypassHooks = false
+
         if not colide then
             local humanoid = entry.Character and entry.Character:FindFirstChildOfClass("Humanoid")
-            if humanoid and not entry._humanoidStateConn then
+            if humanoid then
                 local function forceCollisions()
                     if not isLiveInstance(limb) or not limb.Parent then return end
                     silentWrite(limb, { CanCollide = false })
