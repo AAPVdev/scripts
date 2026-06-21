@@ -65,16 +65,15 @@ end)
 
 local BYPASS_AVAILABLE = false
 do
-    
     local required = {
         getrawmetatable = getrawmetatable,
         setreadonly     = setreadonly,
         newcclosure     = newcclosure,
         hookfunction    = hookfunction,
         getconnections  = getconnections,
-        checkcaller     = checkcaller,    
-        firesignal      = firesignal,     
-        typeof          = typeof,         
+        checkcaller     = checkcaller,
+        firesignal      = firesignal,
+        typeof          = typeof,
     }
     local ok = true
     for name, fn in pairs(required) do
@@ -84,7 +83,6 @@ do
         end
     end
     if ok then
-        
         local testOk = pcall(function()
             local mt = getrawmetatable(game)
             if typeof(mt) ~= "table" then error() end
@@ -94,11 +92,6 @@ do
             BYPASS_AVAILABLE = true
         end
     end
-end
-
-if not BYPASS_AVAILABLE then
-
-    warn("[LimbExtender] Advanced executor functions not available – running in limited mode.")
 end
 
 local BLOCKED_PROPS = {
@@ -132,7 +125,6 @@ local function ensureMANAGERLoaded()
 end
 
 local function fireSignalsForProp(limb, prop)
-    
     firesignal(limb.Changed, prop)
     local sig = limb:GetPropertyChangedSignal(prop)
     firesignal(sig)
@@ -162,7 +154,6 @@ end
 limbData._isWriting = false
 
 local function wrapPartSignals(limb)
-    
     if not BYPASS_AVAILABLE then return end
     if limbData._wrappedParts[limb] then return end
     limbData._wrappedParts[limb] = true
@@ -198,7 +189,6 @@ local function wrapPartSignals(limb)
     end
 
     hookSignalConnect(limb.Changed, ".Changed")
-
     for _, prop in ipairs(WRITTEN_PROPS) do
         local ok, sig = pcall(limb.GetPropertyChangedSignal, limb, prop)
         if ok and sig then
@@ -253,7 +243,6 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
             end
 
             fireSignalsForProp(self, key)
-
             return
         end
         return oldNewIndex(self, key, value)
@@ -262,7 +251,6 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 end
 
 function getTargetData(instance)
-    
     if typeof(instance) ~= "Instance" then return nil, nil end
     local cached = limbData.instanceLookup[instance]
     if cached then return cached.data, cached.type end
@@ -276,6 +264,45 @@ function getTargetData(instance)
         end
     end
     return nil, nil
+end
+
+local function setupLimbWatchdog(entry, limb)
+    if not entry or not limb then return end
+    
+    if entry._watchConns then
+        for _, conn in ipairs(entry._watchConns) do
+            pcall(function() conn:Disconnect() end)
+        end
+        entry._watchConns = nil
+    end
+    entry._watchConns = {}
+
+    local propsToWatch = {
+        { "Size",                    "TargetSize" },
+        { "Transparency",           "TargetTransparency" },
+        { "CanCollide",             "TargetCanCollide" },
+        { "Massless",               "TargetMassless" },
+        { "CustomPhysicalProperties","TargetCustomPhysicalProperties" },
+        { "RootPriority",           "TargetRootPriority" },
+    }
+
+    for _, pair in ipairs(propsToWatch) do
+        local propName, targetField = pair[1], pair[2]
+        local target = entry[targetField]
+        if target ~= nil then
+            local function onChange()
+                if entry._watchingRevert then return end
+                local current = limb[propName]
+                if current ~= target then
+                    entry._watchingRevert = true
+                    pcall(function() limb[propName] = target end)
+                    entry._watchingRevert = false
+                end
+            end
+            local conn = limb:GetPropertyChangedSignal(propName):Connect(onChange)
+            table_insert(entry._watchConns, conn)
+        end
+    end
 end
 
 local LimbExtender = {}
@@ -420,6 +447,22 @@ function LimbExtender.new(userSettings)
 
         silentWrite(limb, props)
 
+        entry.TargetSize = newVec
+        entry.TargetTransparency = trans
+        entry.TargetCanCollide = colide
+        entry.TargetMassless = isHRP and false or true
+        if isHRP then
+            entry.TargetCustomPhysicalProperties = newPhys or nil
+            entry.TargetRootPriority = nil
+        else
+            entry.TargetCustomPhysicalProperties = nil
+            entry.TargetRootPriority = -127
+        end
+
+        if not BYPASS_AVAILABLE then
+            setupLimbWatchdog(entry, limb)
+        end
+
         if not colide then
             local humanoid = char:FindFirstChildOfClass("Humanoid")
             if humanoid then
@@ -437,6 +480,21 @@ function LimbExtender.new(userSettings)
         local cache = parent._playerCache
         local entry = cache[cacheKey]
         if not entry then return end
+
+        if entry._watchConns then
+            for _, conn in ipairs(entry._watchConns) do
+                pcall(function() conn:Disconnect() end)
+            end
+            entry._watchConns = nil
+        end
+        
+        entry.TargetSize = nil
+        entry.TargetTransparency = nil
+        entry.TargetCanCollide = nil
+        entry.TargetMassless = nil
+        entry.TargetCustomPhysicalProperties = nil
+        entry.TargetRootPriority = nil
+
         if activeLimb and isLiveInstance(activeLimb) and activeLimb.Parent then
             if entry._humanoidStateConn then pcall(function() entry._humanoidStateConn:Disconnect() end) end
             local props = {
@@ -473,6 +531,21 @@ function LimbExtender.new(userSettings)
             props.RootPriority = -127
         end
         silentWrite(limb, props)
+
+        entry.TargetSize = newVec
+        entry.TargetTransparency = trans
+        entry.TargetCanCollide = colide
+        entry.TargetMassless = isHRP and false or true
+        if isHRP then
+            entry.TargetCustomPhysicalProperties = newPhys or nil
+            entry.TargetRootPriority = nil
+        else
+            entry.TargetCustomPhysicalProperties = nil
+            entry.TargetRootPriority = -127
+        end
+        if not BYPASS_AVAILABLE then
+            setupLimbWatchdog(entry, limb)
+        end
 
         if not colide then
             local humanoid = entry.Character and entry.Character:FindFirstChildOfClass("Humanoid")
@@ -637,7 +710,9 @@ function LimbExtender:Stop()
     self._needsRestart = false
     self._needsCosmeticUpdate = false
     self._manager:Stop()
-    for cacheKey, entry in pairs(self._playerCache) do sharedRestoreLimb(self, cacheKey, entry.Limb) end
+    for cacheKey, entry in pairs(self._playerCache) do
+        sharedRestoreLimb(self, cacheKey, entry.Limb)
+    end
     table_clear(self._playerCache)
     if self._ESP then self._ESP:Stop() end
 end
