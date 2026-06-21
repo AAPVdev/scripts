@@ -96,6 +96,8 @@ local DEFAULTS = {
 	GET_LOCAL_TEAM       = nil,
 	ON_LIMB_READY        = nil,
 	ON_LIMB_LOST         = nil,
+
+	NPC_SPAWN_WAIT_TIMEOUT = 15,
 }
 
 local function mergeSettings(user)
@@ -207,9 +209,6 @@ function StreamObserver.new(model, onAvailable, onUnavailable)
 		_destroyed = false,
 		_anchor    = nil,
 
-		-- FIX 1: guard flags so _bindModelSignals never reconnects signals it
-		-- already owns. Without these, every AncestryChanged -> _refresh() ->
-		-- _bindModelSignals() would disconnect + reconnect all 4 signals.
 		_ancestryBound     = false,
 		_childSignalsBound = false,
 	}, StreamObserver)
@@ -237,9 +236,6 @@ function StreamObserver:_resolveAnchor()
 	return nil
 end
 
--- FIX 1: each signal group is bound exactly once for the lifetime of this
--- observer. Signals persist on the Lua object regardless of streaming state,
--- so there is never a need to reconnect them.
 function StreamObserver:_bindModelSignals()
 	if self._destroyed then return end
 	local model = self._model
@@ -713,6 +709,7 @@ function Manager.new(userSettings)
 		_playerTable       = {},
 		_npcSet            = {},
 		_npcLimbObservers  = {},
+		_pendingNPCWatchers = {},
 
 		_connections    = nil,
 		_npcConnections = nil,
@@ -756,13 +753,41 @@ function Manager:_isValidNPC(model)
 	return true
 end
 
+function Manager:_checkNPCValidity(model)
+	if not model or not model:IsA("Model") then return false, false end
+	if not model:FindFirstChildOfClass("Humanoid") then return false, true end
+	if Players:GetPlayerFromCharacter(model) then return false, false end
+
+	local filter = self._settings.NPC_FILTER
+	if type(filter) == "function" then
+		local ok, result = pcall(filter, model)
+		if not ok or not result then return false, false end
+	end
+	return true, false
+end
+
 function Manager:_registerNPC(model, dir)
 	if self._destroyed or not model then return end
 	if not isLiveInstance(model) then return end
-	-- FIX 3: removed dead IsA("Humanoid") branch — all call sites pass
-	-- pre-filtered Models via isNPCCandidate so a Humanoid never arrives here.
+
 	if self._npcSet[model] then return end
-	if not self:_isValidNPC(model) then return end
+	if self._pendingNPCWatchers[model] then return end 
+
+	local valid, missingHumanoid = self:_checkNPCValidity(model)
+	if not valid then
+		if missingHumanoid then
+
+			self:_watchForHumanoid(model, dir)
+		end
+		return
+	end
+
+	self:_finishRegisterNPC(model, dir)
+end
+
+function Manager:_finishRegisterNPC(model, dir)
+	if self._destroyed or not isLiveInstance(model) then return end
+	if self._npcSet[model] then return end
 
 	local observer = StreamObserver.new(model,
 		function(npcModel)
@@ -790,7 +815,73 @@ function Manager:_registerNPC(model, dir)
 	end
 end
 
+function Manager:_watchForHumanoid(model, dir)
+	if self._pendingNPCWatchers[model] then return end
+
+	local gen   = self._generation
+	local conns = ConnectionManager.new()
+	local state = { cancelled = false, conns = conns }
+	self._pendingNPCWatchers[model] = state
+
+	local function cleanup()
+		state.cancelled = true
+		conns:Destroy()
+		if self._pendingNPCWatchers[model] == state then
+			self._pendingNPCWatchers[model] = nil
+		end
+	end
+
+	conns:Connect(model.AncestryChanged, function()
+		if state.cancelled then return end
+		if not isLiveInstance(model) then
+			cleanup()
+		end
+	end, "PendingAncestry")
+
+	task_spawn(function()
+		local deadline = os_clock() + (self._settings.NPC_SPAWN_WAIT_TIMEOUT or 15)
+
+		while not state.cancelled do
+			if self._destroyed or not self._running or not self._npcConnsStarted
+				or self._generation ~= gen or not isLiveInstance(model) then
+				cleanup()
+				return
+			end
+
+			if os_clock() >= deadline then
+				cleanup()
+				return
+			end
+
+			local humanoid = model:WaitForChild("Humanoid", 1)
+
+			if state.cancelled then
+				return
+			end
+
+			if humanoid then
+				cleanup()
+				if self._running and self._npcConnsStarted and not self._destroyed
+					and self._generation == gen and isLiveInstance(model) then
+					self:_registerNPC(model, dir)
+				end
+				return
+			end
+		end
+	end)
+end
+
+function Manager:_cancelPendingNPCWatch(model)
+	local state = self._pendingNPCWatchers[model]
+	if not state then return end
+	state.cancelled = true
+	state.conns:Destroy()
+	self._pendingNPCWatchers[model] = nil
+end
+
 function Manager:_unregisterNPC(model)
+	self:_cancelPendingNPCWatch(model)
+
 	local observer = self._npcSet[model]
 	if observer then
 		observer:Destroy()
@@ -952,9 +1043,7 @@ function Manager:_startPlayerTracking()
 		for _, p in ipairs(snapshot) do
 			if not self._running or self._destroyed or not self._playerConnsStarted then return end
 			if p ~= localPlayer and not self._playerTable[p] then
-				-- FIX 2: player may have left during the async scan; PlayerRemoving
-				-- already fired but found no _playerTable entry, so without this
-				-- guard we would create a PlayerData that is never cleaned up.
+
 				if isLiveInstance(p) then
 					self._playerTable[p] = PlayerData.new(self, p)
 				end
@@ -1025,6 +1114,11 @@ function Manager:_stopNPCTracking()
 		if limbObs then limbObs:Destroy() end
 	end
 	table_clear(self._npcLimbObservers)
+
+	for model in pairs(self._pendingNPCWatchers) do
+		self:_cancelPendingNPCWatch(model)
+	end
+	table_clear(self._pendingNPCWatchers)
 
 	table_clear(self._dirUidMap)
 	table_clear(self._stringDirMap)
