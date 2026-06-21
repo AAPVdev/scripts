@@ -118,20 +118,20 @@ local function retrofitExisting(hrp, monitoredProps)
         if typeof(signal) ~= "RBXScriptSignal" then return end
         for _, conn in ipairs(getconnections(signal)) do
             local getter = conn.Function
-            if type(getter) ~= "function" then goto continue end
-            local origFunc = getter(conn)
-            if type(origFunc) ~= "function" or alreadyHooked[origFunc] then goto continue end
-
-            local origRef = origFunc
-            local wrapper = newcclosure(function(...)
-                if not limbData._isWriting then
-                    return origRef(...)
+            if type(getter) == "function" then
+                local origFunc = getter(conn)
+                if type(origFunc) == "function" and not alreadyHooked[origFunc] then
+                    local origRef = origFunc
+                    local wrapper = newcclosure(function(...)
+                        if not limbData._isWriting then
+                            return origRef(...)
+                        end
+                    end)
+                    local realOrig = hookfunction(origFunc, wrapper)
+                    origRef = realOrig
+                    alreadyHooked[origFunc] = true
                 end
-            end)
-            local realOrig = hookfunction(origFunc, wrapper)
-            origRef = realOrig
-            alreadyHooked[origFunc] = true
-            ::continue::
+            end
         end
     end
     wrapSignal(hrp.Changed)
