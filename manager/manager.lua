@@ -22,6 +22,7 @@ local task_spawn   = task.spawn
 local task_defer   = task.defer
 local string_split = string.split
 local string_gsub  = string.gsub
+local math_min	   = math.min
 local os_clock     = os.clock
 
 local function isNPCCandidate(inst)
