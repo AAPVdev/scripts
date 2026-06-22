@@ -560,10 +560,10 @@ function LimbExtender:_processDirtyWork()
 				if not self._ESP then
 					self._ESP = espModule.new(self:_buildESPConfig())
 					if self._running then
-						for _, entry in pairs(self._playerCache) do
-							if entry.Character then self._ESP:Track(entry.Character) end
-						end
-						self._ESP:Start()
+					    self._ESP:Start()
+					    for _, entry in pairs(self._playerCache) do
+					        if entry.Character then self._ESP:Track(entry.Character) end
+					    end
 					end
 				else
 					self._ESP:SetOptions(self:_buildESPConfig())
