@@ -427,6 +427,10 @@ function LimbExtender.new(userSettings)
         _needsRestart        = false,
         _needsCosmeticUpdate = false,
         _workRunning         = false,
+        _dirtyRestart        = false,
+        _dirtyCosmetic       = false,
+        _dirtyESP            = false,
+        _workScheduled       = false,
     }, LimbExtender)
 
     limbData.targetLimbName = self._settings.TARGET_LIMB
@@ -600,60 +604,110 @@ function LimbExtender.new(userSettings)
         if not player then self._npcIdMap[char] = nil end
     end
 
-    function self:_doRestart()
+    function LimbExtender:_processDirtyWork()
+        self._workScheduled = false
+        if not self._running then return end
+
+        local s = self._settings
+
+        if self._dirtyESP then
+            self._dirtyESP = false
+            if s.ESP then
+                local espModule = ensureESPLoaded()
+                if espModule then
+                    if not self._ESP then
+                        self._ESP = espModule.new(self:_buildESPConfig())
+                        if self._running then
+                            for _, entry in pairs(self._playerCache) do
+                                if entry.Character then self._ESP:Track(entry.Character) end
+                            end
+                            self._ESP:Start()
+                        end
+                    else
+                        self._ESP:SetOptions(self:_buildESPConfig())
+                    end
+                else
+                    s.ESP = false
+                end
+            else
+                if self._ESP then self._ESP:Destroy(); self._ESP = nil end
+            end
+        end
+
+        if self._dirtyRestart then
+            self._dirtyRestart  = false
+            self._dirtyCosmetic = false
+
+            for key in pairs(RESTART_KEYS) do
+                if s[key] ~= nil then
+                    if key == "ALT_RESET_LIMB_ON_DEATH" then
+                        self._manager:Set("DEATH_RESTORE", s[key])
+                    elseif key == "NPC_DIRECTORIES" then
+                        self._manager._settings.NPC_DIRECTORIES = s[key]
+                    else
+                        self._manager._settings[key] = s[key]
+                    end
+                end
+            end
+
+            self:_doRestartBatched()
+        elseif self._dirtyCosmetic then
+            self._dirtyCosmetic = false
+            self:_doCosmeticUpdateBatched()
+        end
+    end
+
+    function LimbExtender:_doRestartBatched()
         if not self._running then return end
         self._suppressOnLimbLost = true
         self._manager:Stop()
-        local cache      = self._playerCache
-        local keys       = {}
-        local BATCH_SIZE = 10
+
+        local cache = self._playerCache
+        local keys = {}
         for k in pairs(cache) do table_insert(keys, k) end
-        for i = 1, #keys, BATCH_SIZE do
+
+        local BATCH = 5
+        for i = 1, #keys, BATCH do
             if not self._running then break end
-            local last = math_min(i + BATCH_SIZE - 1, #keys)
+            local last = math_min(i + BATCH - 1, #keys)
             for j = i, last do
-                local key   = keys[j]
-                local entry = cache[key]
-                if entry then sharedRestoreLimb(self, key, entry.Limb) end
+                local entry = cache[keys[j]]
+                if entry then
+                    sharedRestoreLimb(self, keys[j], entry.Limb)
+                end
             end
             task_wait()
         end
+
         self._suppressOnLimbLost = false
         table_clear(cache)
+
         if self._ESP then self._ESP:Stop() end
         if not self._running then return end
+
         self._manager:Start()
         if self._ESP then self._ESP:Start() end
     end
 
-    function self:_doCosmeticUpdate()
+    function LimbExtender:_doCosmeticUpdateBatched()
         if not self._running then return end
-        local BATCH_SIZE = 10
-        local settings   = self._settings
-        local entries    = {}
+        local s = self._settings
+        local entries = {}
         for _, entry in pairs(self._playerCache) do
-            if entry.Limb and entry.Character then table_insert(entries, entry) end
-        end
-        for i = 1, #entries, BATCH_SIZE do
-            if self._needsRestart or not self._running then return end
-            local last = math_min(i + BATCH_SIZE - 1, #entries)
-            for j = i, last do reapplyCosmeticToEntry(entries[j], settings) end
-            task_wait()
-        end
-    end
-
-    function self:_processWork()
-        while self._running and (self._needsRestart or self._needsCosmeticUpdate) do
-            if self._needsRestart then
-                self._needsRestart        = false
-                self._needsCosmeticUpdate = false
-                self:_doRestart()
-            elseif self._needsCosmeticUpdate then
-                self._needsCosmeticUpdate = false
-                self:_doCosmeticUpdate()
+            if entry.Limb and entry.Character then
+                table_insert(entries, entry)
             end
         end
-        self._workRunning = false
+
+        local BATCH = 5
+        for i = 1, #entries, BATCH do
+            if self._dirtyRestart or not self._running then return end
+            local last = math_min(i + BATCH - 1, #entries)
+            for j = i, last do
+                reapplyCosmeticToEntry(entries[j], s)
+            end
+            task_wait()
+        end
     end
 
     self._manager = Manager.new({
@@ -748,68 +802,36 @@ function LimbExtender:Restart()
 end
 
 function LimbExtender:Set(key, value)
-    local function mergeTables(target, source)
-        for k, v in pairs(source) do
-            if type(v) == "table" and type(target[k]) == "table" then
-                mergeTables(target[k], v)
-            else
-                target[k] = v
-            end
-        end
-    end
+    local s = self._settings
 
-    local isLodKey = (key == "ESP_NEAR_FLAGS" or key == "ESP_MEDIUM_FLAGS" or key == "ESP_FAR_FLAGS")
-    if isLodKey then
-        if type(self._settings[key]) ~= "table" then self._settings[key] = {} end
-        mergeTables(self._settings[key], value)
+    if key == "ESP_NEAR_FLAGS" or key == "ESP_MEDIUM_FLAGS" or key == "ESP_FAR_FLAGS" then
+        if type(s[key]) ~= "table" then s[key] = {} end
+        if type(value) == "table" then
+            for k, v in pairs(value) do s[key][k] = v end
+        else
+            s[key] = value
+        end
     else
-        if self._settings[key] ~= value then
-            self._settings[key] = value
-        else
-            return
-        end
-    end
-
-    if key == "ESP" then
-        if value then
-            self.ESP = ensureESPLoaded()
-            if self.ESP then
-                if not self._ESP then
-                    self._ESP = self.ESP.new(self:_buildESPConfig())
-                    if self._running then
-                        for _, entry in pairs(self._playerCache) do
-                            if entry.Character then self._ESP:Track(entry.Character) end
-                        end
-                        self._ESP:Start()
-                    end
-                end
-            else
-                self._settings.ESP = false
-            end
-        else
-            if self._ESP then self._ESP:Destroy(); self._ESP = nil end
-        end
-        return
-    end
-
-    if type(key) == "string" and key:sub(1, 4) == "ESP_" then
-        if self._ESP then self._ESP:SetOptions(self:_buildESPConfig()) end
-        return
+        if s[key] == value then return end
+        s[key] = value
     end
 
     if RESTART_KEYS[key] then
-        if key == "TARGET_LIMB"             then limbData.targetLimbName = value end
-        if key == "NPC_DIRECTORIES"         then self._manager._settings.NPC_DIRECTORIES = value
-        elseif key == "ALT_RESET_LIMB_ON_DEATH" then self._manager:Set("DEATH_RESTORE", value)
-        else self._manager:Set(key, value) end
-        self._needsRestart = true
+        if key == "TARGET_LIMB" then limbData.targetLimbName = value end
+        self._dirtyRestart = true
     else
-        self._needsCosmeticUpdate = true
+        self._dirtyCosmetic = true
     end
 
-    if self._running and not self._workRunning then
-        self._workRunning = true
-        task_spawn(function() task_wait(); self:_processWork() end)
+    if key == "ESP" or (type(key) == "string" and key:sub(1,4) == "ESP_") then
+        self._dirtyESP = true
+    end
+
+    if self._running and not self._workScheduled then
+        self._workScheduled = true
+        task_spawn(function()
+            self:_processDirtyWork()
+        end)
     end
 end
 
