@@ -208,7 +208,7 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 	setreadonly(mt, false)
 
 	mt.__index = function(self, key)
-		if not limbData.ccaller then
+		if not checkcaller() then
 			local data, instType = getTargetData(self)
 			if data then
 				if instType == "Part" and self == data.Limb and BLOCKED_PROPS[key] then
@@ -238,7 +238,7 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 	end
 
 	mt.__newindex = function(self, key, value)
-		if not limbData.ccaller then
+		if not checkcaller() then
 			local data, instType = getTargetData(self)
 			if data and instType == "Part" and self == data.Limb and BLOCKED_PROPS[key] then
 				if key == "Size"                    then data.OriginalSize        = value
@@ -689,10 +689,9 @@ function LimbExtender.new(userSettings)
 		GET_LOCAL_TEAM   = function() return localPlayer.Team end,
 		ON_LIMB_READY    = function(player, model, limb) self:_applyLimbs(player, model, limb) end,
 		ON_LIMB_LOST = function(player, model, limb)
-            print("ON_LIMB_LOST self:", self, type(self))
-            print("LimbExtender methods:", self._applyLimbs, self._removeLimbs)
-            self:_removeLimbs(player, model, limb)
-        end,
+			if self._suppressOnLimbLost then return end 
+			self:_removeLimbs(player, model, limb)
+		end,
 	})
 
 	if self._settings.ESP then
