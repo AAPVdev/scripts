@@ -539,6 +539,7 @@ function LimbExtender:_applyLimbs(player, char, limb)
 end
 
 function LimbExtender:_removeLimbs(player, char, limb)
+	if self._suppressOnLimbLost then return end
 	local cacheKey = player and player.Name or self._npcIdMap[char]
 	sharedRestoreLimb(self, cacheKey, limb)
 	if self._ESP and char then self._ESP:Untrack(char) end
@@ -689,7 +690,6 @@ function LimbExtender.new(userSettings)
 		GET_LOCAL_TEAM   = function() return localPlayer.Team end,
 		ON_LIMB_READY    = function(player, model, limb) self:_applyLimbs(player, model, limb) end,
 		ON_LIMB_LOST = function(player, model, limb)
-			if self._suppressOnLimbLost then return end 
 			self:_removeLimbs(player, model, limb)
 		end,
 	})
