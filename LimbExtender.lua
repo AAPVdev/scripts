@@ -417,7 +417,7 @@ local function sharedSaveData(parent, cacheKey, char, limb)
 	entry.OriginalPhysProps    = limb.CurrentPhysicalProperties
 	entry.OriginalRootPriority = limb.RootPriority or 0
 	entry.OriginalDensity      = entry.OriginalPhysProps.Density
-	if not entry.TrueSize    then entry.TrueSize    = Vector3_new(limb.Size.X, limb.Size.Y, limb.Size.Z) end
+	if not entry.TrueSize    then entry.TrueSize    = entry.OriginalSize end
 	if not entry.TrueExtents then entry.TrueExtents = extents end
 	limbData.instanceLookup[limb] = { data = entry, type = "Part" }
 	limbData.instanceLookup[char] = { data = entry, type = "Model" }
@@ -485,7 +485,7 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 	if activeLimb then
 		if entry._humanoidStateConn then entry._humanoidStateConn:Disconnect() end
 		write(activeLimb, {
-			Size                     = entry.TrueSize,
+			Size                     = entry.OriginalSize,
 			Transparency             = entry.OriginalTransparency,
 			CanCollide               = entry.OriginalCanCollide,
 			Massless                 = entry.OriginalMassless,
