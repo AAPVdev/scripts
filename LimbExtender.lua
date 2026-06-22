@@ -47,49 +47,6 @@ local has_httpget = pcall(function()
 	if type(f) ~= "function" then error("not callable") end
 end)
 
-local function wrapPartSignals(limb)
-    if not BYPASS_AVAILABLE then return end
-    if limbData._wrappedParts[limb] then return end
-	
-	local function hookSignalConnect(signal)
-        if limbData._hookedSignals[signal] then return end
-        limbData._hookedSignals[signal] = true
-
-        local origConnect = signal.Connect
-        local function newConnect(self, callback)
-            local wrapped = newcclosure(function(...)
-                if not checkcaller() then
-                    return callback(...)
-				end
-            end)
-            return origConnect(self, wrapped)
-        end
-        origConnect = hookfunction(origConnect, newConnect)
-
-        local connections = getconnections(signal)
-        for _, conn in ipairs(connections) do
-            local origCallback = conn.Function
-            if origCallback and not limbData._migratedConns[conn] then
-                local function wrappedCallback(...)
-					if not checkcaller() then
-						return origCallback(...)
-					end
-                end
-                origCallback = hookfunction(origCallback, wrappedCallback)
-                limbData._migratedConns[conn] = true
-            end
-        end
-    end
-
-    hookSignalConnect(limb.Changed)
-    for _, prop in ipairs(WRITTEN_PROPS) do
-        local ok, sig = pcall(limb.GetPropertyChangedSignal, limb, prop)
-        if ok and sig then
-            hookSignalConnect(sig)
-        end
-    end
-end
-
 local BYPASS_AVAILABLE = false
 do
 	local required = {
@@ -158,27 +115,6 @@ local function fireSignalsForProp(limb, prop)
 	firesignal(sig)
 end
 
-local function getPartDensitySafe(part)
-	local ok, phys = pcall(function() return part.CustomPhysicalProperties end)
-	if ok and phys then return phys.Density end
-	local ok2, mat = pcall(function() return part.Material end)
-	if ok2 then
-		local ok3, props = pcall(PhysProps_new, mat)
-		if ok3 and props then return props.Density end
-	end
-	return 1
-end
-
-local function getAdjustedPhysicalProperties(limb, origSize, newSize)
-	local origPhys = limb.CustomPhysicalProperties or PhysProps_new(limb.Material)
-	local origVol  = origSize.X * origSize.Y * origSize.Z
-	local newVol   = newSize.X  * newSize.Y  * newSize.Z
-	if newVol <= 0 then newVol = 1 end
-	local ratio      = origVol / newVol
-	local newDensity = math_max(0.01, origPhys.Density * ratio)
-	return PhysProps_new(newDensity, origPhys.Friction, origPhys.Elasticity, origPhys.FrictionWeight, origPhys.ElasticityWeight)
-end
-
 local RESTART_KEYS = {
 	PLAYER_ENABLED          = true,
 	NPC_ENABLED             = true,
@@ -212,12 +148,56 @@ local function buildLimbProps(limb, entry, settings)
 	}
 	if isHRP then
 		props.Massless = false
-		local phys = getAdjustedPhysicalProperties(limb, entry.TrueSize, newVec)
-		if phys then props.CustomPhysicalProperties = phys end
+		props.CustomPhysicalProperties = PhysicalProperties.new(props.CurrentPhysicalProperties)
 	else
 		props.RootPriority = -127
 	end
 	return props, newVec, isHRP
+end
+
+local function wrapPartSignals(limb)
+    if not BYPASS_AVAILABLE then return end
+    if limbData._wrappedParts[limb] then return end
+	local c = checkcaller()
+
+	local function hookSignalConnect(signal)
+        if limbData._hookedSignals[signal] then return end
+        limbData._hookedSignals[signal] = true
+        local origConnect = signal.Connect
+        local function newConnect(self, callback)
+            local wrapped = newcclosure(function(...)
+                if not c then
+                    print("2",checkcaller())
+                    return callback(...)
+				end
+            end)
+            return origConnect(self, wrapped)
+        end
+        origConnect = hookfunction(origConnect, newConnect)
+
+        local connections = getconnections(signal)
+        for _, conn in ipairs(connections) do
+            local origCallback = conn.Function
+            if origCallback and not limbData._migratedConns[conn] then
+                local function wrappedCallback(...)
+					if not c then
+                        print("1",checkcaller())
+						return origCallback(...)
+					end
+                end
+                origCallback = hookfunction(origCallback, wrappedCallback)
+                limbData._migratedConns[conn] = true
+            end
+        end
+    end
+
+    hookSignalConnect(limb.Changed)
+    for _, prop in ipairs(WRITTEN_PROPS) do
+        local ok, sig = pcall(limb.GetPropertyChangedSignal, limb, prop)
+        if ok and sig then
+            hookSignalConnect(sig)
+        end
+    end
 end
 
 if BYPASS_AVAILABLE and not limbData._bypassInstalled then
@@ -238,7 +218,7 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 					if key == "CanCollide" then return data.OriginalCanCollide end
 					if key == "Massless"   then return data.OriginalMassless end
 					if key == "Mass" or key == "AssemblyMass" then
-						local density = data.OriginalDensity or getPartDensitySafe(self)
+						local density = data.OriginalDensity
 						local size    = data.OriginalSize
 						return density * (size.X * size.Y * size.Z)
 					end
@@ -435,9 +415,9 @@ local function sharedSaveData(parent, cacheKey, char, limb)
 	entry.OriginalAssemblyMass = limb.AssemblyMass
 	entry.OriginalAssemblyCOM  = limb.AssemblyCenterOfMass
 	entry.OriginalExtents      = extents
-	entry.OriginalPhysProps    = limb.CustomPhysicalProperties or PhysProps_new(limb.Material)
+	entry.OriginalPhysProps    = limb.CurrentPhysicalProperties
 	entry.OriginalRootPriority = limb.RootPriority or 0
-	entry.OriginalDensity      = getPartDensitySafe(limb)
+	entry.OriginalDensity      = entry.OriginalPhysProps.Density
 	if not entry.TrueSize    then entry.TrueSize    = Vector3_new(limb.Size.X, limb.Size.Y, limb.Size.Z) end
 	if not entry.TrueExtents then entry.TrueExtents = extents end
 	limbData.instanceLookup[limb] = { data = entry, type = "Part" }
@@ -472,11 +452,11 @@ end
 
 local function sharedApplyLimb(parent, cacheKey, char, limb)
 	sharedSaveData(parent, cacheKey, char, limb)
-	wrapPartSignals(limb)
 	local entry = parent._playerCache[cacheKey]
 	if not entry then return end
 
 	local props, newVec, isHRP = buildLimbProps(limb, entry, parent._settings)
+    wrapPartSignals(limb)
 	write(limb, props)
 	applyEntryTargets(entry, props, newVec, isHRP, parent._settings)
 
@@ -709,7 +689,11 @@ function LimbExtender.new(userSettings)
 		DEATH_RESTORE    = self._settings.ALT_RESET_LIMB_ON_DEATH,
 		GET_LOCAL_TEAM   = function() return localPlayer.Team end,
 		ON_LIMB_READY    = function(player, model, limb) self:_applyLimbs(player, model, limb) end,
-		ON_LIMB_LOST     = function(player, model, limb) self:_removeLimbs(player, model, limb) end,
+		ON_LIMB_LOST = function(player, model, limb)
+            print("ON_LIMB_LOST self:", self, type(self))
+            print("LimbExtender methods:", self._applyLimbs, self._removeLimbs)
+            self:_removeLimbs(player, model, limb)
+        end,
 	})
 
 	if self._settings.ESP then
@@ -833,7 +817,6 @@ function LimbExtender:Destroy()
 	self._destroyed = true
 	if self._ESP then self._ESP:Destroy(); self._ESP = nil end
 	limbData.terminate = nil
-	setmetatable(self, nil)
 end
 
 return setmetatable({}, {
