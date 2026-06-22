@@ -32,6 +32,7 @@ local PhysProps_new = PhysicalProperties.new
 limbData.playerCache    = limbData.playerCache    or {}
 limbData.instanceLookup = limbData.instanceLookup or setmetatable({}, { __mode = "k" })
 limbData.npcIdCounter   = limbData.npcIdCounter   or 0
+limbData.ccaller   		= limbData.ccaller   	  or false
 limbData._migratedConns = limbData._migratedConns or setmetatable({}, { __mode = "k" })
 limbData._hookedSignals = limbData._hookedSignals or setmetatable({}, { __mode = "k" })
 limbData._wrappedParts  = limbData._wrappedParts  or setmetatable({}, { __mode = "k" })
@@ -73,6 +74,7 @@ do
 		end)
 		if testOk then
 			BYPASS_AVAILABLE = true
+			limbData.ccaller = checkcaller()
 		end
 	end
 end
@@ -158,7 +160,6 @@ end
 local function wrapPartSignals(limb)
     if not BYPASS_AVAILABLE then return end
     if limbData._wrappedParts[limb] then return end
-	local c = checkcaller()
 
 	local function hookSignalConnect(signal)
         if limbData._hookedSignals[signal] then return end
@@ -166,8 +167,7 @@ local function wrapPartSignals(limb)
         local origConnect = signal.Connect
         local function newConnect(self, callback)
             local wrapped = newcclosure(function(...)
-                if not c then
-                    print("2",checkcaller())
+                if not limbData.ccaller then
                     return callback(...)
 				end
             end)
@@ -180,8 +180,7 @@ local function wrapPartSignals(limb)
             local origCallback = conn.Function
             if origCallback and not limbData._migratedConns[conn] then
                 local function wrappedCallback(...)
-					if not c then
-                        print("1",checkcaller())
+					if not limbData.ccaller then
 						return origCallback(...)
 					end
                 end
@@ -209,7 +208,7 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 	setreadonly(mt, false)
 
 	mt.__index = function(self, key)
-		if not checkcaller() then
+		if not limbData.ccaller then
 			local data, instType = getTargetData(self)
 			if data then
 				if instType == "Part" and self == data.Limb and BLOCKED_PROPS[key] then
@@ -239,7 +238,7 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 	end
 
 	mt.__newindex = function(self, key, value)
-		if not checkcaller() then
+		if not limbData.ccaller then
 			local data, instType = getTargetData(self)
 			if data and instType == "Part" and self == data.Limb and BLOCKED_PROPS[key] then
 				if key == "Size"                    then data.OriginalSize        = value
@@ -335,9 +334,9 @@ local LimbExtender = {}
 LimbExtender.__index = LimbExtender
 
 local DEFAULTS = {
-	TARGET_LIMB             = "HumanoidRootPart",
+	TARGET_LIMB             = "Head",
 	LIMB_SIZE               = 15,
-	LIMB_TRANSPARENCY       = 0.5,
+	LIMB_TRANSPARENCY       = 1,
 	LIMB_CAN_COLLIDE        = false,
 	TEAM_CHECK              = true,
 	FORCEFIELD_CHECK        = false,
