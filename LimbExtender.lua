@@ -432,13 +432,9 @@ function LimbExtender.new(userSettings)
     limbData.targetLimbName = self._settings.TARGET_LIMB
 
     local managerModule = ensureMANAGERLoaded()
-    if not managerModule then error("Failed to load manager module") end
+    if not managerModule then return false end
 
     local Manager = managerModule.Manager
-
-    local function isLiveInstance(instance)
-        return typeof(instance) == "Instance" and instance.Parent ~= nil
-    end
 
     local function sharedSaveData(parent, cacheKey, char, limb)
         local cache = parent._playerCache
@@ -496,18 +492,17 @@ function LimbExtender.new(userSettings)
 
     local function attachCollisionGuard(entry, limb, char, settings)
         if settings.LIMB_CAN_COLLIDE then return end
+        local FORCE_NO_COLLIDE = { CanCollide = false }
         local humanoid = char and char:FindFirstChildOfClass("Humanoid")
         if not humanoid then return end
         local function forceCollisions()
-            if not isLiveInstance(limb) or not limb.Parent then return end
-            silentWrite(limb, { CanCollide = false })
+            silentWrite(limb, FORCE_NO_COLLIDE)
         end
         entry._humanoidStateConn = humanoid.StateChanged:Connect(forceCollisions)
         forceCollisions()
     end
 
     local function sharedApplyLimb(parent, cacheKey, char, limb)
-        if not isLiveInstance(limb) or not limb.Parent then return end
         sharedSaveData(parent, cacheKey, char, limb)
 
         if BYPASS_AVAILABLE then wrapPartSignals(limb) end
@@ -542,7 +537,7 @@ function LimbExtender.new(userSettings)
         entry.TargetCustomPhysicalProperties = nil
         entry.TargetRootPriority             = nil
 
-        if activeLimb and isLiveInstance(activeLimb) and activeLimb.Parent then
+        if activeLimb then
             if entry._humanoidStateConn then pcall(function() entry._humanoidStateConn:Disconnect() end) end
             silentWrite(activeLimb, {
                 Size                     = entry.TrueSize,
@@ -562,7 +557,6 @@ function LimbExtender.new(userSettings)
 
     local function reapplyCosmeticToEntry(entry, settings)
         local limb = entry.Limb
-        if not isLiveInstance(limb) or not limb.Parent then return end
         if entry._humanoidStateConn then pcall(function() entry._humanoidStateConn:Disconnect() end) end
 
         local props, newVec, isHRP = buildLimbProps(limb, entry, settings)
@@ -574,7 +568,6 @@ function LimbExtender.new(userSettings)
     end
 
     function self:_applyLimbs(player, char, limb)
-        if not isLiveInstance(limb) or not limb.Parent then return end
         local cacheKey
         if player then
             cacheKey = player.Name
