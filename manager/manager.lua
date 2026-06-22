@@ -25,9 +25,87 @@ local string_gsub  = string.gsub
 local os_clock     = os.clock
 
 local SCAN_FRAME_BUDGET = 0.002
+local BATCH_SIZE_REFRESH = 5   
 
-local function isNPCCandidate(inst)
-	return typeof(inst) == "Instance" and inst:IsA("Model")
+local limbPathCache = {}
+
+local function parseLimbPath(targetLimb)
+	if type(targetLimb) ~= "string" or targetLimb == "" then return nil end
+	local cached = limbPathCache[targetLimb]
+	if cached then return cached end
+
+	local segs = {}
+	for seg in targetLimb:gmatch("[^%.]+") do
+		local t = seg:match("^%s*(.-)%s*$")
+		if t ~= "" then segs[#segs + 1] = t end
+	end
+	local result = #segs > 0 and segs or nil
+	limbPathCache[targetLimb] = result
+	return result
+end
+
+local function normalizeDirectoryPath(path)
+	path = tostring(path or "")
+	path = string_gsub(path, "^%s+", "")
+	path = string_gsub(path, "%s+$", "")
+	path = string_gsub(path, "^game:GetService%(%s*['\"]([^'\"]+)['\"]%s*%)", "%1")
+	path = string_gsub(path, "^game%.", "")
+
+	if path:sub(1, 9):lower() == "workspace" then
+		path = "Workspace" .. path:sub(10)
+	end
+
+	path = string_gsub(path, ":%s*WaitForChild%(%s*['\"]([^'\"]+)['\"]%s*%)", ".%1")
+	path = string_gsub(path, ":%s*FindFirstChild%(%s*['\"]([^'\"]+)['\"]%s*%)", ".%1")
+	path = string_gsub(path, "%[%s*['\"]([^'\"]+)['\"]%s*%]", ".%1")
+	path = string_gsub(path, "%.+", ".")
+	path = string_gsub(path, "^%.", "")
+	path = string_gsub(path, "%.$", "")
+
+	return path
+end
+
+local function resolvePathAsync(path, timeoutPerPart)
+	timeoutPerPart = timeoutPerPart or 5
+	if type(path) ~= "string" or path == "" then return nil end
+
+	path = normalizeDirectoryPath(path)
+	local parts = string_split(path, ".")
+	if #parts == 0 then return nil end
+
+	local head = parts[1]:lower()
+	local current
+
+	if head == "game" then
+		current = game
+		table_remove(parts, 1)
+	elseif head == "workspace" then
+		current = Workspace
+		table_remove(parts, 1)
+	else
+		local ok, service = pcall(game.GetService, game, parts[1])
+		if ok and service then
+			current = service
+			table_remove(parts, 1)
+		else
+			current = Workspace
+		end
+	end
+
+	for _, part in ipairs(parts) do
+		if part ~= "" then
+			current = current:WaitForChild(part, timeoutPerPart)
+			if not current then return nil end
+		end
+	end
+
+	return current
+end
+
+local function isLiveInstance(inst)
+	if typeof(inst) ~= "Instance" then return false end
+	local ok, result = pcall(inst.IsDescendantOf, inst, game)
+	return ok and result
 end
 
 local ConnectionManager = {}
@@ -117,80 +195,6 @@ local function mergeSettings(user)
 	end
 
 	return s
-end
-
-local function parseLimbPath(targetLimb)
-	if type(targetLimb) ~= "string" or targetLimb == "" then return nil end
-	local segs = {}
-	for seg in targetLimb:gmatch("[^%.]+") do
-		local t = seg:match("^%s*(.-)%s*$")
-		if t ~= "" then segs[#segs + 1] = t end
-	end
-	return #segs > 0 and segs or nil
-end
-
-local function normalizeDirectoryPath(path)
-	path = tostring(path or "")
-	path = string_gsub(path, "^%s+", "")
-	path = string_gsub(path, "%s+$", "")
-	path = string_gsub(path, "^game:GetService%(%s*['\"]([^'\"]+)['\"]%s*%)", "%1")
-	path = string_gsub(path, "^game%.", "")
-
-	if path:sub(1, 9):lower() == "workspace" then
-		path = "Workspace" .. path:sub(10)
-	end
-
-	path = string_gsub(path, ":%s*WaitForChild%(%s*['\"]([^'\"]+)['\"]%s*%)", ".%1")
-	path = string_gsub(path, ":%s*FindFirstChild%(%s*['\"]([^'\"]+)['\"]%s*%)", ".%1")
-	path = string_gsub(path, "%[%s*['\"]([^'\"]+)['\"]%s*%]", ".%1")
-	path = string_gsub(path, "%.+", ".")
-	path = string_gsub(path, "^%.", "")
-	path = string_gsub(path, "%.$", "")
-
-	return path
-end
-
-local function resolvePathAsync(path, timeoutPerPart)
-	timeoutPerPart = timeoutPerPart or 5
-	if type(path) ~= "string" or path == "" then return nil end
-
-	path = normalizeDirectoryPath(path)
-	local parts = string_split(path, ".")
-	if #parts == 0 then return nil end
-
-	local head = parts[1]:lower()
-	local current
-
-	if head == "game" then
-		current = game
-		table_remove(parts, 1)
-	elseif head == "workspace" then
-		current = Workspace
-		table_remove(parts, 1)
-	else
-		local ok, service = pcall(game.GetService, game, parts[1])
-		if ok and service then
-			current = service
-			table_remove(parts, 1)
-		else
-			current = Workspace
-		end
-	end
-
-	for _, part in ipairs(parts) do
-		if part ~= "" then
-			current = current:WaitForChild(part, timeoutPerPart)
-			if not current then return nil end
-		end
-	end
-
-	return current
-end
-
-local function isLiveInstance(inst)
-	if typeof(inst) ~= "Instance" then return false end
-	local ok, result = pcall(inst.IsDescendantOf, inst, game)
-	return ok and result
 end
 
 local StreamObserver = {}
@@ -428,7 +432,7 @@ function LimbObserver:_start()
 	end
 
 	local targetLimb = self._manager._settings.TARGET_LIMB
-	self._segments = parseLimbPath(targetLimb)
+	self._segments = parseLimbPath(targetLimb)  
 	if not self._segments then return end
 
 	if self._player and self._manager._settings.TEAM_CHECK then
@@ -776,7 +780,6 @@ function Manager:_registerNPC(model, dir)
 	local valid, missingHumanoid = self:_checkNPCValidity(model)
 	if not valid then
 		if missingHumanoid then
-
 			self:_watchForHumanoid(model, dir)
 		end
 		return
@@ -964,41 +967,66 @@ function Manager:_activateDirectory(dir, useDescendants)
 end
 
 function Manager:_refreshAllLimbObservers()
+	local gen = self._generation
 	local hasTarget = self._settings.TARGET_LIMB ~= nil
 
+	local items = {}
+
 	for _, pd in pairs(self._playerTable) do
-		if hasTarget then
-			pd:_ensureLimbTracking()
-		else
-			pd:_teardownLimbTracking()
-		end
+		table_insert(items, { type = "player", data = pd })
+	end
+	for model, streamObs in pairs(self._npcSet) do
+		table_insert(items, { type = "npc", model = model, streamObs = streamObs })
 	end
 
-	for model, streamObs in pairs(self._npcSet) do
-		if hasTarget then
-			local limbObs = self._npcLimbObservers[model]
-			if limbObs then
-				limbObs:Refresh()
-			elseif streamObs:IsActive() then
-				self._npcLimbObservers[model] = LimbObserver.new(self, model, nil)
+	task_spawn(function()
+		local count = 0
+		for _, item in ipairs(items) do
+			
+			if not self._running or self._destroyed or self._generation ~= gen then
+				return
 			end
-		else
-			local limbObs = self._npcLimbObservers[model]
-			if limbObs then
-				limbObs:Destroy()
-				self._npcLimbObservers[model] = nil
+
+			if item.type == "player" then
+				local pd = item.data
+				if hasTarget then
+					pd:_ensureLimbTracking()
+				else
+					pd:_teardownLimbTracking()
+				end
+			else
+				local model = item.model
+				local streamObs = item.streamObs
+				if hasTarget then
+					local limbObs = self._npcLimbObservers[model]
+					if limbObs then
+						limbObs:Refresh()
+					elseif streamObs:IsActive() then
+						self._npcLimbObservers[model] = LimbObserver.new(self, model, nil)
+					end
+				else
+					local limbObs = self._npcLimbObservers[model]
+					if limbObs then
+						limbObs:Destroy()
+						self._npcLimbObservers[model] = nil
+					end
+				end
+			end
+
+			count = count + 1
+			if count % BATCH_SIZE_REFRESH == 0 then
+				task.wait()
 			end
 		end
-	end
+	end)
 end
 
 function Manager:_rescanNPCFilter()
-	if self._destroyed or not self._running or not self._npcConnsStarted then return end
-
+	local gen = self._generation
+	
+	local models = {}
 	for model in pairs(self._npcSet) do
-		if not self:_isValidNPC(model) then
-			self:_unregisterNPC(model)
-		end
+		table_insert(models, model)
 	end
 
 	local dirs = self._settings.NPC_DIRECTORIES
@@ -1006,17 +1034,42 @@ function Manager:_rescanNPCFilter()
 	local entries = hasUserDirs and dirs or { Workspace }
 	local useDescendants = not hasUserDirs
 
+	local resolvedDirs = {}
 	for _, entry in ipairs(entries) do
 		local instance = isLiveInstance(entry) and entry or self._stringDirMap[entry]
 		if instance and isLiveInstance(instance) then
-			local raw = useDescendants and instance:GetDescendants() or instance:GetChildren()
-			for _, desc in ipairs(raw) do
-				if isNPCCandidate(desc) then
-					self:_registerNPC(desc, instance)
-				end
-			end
+			table_insert(resolvedDirs, instance)
 		end
 	end
+
+	task_spawn(function()
+		local count = 0
+
+		for _, model in ipairs(models) do
+			if not self._running or self._destroyed or self._generation ~= gen then return end
+			if not self:_isValidNPC(model) then
+				self:_unregisterNPC(model)
+			end
+			count = count + 1
+			if count % BATCH_SIZE_REFRESH == 0 then
+				task.wait()
+			end
+		end
+
+		for _, dir in ipairs(resolvedDirs) do
+			if not self._running or self._destroyed or self._generation ~= gen then return end
+			local raw = useDescendants and dir:GetDescendants() or dir:GetChildren()
+			for _, desc in ipairs(raw) do
+				if isNPCCandidate(desc) then
+					self:_registerNPC(desc, dir)
+				end
+			end
+			count = count + 1
+			if count % BATCH_SIZE_REFRESH == 0 then
+				task.wait()
+			end
+		end
+	end)
 end
 
 function Manager:_startPlayerTracking()
@@ -1043,7 +1096,6 @@ function Manager:_startPlayerTracking()
 		for _, p in ipairs(snapshot) do
 			if not self._running or self._destroyed or not self._playerConnsStarted then return end
 			if p ~= localPlayer and not self._playerTable[p] then
-
 				if isLiveInstance(p) then
 					self._playerTable[p] = PlayerData.new(self, p)
 				end
@@ -1255,18 +1307,18 @@ function Manager:Set(key, value)
 	if key == "TARGET_LIMB" or key == "TEAM_CHECK" or key == "FORCEFIELD_CHECK"
 		or key == "DEATH_RESTORE" or key == "GET_LOCAL_TEAM" or key == "DEATH_DETECT_METHOD" then
 		if self._running then
-			self:_refreshAllLimbObservers()
+			self:_refreshAllLimbObservers()  
 		end
 	end
 
 	if (key == "TARGET_LIMB" or key == "TEAM_CHECK") and self._running then
 		for _, pd in pairs(self._playerTable) do
-			pd:_updateTeamSignal()
+			pd:_updateTeamSignal()  
 		end
 	end
 
 	if key == "NPC_FILTER" then
-		self:_rescanNPCFilter()
+		self:_rescanNPCFilter()  
 	end
 
 	if key == "PLAYER_ENABLED" and self._running then
