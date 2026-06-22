@@ -4,16 +4,6 @@ local function missing(t, f, fallback)
 end
 
 local cloneref = missing("function", cloneref, function(obj) return obj end)
-local has_checkcaller = type(checkcaller) == "function"
-local checkcaller = has_checkcaller and checkcaller or function() return true end
-
-local typeof = typeof or function(v)
-    local ok, _ = pcall(function() return v.ClassName end)
-    if ok then return "Instance" end
-    return type(v)
-end
-
-local firesignal = firesignal or function() end
 
 local Players = cloneref(game:GetService("Players"))
 local localPlayer = Players.LocalPlayer
@@ -40,6 +30,7 @@ local Vector3_new = Vector3.new
 local PhysProps_new = PhysicalProperties.new
 
 limbData.playerCache    = limbData.playerCache    or {}
+limbData._isWriting     = limbData._isWriting     or false
 limbData.instanceLookup = limbData.instanceLookup or setmetatable({}, { __mode = "k" })
 limbData.npcIdCounter   = limbData.npcIdCounter   or 0
 limbData._wrappedParts  = limbData._wrappedParts  or setmetatable({}, { __mode = "k" })
@@ -67,7 +58,6 @@ do
         getconnections  = getconnections,
         checkcaller     = checkcaller,
         firesignal      = firesignal,
-        typeof          = typeof,
     }
     local ok = true
     for _, fn in pairs(required) do
@@ -79,7 +69,7 @@ do
     if ok then
         local testOk = pcall(function()
             local mt = getrawmetatable(game)
-            if typeof(mt) ~= "table" then error() end
+            if typeof(mt) ~= "table" then return false end
             return true
         end)
         if testOk then
@@ -146,8 +136,6 @@ local function getAdjustedPhysicalProperties(limb, origSize, newSize)
     local newDensity = math_max(0.01, origPhys.Density * ratio)
     return PhysProps_new(newDensity, origPhys.Friction, origPhys.Elasticity, origPhys.FrictionWeight, origPhys.ElasticityWeight)
 end
-
-limbData._isWriting = false
 
 local RESTART_KEYS = {
     PLAYER_ENABLED          = true,
