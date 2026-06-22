@@ -72,7 +72,7 @@ local function wrapPartSignals(limb)
             if origCallback and not limbData._migratedConns[conn] then
                 local function wrappedCallback(...)
 					if not checkcaller() then
-						return callback(...)
+						return origCallback(...)
 					end
                 end
                 origCallback = hookfunction(origCallback, wrappedCallback)
