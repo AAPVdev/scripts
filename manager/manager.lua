@@ -24,8 +24,6 @@ local string_split = string.split
 local string_gsub  = string.gsub
 local os_clock     = os.clock
 
-local SCAN_FRAME_BUDGET = 0.002
-
 local function isNPCCandidate(inst)
 	return typeof(inst) == "Instance" and inst:IsA("Model")
 end
@@ -208,7 +206,7 @@ function StreamObserver.new(model, onAvailable, onUnavailable, requireAnchor)
 		_onAvailable   = onAvailable,
 		_onUnavailable = onUnavailable,
 
-		_requireAnchor = requireAnchor ~= false, 
+		_requireAnchor = requireAnchor ~= false,
 
 		_modelConns  = ConnectionManager.new(),
 		_anchorConns = ConnectionManager.new(),
@@ -328,7 +326,6 @@ function StreamObserver:_refresh()
 		local available = anchor ~= nil and isLiveInstance(anchor) and isLiveInstance(model)
 		self:_setActive(available)
 	else
-		
 		self:_bindAnchor(nil)
 		self:_setActive(true)
 	end
@@ -805,12 +802,11 @@ function Manager:_registerNPC(model, dir)
 	if not isLiveInstance(model) then return end
 
 	if self._npcSet[model] then return end
-	if self._pendingNPCWatchers[model] then return end 
+	if self._pendingNPCWatchers[model] then return end
 
 	local valid, missingHumanoid = self:_checkNPCValidity(model)
 	if not valid then
 		if missingHumanoid then
-
 			self:_watchForHumanoid(model, dir)
 		end
 		return
@@ -981,18 +977,16 @@ function Manager:_activateDirectory(dir, useDescendants)
 
 	local gen = self._generation
 	task_spawn(function()
-		local t = os_clock()
-		for _, model in ipairs(candidates) do
+		local BATCH = 3
+		for i = 1, #candidates, BATCH do
 			if not self._running or self._destroyed or self._generation ~= gen then
 				return
 			end
-
-			self:_registerNPC(model, dir)
-
-			if os_clock() - t >= SCAN_FRAME_BUDGET then
-				task.wait()
-				t = os_clock()
+			local last = math_min(i + BATCH - 1, #candidates)
+			for j = i, last do
+				self:_registerNPC(candidates[j], dir)
 			end
+			task.wait()
 		end
 	end)
 end
@@ -1029,28 +1023,54 @@ end
 function Manager:_rescanNPCFilter()
 	if self._destroyed or not self._running or not self._npcConnsStarted then return end
 
-	for model in pairs(self._npcSet) do
-		if not self:_isValidNPC(model) then
-			self:_unregisterNPC(model)
-		end
-	end
-
-	local dirs = self._settings.NPC_DIRECTORIES
-	local hasUserDirs = type(dirs) == "table" and #dirs > 0
-	local entries = hasUserDirs and dirs or { Workspace }
-	local useDescendants = not hasUserDirs
-
-	for _, entry in ipairs(entries) do
-		local instance = isLiveInstance(entry) and entry or self._stringDirMap[entry]
-		if instance and isLiveInstance(instance) then
-			local raw = useDescendants and instance:GetDescendants() or instance:GetChildren()
-			for _, desc in ipairs(raw) do
-				if isNPCCandidate(desc) then
-					self:_registerNPC(desc, instance)
-				end
+	local gen = self._generation
+	task_spawn(function()
+		local toRemove = {}
+		for model in pairs(self._npcSet) do
+			if not self._running or self._destroyed or self._generation ~= gen then return end
+			if not self:_isValidNPC(model) then
+				toRemove[#toRemove + 1] = model
 			end
 		end
-	end
+
+		local BATCH = 3
+		for i = 1, #toRemove, BATCH do
+			if not self._running or self._destroyed or self._generation ~= gen then return end
+			local last = math_min(i + BATCH - 1, #toRemove)
+			for j = i, last do
+				self:_unregisterNPC(toRemove[j])
+			end
+			task.wait()
+		end
+
+		local dirs = self._settings.NPC_DIRECTORIES
+		local hasUserDirs = type(dirs) == "table" and #dirs > 0
+		local entries = hasUserDirs and dirs or { Workspace }
+		local useDescendants = not hasUserDirs
+
+		for _, entry in ipairs(entries) do
+			if not self._running or self._destroyed or self._generation ~= gen then return end
+			local instance = isLiveInstance(entry) and entry or self._stringDirMap[entry]
+			if instance and isLiveInstance(instance) then
+				local raw = useDescendants and instance:GetDescendants() or instance:GetChildren()
+				local candidates = {}
+				for _, desc in ipairs(raw) do
+					if isNPCCandidate(desc) then
+						candidates[#candidates + 1] = desc
+					end
+				end
+				for i = 1, #candidates, BATCH do
+					if not self._running or self._destroyed or self._generation ~= gen then return end
+					local last = math_min(i + BATCH - 1, #candidates)
+					for j = i, last do
+						self:_registerNPC(candidates[j], instance)
+					end
+					task.wait()
+				end
+			end
+			task.wait()
+		end
+	end)
 end
 
 function Manager:_startPlayerTracking()
@@ -1073,19 +1093,19 @@ function Manager:_startPlayerTracking()
 
 	local snapshot = Players:GetPlayers()
 	task_spawn(function()
-		local t = os_clock()
-		for _, p in ipairs(snapshot) do
+		local BATCH = 3
+		for i = 1, #snapshot, BATCH do
 			if not self._running or self._destroyed or not self._playerConnsStarted then return end
-			if p ~= localPlayer and not self._playerTable[p] then
-
-				if isLiveInstance(p) then
-					self._playerTable[p] = PlayerData.new(self, p)
+			local last = math_min(i + BATCH - 1, #snapshot)
+			for j = i, last do
+				local p = snapshot[j]
+				if p ~= localPlayer and not self._playerTable[p] then
+					if isLiveInstance(p) then
+						self._playerTable[p] = PlayerData.new(self, p)
+					end
 				end
 			end
-			if os_clock() - t >= SCAN_FRAME_BUDGET then
-				task.wait()
-				t = os_clock()
-			end
+			task.wait()
 		end
 	end)
 end
@@ -1099,8 +1119,22 @@ function Manager:_stopPlayerTracking()
 		self._connections:Disconnect("PlayerRemoving")
 	end
 
-	for _, pd in pairs(self._playerTable) do pd:Destroy() end
+	local BATCH = 3
+	local toDestroy = {}
+	for _, pd in pairs(self._playerTable) do
+		toDestroy[#toDestroy + 1] = pd
+	end
 	table_clear(self._playerTable)
+
+	task_spawn(function()
+		for i = 1, #toDestroy, BATCH do
+			local last = math_min(i + BATCH - 1, #toDestroy)
+			for j = i, last do
+				toDestroy[j]:Destroy()
+			end
+			task.wait()
+		end
+	end)
 end
 
 function Manager:_startNPCTracking()
@@ -1112,21 +1146,24 @@ function Manager:_startNPCTracking()
 	local hasUserDirs = type(dirs) == "table" and #dirs > 0
 	local entries = hasUserDirs and dirs or { Workspace }
 
-	for _, entry in ipairs(entries) do
-		if isLiveInstance(entry) then
-			self:_activateDirectory(entry, not hasUserDirs)
-		elseif type(entry) == "string" then
-			local gen = self._generation
-			task_spawn(function()
+	local gen = self._generation
+	task_spawn(function()
+		for _, entry in ipairs(entries) do
+			if not self._running or self._destroyed or self._generation ~= gen then return end
+
+			if isLiveInstance(entry) then
+				self:_activateDirectory(entry, not hasUserDirs)
+			elseif type(entry) == "string" then
 				local resolved = resolvePathAsync(entry)
 				if resolved and self._running and self._npcConnsStarted
 					and not self._destroyed and self._generation == gen then
 					self._stringDirMap[entry] = resolved
 					self:_activateDirectory(resolved, not hasUserDirs)
 				end
-			end)
+			end
+			task.wait()
 		end
-	end
+	end)
 end
 
 function Manager:_stopNPCTracking()
@@ -1139,13 +1176,17 @@ function Manager:_stopNPCTracking()
 		self._npcConnections = nil
 	end
 
+	local BATCH = 3
+
+	local npcObservers = {}
 	for _, observer in pairs(self._npcSet) do
-		if observer then observer:Destroy() end
+		if observer then npcObservers[#npcObservers + 1] = observer end
 	end
 	table_clear(self._npcSet)
 
+	local limbObservers = {}
 	for _, limbObs in pairs(self._npcLimbObservers) do
-		if limbObs then limbObs:Destroy() end
+		if limbObs then limbObservers[#limbObservers + 1] = limbObs end
 	end
 	table_clear(self._npcLimbObservers)
 
@@ -1157,6 +1198,23 @@ function Manager:_stopNPCTracking()
 	table_clear(self._dirUidMap)
 	table_clear(self._stringDirMap)
 	table_clear(self._npcDirOwners)
+
+	task_spawn(function()
+		for i = 1, #npcObservers, BATCH do
+			local last = math_min(i + BATCH - 1, #npcObservers)
+			for j = i, last do
+				npcObservers[j]:Destroy()
+			end
+			task.wait()
+		end
+		for i = 1, #limbObservers, BATCH do
+			local last = math_min(i + BATCH - 1, #limbObservers)
+			for j = i, last do
+				limbObservers[j]:Destroy()
+			end
+			task.wait()
+		end
+	end)
 end
 
 function Manager:Start()
