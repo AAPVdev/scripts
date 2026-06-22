@@ -90,7 +90,7 @@ local DEFAULTS = {
 	TARGET_LIMB          = nil,
 	TEAM_CHECK           = false,
 	FORCEFIELD_CHECK     = false,
-	DEATH_RESTORE        = true,
+	STOP_TRACKING_ON_DEATH = true,
 	DEATH_DETECT_METHOD  = "Died",
 	GET_LOCAL_TEAM       = nil,
 	ON_LIMB_READY        = nil,
@@ -360,6 +360,7 @@ function LimbObserver.new(manager, model, playerObject)
 		_conns     = ConnectionManager.new(),
 		_destroyed = false,
 		_segments  = nil,
+		_deathMonitored = false,
 	}, LimbObserver)
 
 	self:_bindLifecycle()
@@ -450,6 +451,10 @@ function LimbObserver:_start()
 	self._segments = parseLimbPath(targetLimb)
 	if not self._segments then return end
 
+	if self._manager._settings.STOP_TRACKING_ON_DEATH then
+		self:_monitorDeathEarly()
+	end
+
 	if self._player and self._manager._settings.TEAM_CHECK then
 		local getTeam = self._manager._settings.GET_LOCAL_TEAM
 		if type(getTeam) == "function" then
@@ -488,6 +493,45 @@ function LimbObserver:_start()
 	beginResolve()
 end
 
+function LimbObserver:_monitorDeathEarly()
+	if self._destroyed or self._deathMonitored then return end
+	self._deathMonitored = true
+
+	local humanoid = self._model:FindFirstChildOfClass("Humanoid")
+	if humanoid then
+		self:_connectDeathSignal(humanoid)
+	else
+		self._conns:Connect(self._model.ChildAdded, function(child)
+			if child:IsA("Humanoid") then
+				self._conns:Disconnect("WaitForHumanoid")
+				self:_connectDeathSignal(child)
+			end
+		end, "WaitForHumanoid")
+	end
+end
+
+function LimbObserver:_connectDeathSignal(humanoid)
+	if self._destroyed then return end
+	local method = self._manager._settings.DEATH_DETECT_METHOD
+
+	if method == "Health" then
+		self._conns:Connect(humanoid:GetPropertyChangedSignal("Health"), function()
+			if humanoid.Health <= 0 then
+				self:_onCharacterDied()
+			end
+		end, "DeathHealth")
+	else
+		self._conns:Connect(humanoid.Died, function()
+			self:_onCharacterDied()
+		end, "Died")
+	end
+end
+
+function LimbObserver:_onCharacterDied()
+	if self._destroyed then return end
+	self:_notifyLost()
+end
+
 function LimbObserver:_onLimbFound(limb)
 	self._limb  = limb
 	self._ready = true
@@ -497,24 +541,6 @@ function LimbObserver:_onLimbFound(limb)
 			self:_limbRemoved()
 		end
 	end, "LimbStream")
-
-	if self._manager._settings.DEATH_RESTORE then
-		local humanoid = self._model:FindFirstChildOfClass("Humanoid")
-		if humanoid then
-			local method = self._manager._settings.DEATH_DETECT_METHOD
-			if method == "Health" then
-				self._conns:Connect(humanoid:GetPropertyChangedSignal("Health"), function()
-					if humanoid.Health <= 0 then
-						self:_notifyLost()
-					end
-				end, "DeathHealth")
-			else
-				self._conns:Connect(humanoid.Died, function()
-					self:_notifyLost()
-				end, "Died")
-			end
-		end
-	end
 
 	local player = self._player
 	self._manager:_onLimbReady(player, self._model, limb)
@@ -1346,7 +1372,7 @@ function Manager:Set(key, value)
 	self._settings[key] = value
 
 	if key == "TARGET_LIMB" or key == "TEAM_CHECK" or key == "FORCEFIELD_CHECK"
-		or key == "DEATH_RESTORE" or key == "GET_LOCAL_TEAM" or key == "DEATH_DETECT_METHOD" then
+		or key == "STOP_TRACKING_ON_DEATH" or key == "GET_LOCAL_TEAM" or key == "DEATH_DETECT_METHOD" then
 		if self._running then
 			self:_refreshAllLimbObservers()
 		end
