@@ -114,7 +114,7 @@ end
 
 local function fireSignalsForProp(limb, prop)
 	firesignal(limb.Changed, prop)
-	local sig = limb:GetPropertyChangedSignal(prop)
+	local sig = limb:(prop)
 	firesignal(sig)
 end
 
