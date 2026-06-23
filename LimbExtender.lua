@@ -180,8 +180,7 @@ local function wrapPartSignals(limb)
 		local function newWait(self)
 		    while true do
 		        local args = table.pack(origWait(self))
-		        print("Wait fired, checkcaller:", checkcaller())
-		        if not checkcaller() then
+		        if not limbData.ccaller then
 		            return table.unpack(args, 1, args.n)
 		        end
 		    end
