@@ -623,8 +623,14 @@ function LimbExtender:_doRestartBatched()
 			local entry = cache[keys[j]]
 			if entry and entry.Limb then
 				sharedRestoreLimb(self, keys[j], entry.Limb)
+				if self._ESP and entry.Character then
+					self._ESP:Untrack(entry.Character)
+				end
 			elseif entry and entry.Character then
 				limbData.instanceLookup[entry.Character] = nil
+				if self._ESP then
+					self._ESP:Untrack(entry.Character)
+				end
 				cache[keys[j]] = nil
 			end
 		end
