@@ -9,7 +9,7 @@ local Players = cloneref(game:GetService("Players"))
 local localPlayer = Players.LocalPlayer
 if not localPlayer then
 	Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
-	localPlayer = Players.LocalPlaayer
+	localPlayer = Players.LocalPlayer
 end
 
 local globalEnv = type(getgenv) == "function" and getgenv() or _G
