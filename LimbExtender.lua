@@ -757,6 +757,11 @@ function LimbExtender:Start()
 	self._running = true
 	self._manager:Start()
 	if self._ESP then self._ESP:Start() end
+
+	if self._dirtyRestart or self._dirtyCosmetic or self._dirtyESP then
+		self._workScheduled = true
+		task_spawn(function() self:_processDirtyWork() end)
+	end
 end
 
 function LimbExtender:Stop()
