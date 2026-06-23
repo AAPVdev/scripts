@@ -177,15 +177,15 @@ local function wrapPartSignals(limb)
 	    origConnect = hookfunction(origConnect, newConnect)
 	
 	    local origWait = signal.Wait
-	    local function newWait(self)
-	        while true do
-	            local args = {origWait(self)}
-	            if not limbData.ccaller then
-	                return unpack(args)
-	            end
-	            
-	        end
-	    end
+		local function newWait(self)
+		    while true do
+		        local args = table.pack(origWait(self))
+		        print("Wait fired, checkcaller:", checkcaller())
+		        if not checkcaller() then
+		            return table.unpack(args, 1, args.n)
+		        end
+		    end
+		end
 	    origWait = hookfunction(origWait, newWait)
 	
 	    local connections = getconnections(signal)
