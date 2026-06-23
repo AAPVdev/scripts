@@ -9,7 +9,7 @@ local Players = cloneref(game:GetService("Players"))
 local localPlayer = Players.LocalPlayer
 if not localPlayer then
 	Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
-	localPlayer = Players.LocalPlayer
+	localPlayer = Players.LocalPlaayer
 end
 
 local globalEnv = type(getgenv) == "function" and getgenv() or _G
@@ -34,8 +34,9 @@ limbData.instanceLookup = limbData.instanceLookup or setmetatable({}, { __mode =
 limbData.npcIdCounter   = limbData.npcIdCounter   or 0
 limbData.ccaller   		= limbData.ccaller   	  or false
 limbData._migratedConns = limbData._migratedConns or setmetatable({}, { __mode = "k" })
-limbData._hookedSignals = limbData._hookedSignals or setmetatable({}, { __mode = "k" })
+limbData._hookedSignals = limbData._hookedSignals or {}
 limbData._wrappedParts  = limbData._wrappedParts  or setmetatable({}, { __mode = "k" })
+limbData._signalToInstance = limbData._signalToInstance or setmetatable({}, { __mode = "k" })
 
 if type(limbData.terminate) == "function" then
 	limbData.terminate()
@@ -157,58 +158,64 @@ local function buildLimbProps(limb, entry, settings)
 	return props, newVec, isHRP
 end
 
-local function wrapPartSignals(limb)
-    if not BYPASS_AVAILABLE then return end
-    if limbData._wrappedParts[limb] then return end
-
-	local function hookSignalConnect(signal)
-	    if limbData._hookedSignals[signal] then return end
-	    limbData._hookedSignals[signal] = true
-	
-	    local origConnect = signal.Connect
-	    local function newConnect(self, callback)
-	        local wrapped = newcclosure(function(...)
-	            if not limbData.ccaller then
-	                return callback(...)
-	            end
-	        end)
-	        return origConnect(self, wrapped)
-	    end
-	    origConnect = hookfunction(origConnect, newConnect)
-	
-	    local origWait = signal.Wait
-		local function newWait(self)
-		    while true do
-		        local args = table.pack(origWait(self))
-		        if not limbData.ccaller then
-		            return table.unpack(args, 1, args.n)
-		        end
-		    end
-		end
-	    origWait = hookfunction(origWait, newWait)
-	
-	    local connections = getconnections(signal)
-	    for _, conn in ipairs(connections) do
-	        local origCallback = conn.Function
-	        if origCallback and not limbData._migratedConns[conn] then
-	            local function wrappedCallback(...)
-	                if not limbData.ccaller then
-	                    return origCallback(...)
-	                end
-	            end
-	            origCallback = hookfunction(origCallback, wrappedCallback)
-	            limbData._migratedConns[conn] = true
-	        end
-	    end
+local function write(limb, props)
+	local prev
+	if BYPASS_AVAILABLE then
+		prev = limbData.ccaller
+		limbData.ccaller = true
 	end
 
-    hookSignalConnect(limb.Changed)
-    for _, prop in ipairs(WRITTEN_PROPS) do
-        local ok, sig = pcall(limb.GetPropertyChangedSignal, limb, prop)
-        if ok and sig then
-            hookSignalConnect(sig)
-        end
-    end
+	for k, v in pairs(props) do
+		limb[k] = v
+	end
+
+	if BYPASS_AVAILABLE then
+		limbData.ccaller = prev
+	end
+end
+
+local function wrapPartSignals(limb)
+	if not BYPASS_AVAILABLE then return end
+	if limbData._wrappedParts[limb] then return end
+
+	local function hookSignalConnect(signal)
+		if limbData._hookedSignals[signal] then return end
+		limbData._hookedSignals[signal] = true
+
+		local origConnect = signal.Connect
+		local function newConnect(self, callback)
+			local wrapped = function(...)
+				if not limbData.ccaller then
+					return callback(...)
+				end
+			end
+			return origConnect(self, wrapped)
+		end
+		origConnect = hookfunction(origConnect, newConnect)
+
+		local connections = getconnections(signal)
+		for _, conn in ipairs(connections) do
+			local origCallback = conn.Function
+			if origCallback and not limbData._migratedConns[conn] then
+				local function wrappedCallback(...)
+					if not limbData.ccaller then
+						return origCallback(...)
+					end
+				end
+				origCallback = hookfunction(origCallback, wrappedCallback)
+				limbData._migratedConns[conn] = true
+			end
+		end
+	end
+
+	hookSignalConnect(limb.Changed)
+	for _, prop in ipairs(WRITTEN_PROPS) do
+		local ok, sig = pcall(limb.GetPropertyChangedSignal, limb, prop)
+		if ok and sig then
+			hookSignalConnect(sig)
+		end
+	end
+	limbData._wrappedParts[limb] = true
 end
 
 if BYPASS_AVAILABLE and not limbData._bypassInstalled then
@@ -290,11 +297,41 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 					end
 				end
 			end
+		elseif method == "GetPropertyChangedSignal" then
+			local signal = oldNamecall(self, ...)
+			if typeof(signal) == "RBXScriptSignal" then
+				limbData._signalToInstance[signal] = self
+			end
+			return signal
 		end
 		return oldNamecall(self, ...)
 	end
 
 	setreadonly(mt, true)
+
+	if not limbData._signalIndexHooked then
+		limbData._signalIndexHooked = true
+		local testSignal = game.Changed
+		local signalMt = getrawmetatable(testSignal)
+		local origSignalIndex = signalMt.__index
+		setreadonly(signalMt, false)
+		signalMt.__index = function(self, key)
+			if key == "Wait" then
+				local instance = limbData._signalToInstance[self]
+				if limbData._hookedSignals[self] or (instance and limbData.instanceLookup[instance]) then
+					return function(self)
+						while globalEnv.limbExtenderData.ccaller do
+							task.wait()
+						end
+						local realWait = origSignalIndex(self, "Wait")
+						return realWait(self)
+					end
+				end
+			end
+			return origSignalIndex(self, key)
+		end
+		setreadonly(signalMt, true)
+	end
 end
 
 function getTargetData(instance)
@@ -346,7 +383,7 @@ local LimbExtender = {}
 LimbExtender.__index = LimbExtender
 
 local DEFAULTS = {
-	TARGET_LIMB             = "Head",
+	TARGET_LIMB             = "HumanoidRootPart",
 	LIMB_SIZE               = 15,
 	LIMB_TRANSPARENCY       = 1,
 	LIMB_CAN_COLLIDE        = false,
@@ -397,12 +434,6 @@ local function mergeSettings(user)
 		end
 	end
 	return s
-end
-
-local function write(limb, props)
-	for k, v in pairs(props) do
-		limb[k] = v
-	end
 end
 
 local function sharedSaveData(parent, cacheKey, char, limb)
