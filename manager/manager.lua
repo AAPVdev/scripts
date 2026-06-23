@@ -794,8 +794,7 @@ function Manager:_onLimbReady(player, model, limb)
 end
 
 function Manager:_onLimbLost(player, model, limb)
-    
-    local obs = self._npcLimbObservers[model]
+	local obs = self._npcLimbObservers[model]
     if obs then
         obs:Destroy()
         self._npcLimbObservers[model] = nil
@@ -803,8 +802,9 @@ function Manager:_onLimbLost(player, model, limb)
     
     self._deadModels = self._deadModels or {}
     self._deadModels[model] = true
-
-    self:_fireCallback("ON_LIMB_LOST", ...)
+	
+	local cb = self._settings.ON_LIMB_LOST
+	self:_fireCallback("ON_LIMB_LOST", cb, player, model, limb)
 end
 
 function Manager:_isValidNPC(model)
