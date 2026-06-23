@@ -560,10 +560,10 @@ function LimbExtender:_processDirtyWork()
 				if not self._ESP then
 					self._ESP = espModule.new(self:_buildESPConfig())
 					if self._running then
-					    self._ESP:Start()
-					    for _, entry in pairs(self._playerCache) do
-					        if entry.Character then self._ESP:Track(entry.Character) end
-					    end
+						self._ESP:Start()
+						for _, entry in pairs(self._playerCache) do
+							if entry.Character then self._ESP:Track(entry.Character) end
+						end
 					end
 				else
 					self._ESP:SetOptions(self:_buildESPConfig())
@@ -576,8 +576,9 @@ function LimbExtender:_processDirtyWork()
 		end
 	end
 
-	if self._dirtyRestart then
-		self._dirtyRestart  = false
+	if self._dirtyRestart and not self._restartLock then
+		self._restartLock = true
+		self._dirtyRestart = false
 		self._dirtyCosmetic = false
 
 		for key in pairs(RESTART_KEYS) do
@@ -593,6 +594,12 @@ function LimbExtender:_processDirtyWork()
 		end
 
 		self:_doRestartBatched()
+		self._restartLock = false
+
+		if self._dirtyRestart then
+			self._workScheduled = true
+			task_spawn(function() self:_processDirtyWork() end)
+		end
 	elseif self._dirtyCosmetic then
 		self._dirtyCosmetic = false
 		self:_doCosmeticUpdateBatched()
@@ -614,8 +621,11 @@ function LimbExtender:_doRestartBatched()
 		local last = math_min(i + BATCH - 1, #keys)
 		for j = i, last do
 			local entry = cache[keys[j]]
-			if entry then
+			if entry and entry.Limb then
 				sharedRestoreLimb(self, keys[j], entry.Limb)
+			elseif entry and entry.Character then
+				limbData.instanceLookup[entry.Character] = nil
+				cache[keys[j]] = nil
 			end
 		end
 		task_wait()
@@ -627,6 +637,8 @@ function LimbExtender:_doRestartBatched()
 	if self._ESP then self._ESP:Stop() end
 	if not self._running then return end
 
+	self._generation = self._generation + 1
+	self._managerGeneration = self._generation
 	self._manager:Start()
 	if self._ESP then self._ESP:Start() end
 end
@@ -669,6 +681,9 @@ function LimbExtender.new(userSettings)
 		_dirtyCosmetic       = false,
 		_dirtyESP            = false,
 		_workScheduled       = false,
+		_restartLock 		 = false,
+		_generation 		 = 0,
+		_managerGeneration 	 = 0,
 	}, LimbExtender)
 
 	limbData.targetLimbName = self._settings.TARGET_LIMB
