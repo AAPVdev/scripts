@@ -114,7 +114,7 @@ end
 
 local function fireSignalsForProp(limb, prop)
 	firesignal(limb.Changed, prop)
-	local sig = limb:GetPropertyChangedSignal(prop)
+	local sig = limb:(prop)
 	firesignal(sig)
 end
 
@@ -298,11 +298,26 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 				end
 			end
 		elseif method == "GetPropertyChangedSignal" then
-			local signal = oldNamecall(self, ...)
-			if typeof(signal) == "RBXScriptSignal" then
-				limbData._signalToInstance[signal] = self
-			end
-			return signal
+		    local signal = oldNamecall(self, ...)
+		    if typeof(signal) == "RBXScriptSignal" then
+		        limbData._signalToInstance[signal] = self
+		        
+		        if not limbData._hookedSignals[signal] then
+		            limbData._hookedSignals[signal] = true
+		            local origConnect = signal.Connect
+		            local function newConnect(s, callback)
+		                local wrapped = function(...)
+		                    if not limbData.ccaller then
+		                        return callback(...)
+		                    end
+		                end
+		                return origConnect(s, wrapped)
+		            end
+		            hookfunction(origConnect, newConnect)
+		            
+		        end
+		    end
+		    return signal
 		end
 		return oldNamecall(self, ...)
 	end
