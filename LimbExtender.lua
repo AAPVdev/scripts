@@ -314,7 +314,6 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 		                return origConnect(s, wrapped)
 		            end
 		            hookfunction(origConnect, newConnect)
-		            
 		        end
 		    end
 		    return signal
@@ -347,6 +346,47 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 		end
 		setreadonly(signalMt, true)
 	end
+end
+
+if BYPASS_AVAILABLE then
+	limbData._wrappedCallbacks = limbData._wrappedCallbacks or setmetatable({}, { __mode = "k" })
+	local function wrapCallback(callback)
+		if limbData._wrappedCallbacks[callback] then return callback end
+		local wrapped = function(...)
+			if not limbData.ccaller then
+				return callback(...)
+			end
+		end
+		hookfunction(callback, wrapped)
+		limbData._wrappedCallbacks[callback] = true
+		return wrapped
+	end
+
+	local function wrapExistingSignals()
+		for _, part in ipairs(game:GetDescendants()) do
+			if part:IsA("BasePart") then
+				
+				for _, conn in ipairs(getconnections(part.Changed)) do
+					if conn.Function then
+						wrapCallback(conn.Function)
+					end
+				end
+				
+				for _, prop in ipairs(WRITTEN_PROPS) do
+					local ok, sig = pcall(part.GetPropertyChangedSignal, part, prop)
+					if ok and sig then
+						for _, conn in ipairs(getconnections(sig)) do
+							if conn.Function then
+								wrapCallback(conn.Function)
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+
+	wrapExistingSignals()
 end
 
 function getTargetData(instance)
