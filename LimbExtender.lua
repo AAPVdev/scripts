@@ -298,25 +298,12 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 				end
 			end
 		elseif method == "GetPropertyChangedSignal" then
-		    local signal = oldNamecall(self, ...)
-		    if typeof(signal) == "RBXScriptSignal" then
-		        limbData._signalToInstance[signal] = self
-		        
-		        if not limbData._hookedSignals[signal] then
-		            limbData._hookedSignals[signal] = true
-		            local origConnect = signal.Connect
-		            local function newConnect(s, callback)
-		                local wrapped = function(...)
-		                    if not limbData.ccaller then
-		                        return callback(...)
-		                    end
-		                end
-		                return origConnect(s, wrapped)
-		            end
-		            hookfunction(origConnect, newConnect)
-		        end
-		    end
-		    return signal
+			local signal = oldNamecall(self, ...)
+			if typeof(signal) == "RBXScriptSignal" then
+				limbData._signalToInstance[signal] = self
+				limbData._hookedSignals[signal] = true
+			end
+			return signal
 		end
 		return oldNamecall(self, ...)
 	end
@@ -330,63 +317,34 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 		local origSignalIndex = signalMt.__index
 		setreadonly(signalMt, false)
 		signalMt.__index = function(self, key)
-			if key == "Wait" then
-				local instance = limbData._signalToInstance[self]
-				if limbData._hookedSignals[self] or (instance and limbData.instanceLookup[instance]) then
-					return function(self)
-						while globalEnv.limbExtenderData.ccaller do
-							task.wait()
+			local instance = limbData._signalToInstance[self]
+			local isTracked = limbData._hookedSignals[self] or (instance and limbData.instanceLookup[instance])
+
+			if (key == "Connect" or key == "Once") and isTracked then
+				local origMethod = origSignalIndex(self, key)
+				return function(s, callback)
+					local wrapped = function(...)
+						if not limbData.ccaller then
+							return callback(...)
 						end
-						local realWait = origSignalIndex(self, "Wait")
-						return realWait(self)
 					end
+					return origMethod(s, wrapped)
 				end
 			end
+
+			if key == "Wait" and isTracked then
+				return function(self)
+					while globalEnv.limbExtenderData.ccaller do
+						task.wait()
+					end
+					return origSignalIndex(self, "Wait")(self)
+				end
+			end
+
 			return origSignalIndex(self, key)
 		end
 		setreadonly(signalMt, true)
 	end
-end
-
-if BYPASS_AVAILABLE then
-	limbData._wrappedCallbacks = limbData._wrappedCallbacks or setmetatable({}, { __mode = "k" })
-	local function wrapCallback(callback)
-		if limbData._wrappedCallbacks[callback] then return callback end
-		local wrapped = function(...)
-			if not limbData.ccaller then
-				return callback(...)
-			end
-		end
-		hookfunction(callback, wrapped)
-		limbData._wrappedCallbacks[callback] = true
-		return wrapped
-	end
-
-	local function wrapExistingSignals()
-		for _, part in ipairs(game:GetDescendants()) do
-			if part:IsA("BasePart") then
-				
-				for _, conn in ipairs(getconnections(part.Changed)) do
-					if conn.Function then
-						wrapCallback(conn.Function)
-					end
-				end
-				
-				for _, prop in ipairs(WRITTEN_PROPS) do
-					local ok, sig = pcall(part.GetPropertyChangedSignal, part, prop)
-					if ok and sig then
-						for _, conn in ipairs(getconnections(sig)) do
-							if conn.Function then
-								wrapCallback(conn.Function)
-							end
-						end
-					end
-				end
-			end
-		end
-	end
-
-	wrapExistingSignals()
 end
 
 function getTargetData(instance)
