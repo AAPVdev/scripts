@@ -162,33 +162,46 @@ local function wrapPartSignals(limb)
     if limbData._wrappedParts[limb] then return end
 
 	local function hookSignalConnect(signal)
-        if limbData._hookedSignals[signal] then return end
-        limbData._hookedSignals[signal] = true
-        local origConnect = signal.Connect
-        local function newConnect(self, callback)
-            local wrapped = newcclosure(function(...)
-                if not limbData.ccaller then
-                    return callback(...)
-				end
-            end)
-            return origConnect(self, wrapped)
-        end
-        origConnect = hookfunction(origConnect, newConnect)
-
-        local connections = getconnections(signal)
-        for _, conn in ipairs(connections) do
-            local origCallback = conn.Function
-            if origCallback and not limbData._migratedConns[conn] then
-                local function wrappedCallback(...)
-					if not limbData.ccaller then
-						return origCallback(...)
-					end
-                end
-                origCallback = hookfunction(origCallback, wrappedCallback)
-                limbData._migratedConns[conn] = true
-            end
-        end
-    end
+	    if limbData._hookedSignals[signal] then return end
+	    limbData._hookedSignals[signal] = true
+	
+	    local origConnect = signal.Connect
+	    local function newConnect(self, callback)
+	        local wrapped = newcclosure(function(...)
+	            if not limbData.ccaller then
+	                return callback(...)
+	            end
+	        end)
+	        return origConnect(self, wrapped)
+	    end
+	    origConnect = hookfunction(origConnect, newConnect)
+	
+	    local origWait = signal.Wait
+	    local function newWait(self)
+	        while true do
+	            local args = {origWait(self)}
+	            if not limbData.ccaller then
+	                return unpack(args)
+	            end
+	            
+	        end
+	    end
+	    origWait = hookfunction(origWait, newWait)
+	
+	    local connections = getconnections(signal)
+	    for _, conn in ipairs(connections) do
+	        local origCallback = conn.Function
+	        if origCallback and not limbData._migratedConns[conn] then
+	            local function wrappedCallback(...)
+	                if not limbData.ccaller then
+	                    return origCallback(...)
+	                end
+	            end
+	            origCallback = hookfunction(origCallback, wrappedCallback)
+	            limbData._migratedConns[conn] = true
+	        end
+	    end
+	end
 
     hookSignalConnect(limb.Changed)
     for _, prop in ipairs(WRITTEN_PROPS) do
