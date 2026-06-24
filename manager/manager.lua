@@ -1492,6 +1492,8 @@ function Manager:RegisterPlayerCharacter(player, model)
     if not player or not model then return end
     if not model:IsA("Model") then return end
 
+    if not self._settings.PLAYER_ENABLED then return end
+	
     if not self._running then
         table_insert(self._pendingPlayerRegistrations, { player = player, model = model })
         return
