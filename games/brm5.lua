@@ -35,7 +35,7 @@ end
 local function registerIfPlayer(model)
     if not model:IsA("Model") then return end
     local player = customGetPlayer(model)
-    if player and not player == localplayer then
+    if player and player ~= localplayer then
         extender:RegisterPlayerCharacter(player, model)
     end
 end
