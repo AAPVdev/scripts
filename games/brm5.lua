@@ -3,6 +3,8 @@ local extender = ...
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 
+local localplayer = Players.LocalPlayer
+
 local ReplicatorService
 local getNil = function(name, class)
     for _, v in next, getnilinstances() do
@@ -33,7 +35,7 @@ end
 local function registerIfPlayer(model)
     if not model:IsA("Model") then return end
     local player = customGetPlayer(model)
-    if player then
+    if player and not player == localplayer then
         extender:RegisterPlayerCharacter(player, model)
     end
 end
@@ -57,7 +59,7 @@ local function setup()
     end)
     table.insert(connections, conn1)
 
-    local conn2 = Workspace.Model.ChildRemoving:Connect(function(desc)
+    local conn2 = Workspace.Model.ChildRemoved:Connect(function(desc)
         if not desc:IsA("Model") then return end
         local player = customGetPlayer(desc)
         if player then
