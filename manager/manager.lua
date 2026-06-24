@@ -96,7 +96,7 @@ local DEFAULTS = {
 	ON_LIMB_READY        = nil,
 	ON_LIMB_LOST         = nil,
 
-	NPC_SPAWN_WAIT_TIMEOUT = 15,
+	NPC_SPAWN_WAIT_TIMEOUT = 5,
 
 	WARN_ON_CALLBACK_ERROR = true,
 
@@ -1028,7 +1028,7 @@ function Manager:_activateDirectory(dir, useDescendants)
 
 	local gen = self._generation
 	task_spawn(function()
-		local BATCH = 3
+		local BATCH = 10
 		for i = 1, #candidates, BATCH do
 			if not self._running or self._destroyed or self._generation ~= gen then
 				return
