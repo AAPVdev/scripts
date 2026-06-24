@@ -1,4 +1,4 @@
-local extender = loadstring(game:HttpGet('https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua'))()
+local extender = ...
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
