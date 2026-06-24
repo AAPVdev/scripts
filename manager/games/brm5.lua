@@ -3,6 +3,7 @@ local extender = loadstring(game:HttpGet('https://raw.githubusercontent.com/AAPV
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 
+local ReplicatorService
 local getNil = function(name, class)
     for _, v in next, getnilinstances() do
         if v.ClassName == class and v.Name == name then
@@ -10,9 +11,11 @@ local getNil = function(name, class)
         end
     end
 end
-local ReplicatorService = require(getNil("ReplicatorService", "ModuleScript"))
+ReplicatorService = require(getNil("ReplicatorService", "ModuleScript"))
 
 local actorLookup = {}
+local connections = {}
+
 local function rebuildLookup()
     table.clear(actorLookup)
     for uid, actor in ReplicatorService.Actors do
@@ -21,17 +24,11 @@ local function rebuildLookup()
         end
     end
 end
-rebuildLookup()
 
 local function customGetPlayer(model)
     local actor = actorLookup[model]
-    if actor and actor.Owner then
-        return actor.Owner
-    end
-    return nil
+    return actor and actor.Owner
 end
-
-extender:Set("GET_PLAYER_FROM_CHARACTER", customGetPlayer)
 
 local function registerIfPlayer(model)
     if not model:IsA("Model") then return end
@@ -41,17 +38,35 @@ local function registerIfPlayer(model)
     end
 end
 
-for _, model in ipairs(Workspace.Model:GetChildren()) do
-    registerIfPlayer(model)
+local function setup()
+    for _, conn in ipairs(connections) do
+        conn:Disconnect()
+    end
+    table.clear(connections)
+
+    rebuildLookup()
+
+    extender:Set("GET_PLAYER_FROM_CHARACTER", customGetPlayer)
+
+    for _, model in ipairs(Workspace.Model:GetChildren()) do
+        registerIfPlayer(model)
+    end
+
+    local conn1 = Workspace.Model.ChildAdded:Connect(function(desc)
+        registerIfPlayer(desc)
+    end)
+    table.insert(connections, conn1)
+
+    local conn2 = Workspace.Model.ChildRemoving:Connect(function(desc)
+        if not desc:IsA("Model") then return end
+        local player = customGetPlayer(desc)
+        if player then
+            extender:UnregisterPlayerCharacter(player, desc)
+        end
+    end)
+    table.insert(connections, conn2)
 end
 
-Workspace.Model.ChildAdded:Connect(function(desc)
-    registerIfPlayer(desc)
+setup()
 
-Workspace.Model.ChildRemoved:Connect(function(desc)
-    if not desc:IsA("Model") then return end
-    local player = customGetPlayer(desc)
-    if player then
-        extender:UnregisterPlayerCharacter(player, desc)
-    end
-end)
+extender._customSetup = setup
