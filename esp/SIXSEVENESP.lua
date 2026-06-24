@@ -87,10 +87,9 @@ local DEFAULT_OPTIONS = {
 
 	CanDraw = nil,
 
-	-- Work‑spreading limits (tweak these for your game)
-	MaxInitPerFrame             = 10,   -- models fully initialized per frame
-	MaxOcclusionChecksPerFrame  = 15,   -- raycasts per frame (higher = more accurate, but heavier)
-	TracerOnOffscreen           = false, -- set to true if you want tracers to screen edges
+	MaxInitPerFrame             = 10,   
+	MaxOcclusionChecksPerFrame  = 15,   
+	TracerOnOffscreen           = false, 
 
 	TextResolver = function(model, meta)
 		return model.Name
@@ -120,7 +119,6 @@ local function mergeDeep(dst, src)
 	return dst
 end
 
--- Pool (BeginFrame / EndFrame pattern)
 local function newPool()
 	local self = { Objects = {} }
 
@@ -179,6 +177,15 @@ local function newPool()
 	return self
 end
 
+local function getRootPart(model)
+	
+	if model.PrimaryPart and model.PrimaryPart:IsA("BasePart") then
+		return model.PrimaryPart
+	end
+	
+	return model:FindFirstChildWhichIsA("BasePart")
+end
+
 function SIXSEVENESP.IsCharacterModel(model)
 	if typeof(model) ~= "Instance" or not model:IsA("Model") then
 		return false
@@ -189,15 +196,7 @@ function SIXSEVENESP.IsCharacterModel(model)
 		return false
 	end
 
-	if hum.RigType ~= Enum.HumanoidRigType.R6 and hum.RigType ~= Enum.HumanoidRigType.R15 then
-		return false
-	end
-
-	if not model:FindFirstChild("HumanoidRootPart") then
-		return false
-	end
-
-	if not model:FindFirstChild("Head") then
+	if not getRootPart(model) then
 		return false
 	end
 
@@ -327,7 +326,7 @@ function SIXSEVENESP:GetMeta(model)
 		bones     = bones,
 		pts       = { false, false, false, false },
 		occluded  = false,
-		-- Stagger first occlusion check so they don't all hit the same frame
+		
 		occludeAt = -self.Config.LOD.OcclusionFrequency + math.random(0, self.Config.LOD.OcclusionFrequency - 1),
 
 		ignoreList = {},
@@ -402,7 +401,6 @@ function SIXSEVENESP:ToScreenPoint(pos, allowOffscreen)
 	return v2(p.X, p.Y), onScreen
 end
 
--- Fresh bounding box each frame (cached only for the frame)
 function SIXSEVENESP:GetModelBBox(model)
 	local cached = self._bboxCache[model]
 	if cached then
@@ -492,7 +490,6 @@ function SIXSEVENESP:IsObstructedThrottled(pivot, ignoreList, meta, frame)
 		return meta.occluded
 	end
 
-	-- Cap hit: skip raycast, keep previous occlusion state
 	if self._occlusionDoneThisFrame >= self.Config.MaxOcclusionChecksPerFrame then
 		return meta.occluded
 	end
@@ -531,7 +528,6 @@ function SIXSEVENESP:IsObstructedThrottled(pivot, ignoreList, meta, frame)
 	return solid
 end
 
--- Drawing helpers
 function SIXSEVENESP:Draw2DBox(pts, opts)
 	local color        = opts.Color or self.Config.Color
 	local tl, tr, bl, br = pts[1], pts[2], pts[3], pts[4]
@@ -599,18 +595,14 @@ function SIXSEVENESP:DrawTracer(model, pts, opts)
 	local cam = self:GetCamera()
 	if not cam then return end
 
-	-- Respect off‑screen tracer toggle
 	local target
 	if pts then
-		-- On‑screen, use bottom center of box
 		target = (pts[3] + pts[4]) * 0.5
 	elseif self.Config.TracerOnOffscreen then
-		-- Allow off‑screen tracers (edge of screen)
 		local sp, _ = self:ToScreenPoint(opts.Pivot, true)
 		if not sp then return end
 		target = sp
 	else
-		-- No on‑screen box and off‑screen tracers disabled → don't draw
 		return
 	end
 
@@ -771,7 +763,6 @@ function SIXSEVENESP:RenderStep()
 
 	local toUntrack = {}
 
-	-- Pass 1: initialise new models (up to MaxInitPerFrame)
 	for model in pairs(self._tracked) do
 		if not model or not model.Parent then
 			if self.Config.AutoUntrackMissing then
@@ -788,7 +779,7 @@ function SIXSEVENESP:RenderStep()
 			break
 		end
 
-		if not model:FindFirstChildOfClass("Humanoid") or not model:FindFirstChild("HumanoidRootPart") then
+		if not model:FindFirstChildOfClass("Humanoid") or not getRootPart(model) then
 			continue
 		end
 
@@ -796,7 +787,6 @@ function SIXSEVENESP:RenderStep()
 		self._initDoneThisFrame = self._initDoneThisFrame + 1
 	end
 
-	-- Pass 2: draw all initialised models
 	for model in pairs(self._tracked) do
 		if not model or not model.Parent then
 			continue
@@ -811,8 +801,7 @@ function SIXSEVENESP:RenderStep()
 			continue
 		end
 
-		if not model:FindFirstChildOfClass("Humanoid")
-			or not model:FindFirstChild("HumanoidRootPart") then
+		if not model:FindFirstChildOfClass("Humanoid") or not getRootPart(model) then
 			continue
 		end
 
