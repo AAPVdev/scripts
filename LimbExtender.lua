@@ -27,7 +27,6 @@ local table_clear = table.clear
 local table_insert = table.insert
 local table_clone = table.clone
 local Vector3_new = Vector3.new
-local PhysProps_new = PhysicalProperties.new
 
 limbData.playerCache    = limbData.playerCache    or {}
 limbData.instanceLookup = limbData.instanceLookup or setmetatable({}, { __mode = "k" })
@@ -83,18 +82,15 @@ end
 local BLOCKED_PROPS = {
 	Size = true, Transparency = true, CanCollide = true, Massless = true,
 	Mass = true, AssemblyMass = true, AssemblyCenterOfMass = true,
-	CustomPhysicalProperties = true, CurrentPhysicalProperties = true, RootPriority = true,
+    RootPriority = true,
 }
-
-local WRITTEN_PROPS = {}
-for k in pairs(BLOCKED_PROPS) do
-	if k ~= "CurrentPhysicalProperties" then
-		table_insert(WRITTEN_PROPS, k)
-	end
-end
 
 local ESP_SOURCE_URL     = "https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/esp/SIXSEVENESP.lua"
 local MANAGER_SOURCE_URL = "https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/manager/manager.lua"
+
+local GAME_SCRIPT_URLS = {
+	[1054526971] = "https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/games/brm5.lua",
+}
 
 local function ensureESPLoaded()
 	if limbData.ESP then return limbData.ESP end
@@ -151,7 +147,6 @@ local function buildLimbProps(limb, entry, settings)
 	}
 	if isHRP then
 		props.Massless = false
-		props.CustomPhysicalProperties = PhysicalProperties.new(props.CurrentPhysicalProperties)
 	else
 		props.RootPriority = -127
 	end
@@ -172,6 +167,13 @@ local function write(limb, props)
 	if BYPASS_AVAILABLE then
 		limbData.ccaller = prev
 	end
+end
+
+function getTargetData(instance)
+	if typeof(instance) ~= "Instance" then return nil, nil end
+	local cached = limbData.instanceLookup[instance]
+	if cached then return cached.data, cached.type end
+	return nil, nil
 end
 
 local function wrapPartSignals(limb)
@@ -209,7 +211,7 @@ local function wrapPartSignals(limb)
 	end
 
 	hookSignalConnect(limb.Changed)
-	for _, prop in ipairs(WRITTEN_PROPS) do
+	for _, prop in ipairs(BLOCKED_PROPS) do
 		local ok, sig = pcall(limb.GetPropertyChangedSignal, limb, prop)
 		if ok and sig then
 			hookSignalConnect(sig)
@@ -235,17 +237,9 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 					if key == "Transparency" then return data.OriginalTransparency end
 					if key == "CanCollide" then return data.OriginalCanCollide end
 					if key == "Massless"   then return data.OriginalMassless end
-					if key == "Mass" or key == "AssemblyMass" then
-						local density = data.OriginalDensity
-						local size    = data.OriginalSize
-						return density * (size.X * size.Y * size.Z)
-					end
 					if key == "AssemblyCenterOfMass" then
 						local size = data.OriginalSize
 						return self.Position + Vector3_new(size.X * 0.001, size.Y * 0.001, size.Z * 0.001)
-					end
-					if key == "CustomPhysicalProperties" or key == "CurrentPhysicalProperties" then
-						return data.OriginalPhysProps
 					end
 					if key == "RootPriority" then return data.OriginalRootPriority end
 				elseif instType == "Model" and self == data.Character then
@@ -267,7 +261,6 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 				elseif key == "Mass"                then data.OriginalMass        = value
 				elseif key == "AssemblyMass"        then data.OriginalAssemblyMass = value
 				elseif key == "AssemblyCenterOfMass" then data.OriginalAssemblyCOM = value
-				elseif key == "CustomPhysicalProperties" then data.OriginalPhysProps = value
 				elseif key == "RootPriority"        then data.OriginalRootPriority = value
 				end
 				fireSignalsForProp(self, key)
@@ -347,19 +340,11 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 	end
 end
 
-function getTargetData(instance)
-	if typeof(instance) ~= "Instance" then return nil, nil end
-	local cached = limbData.instanceLookup[instance]
-	if cached then return cached.data, cached.type end
-	return nil, nil
-end
-
 local PROPS_TO_WATCH = {
 	{ "Size",                     "TargetSize" },
 	{ "Transparency",             "TargetTransparency" },
 	{ "CanCollide",               "TargetCanCollide" },
 	{ "Massless",                 "TargetMassless" },
-	{ "CustomPhysicalProperties", "TargetCustomPhysicalProperties" },
 	{ "RootPriority",             "TargetRootPriority" },
 }
 
@@ -396,9 +381,9 @@ local LimbExtender = {}
 LimbExtender.__index = LimbExtender
 
 local DEFAULTS = {
-	TARGET_LIMB             = "HumanoidRootPart",
+	TARGET_LIMB             = "Head",
 	LIMB_SIZE               = 15,
-	LIMB_TRANSPARENCY       = 1,
+	LIMB_TRANSPARENCY       = 0.7,
 	LIMB_CAN_COLLIDE        = false,
 	TEAM_CHECK              = true,
 	FORCEFIELD_CHECK        = false,
@@ -407,6 +392,8 @@ local DEFAULTS = {
 	NPC_ENABLED             = true,
 	NPC_FILTER              = nil,
 	NPC_DIRECTORIES         = {},
+	CUSTOM_CHARACTER_SYSTEM   = false,
+	GET_PLAYER_FROM_CHARACTER = nil,
 	ESP                     = false,
 	ESP_COLOR               = Color3.fromRGB(255, 50, 50),
 	ESP_BOX3D_COLOR         = Color3.fromRGB(255, 50, 50),
@@ -470,9 +457,7 @@ local function sharedSaveData(parent, cacheKey, char, limb)
 	entry.OriginalAssemblyMass = limb.AssemblyMass
 	entry.OriginalAssemblyCOM  = limb.AssemblyCenterOfMass
 	entry.OriginalExtents      = extents
-	entry.OriginalPhysProps    = limb.CurrentPhysicalProperties
 	entry.OriginalRootPriority = limb.RootPriority or 0
-	entry.OriginalDensity      = entry.OriginalPhysProps.Density
 	if not entry.TrueSize    then entry.TrueSize    = entry.OriginalSize end
 	if not entry.TrueExtents then entry.TrueExtents = extents end
 	limbData.instanceLookup[limb] = { data = entry, type = "Part" }
@@ -485,10 +470,8 @@ local function applyEntryTargets(entry, props, newVec, isHRP, settings)
 	entry.TargetCanCollide   = settings.LIMB_CAN_COLLIDE
 	entry.TargetMassless     = not isHRP
 	if isHRP then
-		entry.TargetCustomPhysicalProperties = props.CustomPhysicalProperties or nil
 		entry.TargetRootPriority             = nil
 	else
-		entry.TargetCustomPhysicalProperties = nil
 		entry.TargetRootPriority             = -127
 	end
 end
@@ -535,7 +518,6 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 	entry.TargetTransparency             = nil
 	entry.TargetCanCollide               = nil
 	entry.TargetMassless                 = nil
-	entry.TargetCustomPhysicalProperties = nil
 	entry.TargetRootPriority             = nil
 
 	if activeLimb then
@@ -545,7 +527,6 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 			Transparency             = entry.OriginalTransparency,
 			CanCollide               = entry.OriginalCanCollide,
 			Massless                 = entry.OriginalMassless,
-			CustomPhysicalProperties = entry.OriginalPhysProps,
 			RootPriority             = entry.OriginalRootPriority,
 		})
 	end
@@ -726,6 +707,46 @@ function LimbExtender:_doCosmeticUpdateBatched()
 	end
 end
 
+function LimbExtender:_runGameScriptIfNeeded()
+	local currentId = game.GameId
+	local url = GAME_SCRIPT_URLS[currentId]
+	if not url then return end
+
+	if self._customSetup then
+		task_spawn(function()
+			local success, result = pcall(self._customSetup)
+			if not success then
+				warn("[LimbExtender] Custom setup error: " .. tostring(result))
+			end
+		end)
+		return
+	end
+
+	if self._gameScriptFetched then return end
+	self._gameScriptFetched = true
+
+	task_spawn(function()
+		local ok, source = pcall(game.HttpGet, game, url)
+		if not ok or not source then
+			warn("[LimbExtender] Failed to fetch custom script: " .. tostring(source))
+			return
+		end
+		local fn, err = loadstring(source)
+		if not fn then
+			warn("[LimbExtender] Custom script compile error: " .. tostring(err))
+			return
+		end
+		local success, result = pcall(fn, self)
+		if not success then
+			warn("[LimbExtender] Custom script runtime error: " .. tostring(result))
+		end
+
+		if not self._customSetup then
+			warn("[LimbExtender] Custom script did not set _customSetup; it will not re-run on restarts.")
+		end
+	end)
+end
+
 function LimbExtender.new(userSettings)
 	local self = setmetatable({
 		_settings            = mergeSettings(userSettings),
@@ -746,6 +767,8 @@ function LimbExtender.new(userSettings)
 		_restartLock 		 = false,
 		_generation 		 = 0,
 		_managerGeneration 	 = 0,
+		_gameScriptFetched   = false,
+		_customSetup         = nil,
 	}, LimbExtender)
 
 	limbData.targetLimbName = self._settings.TARGET_LIMB
@@ -765,6 +788,8 @@ function LimbExtender.new(userSettings)
 		FORCEFIELD_CHECK = self._settings.FORCEFIELD_CHECK,
 		DEATH_RESTORE    = self._settings.ALT_RESET_LIMB_ON_DEATH,
 		GET_LOCAL_TEAM   = function() return localPlayer.Team end,
+		GET_PLAYER_FROM_CHARACTER = self._settings.GET_PLAYER_FROM_CHARACTER,
+		CUSTOM_CHARACTER_SYSTEM   = self._settings.CUSTOM_CHARACTER_SYSTEM,
 		ON_LIMB_READY    = function(player, model, limb) self:_applyLimbs(player, model, limb) end,
 		ON_LIMB_LOST = function(player, model, limb)
 			self:_removeLimbs(player, model, limb)
@@ -820,6 +845,8 @@ function LimbExtender:Start()
 	self._manager:Start()
 	if self._ESP then self._ESP:Start() end
 
+	self:_runGameScriptIfNeeded()
+
 	if self._dirtyRestart or self._dirtyCosmetic or self._dirtyESP then
 		self._workScheduled = true
 		task_spawn(function() self:_processDirtyWork() end)
@@ -868,6 +895,13 @@ function LimbExtender:Set(key, value)
 		s[key] = value
 	end
 
+	if key == "GET_PLAYER_FROM_CHARACTER" or key == "CUSTOM_CHARACTER_SYSTEM" then
+		if self._manager then
+			self._manager:Set(key, value)
+		end
+		return
+	end
+
 	if RESTART_KEYS[key] then
 		if key == "TARGET_LIMB" then limbData.targetLimbName = value end
 		self._dirtyRestart = true
@@ -891,6 +925,18 @@ function LimbExtender:Get(key) return self._settings[key] end
 function LimbExtender:AddDirectory(dir) self._manager:AddDirectory(dir) end
 function LimbExtender:RemoveDirectory(dir) self._manager:RemoveDirectory(dir) end
 function LimbExtender:GetDirectories() return self._manager:GetDirectories() end
+
+function LimbExtender:RegisterPlayerCharacter(player, model)
+	if self._manager then
+		self._manager:RegisterPlayerCharacter(player, model)
+	end
+end
+
+function LimbExtender:UnregisterPlayerCharacter(player, model)
+	if self._manager then
+		self._manager:UnregisterPlayerCharacter(player, model)
+	end
+end
 
 function LimbExtender:Destroy()
 	self:Stop()
