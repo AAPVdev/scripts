@@ -798,6 +798,8 @@ function Manager.new(userSettings)
 		_dirUidMap    = {},
 		_stringDirMap = {},
 		_npcDirOwners = {},
+
+		_pendingPlayerRegistrations = {},
 	}, Manager)
 
 	return self
@@ -1280,6 +1282,11 @@ function Manager:Start()
 	if self._settings.NPC_ENABLED then
 		self:_startNPCTracking()
 	end
+
+	for _, entry in ipairs(self._pendingPlayerRegistrations) do
+    	self:RegisterPlayerCharacter(entry.player, entry.model)
+	end
+	table_clear(self._pendingPlayerRegistrations)
 end
 
 function Manager:Stop()
@@ -1446,16 +1453,21 @@ function Manager:Get(key)
 end
 
 function Manager:RegisterPlayerCharacter(player, model)
-	if self._destroyed or not self._running then return end
-	if not player or not model then return end
-	if not model:IsA("Model") then return end
+    if self._destroyed then return end
+    if not player or not model then return end
+    if not model:IsA("Model") then return end
 
-	local pd = self._playerTable[player]
-	if not pd then
-		pd = PlayerData.new(self, player)
-		self._playerTable[player] = pd
-	end
-	pd:_onCharacterAdded(model)
+    if not self._running then
+        table_insert(self._pendingPlayerRegistrations, { player = player, model = model })
+        return
+    end
+
+    local pd = self._playerTable[player]
+    if not pd then
+        pd = PlayerData.new(self, player)
+        self._playerTable[player] = pd
+    end
+    pd:_onCharacterAdded(model)
 end
 
 function Manager:UnregisterPlayerCharacter(player, model)
