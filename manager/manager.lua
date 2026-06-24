@@ -1395,6 +1395,13 @@ function Manager:Set(key, value)
 	if self._settings[key] == value then return end
 	self._settings[key] = value
 
+	if key == "GET_PLAYER_FROM_CHARACTER" then
+        if self._running and self._npcConnsStarted then
+            self:_rescanNPCFilter()
+        end
+        return
+    end
+	
 	if key == "TARGET_LIMB" or key == "TEAM_CHECK" or key == "FORCEFIELD_CHECK"
 		or key == "STOP_TRACKING_ON_DEATH" or key == "GET_LOCAL_TEAM" or key == "DEATH_DETECT_METHOD" then
 		if self._running then
