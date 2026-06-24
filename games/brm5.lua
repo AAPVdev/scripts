@@ -48,6 +48,7 @@ local function setup()
 
     rebuildLookup()
 
+    extender:Set("CUSTOM_CHARACTER_SYSTEM", true)
     extender:Set("GET_PLAYER_FROM_CHARACTER", customGetPlayer)
 
     for _, model in ipairs(Workspace.Model:GetChildren()) do
