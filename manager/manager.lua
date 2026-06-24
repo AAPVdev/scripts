@@ -103,6 +103,9 @@ local DEFAULTS = {
 	ON_CALLBACK_ERROR = nil,
 
 	REQUIRE_ANCHOR = true,
+
+	GET_PLAYER_FROM_CHARACTER = nil,
+	CUSTOM_CHARACTER_SYSTEM = false,
 }
 
 local function mergeSettings(user)
@@ -122,6 +125,16 @@ local function mergeSettings(user)
 	end
 
 	return s
+end
+
+local function getPlayerFromCharacter(settings, model)
+	local custom = settings.GET_PLAYER_FROM_CHARACTER
+	if custom then
+		local ok, result = pcall(custom, model)
+		if ok and result ~= nil then return result end
+		return nil
+	end
+	return Players:GetPlayerFromCharacter(model)
 end
 
 local function parseLimbPath(targetLimb)
@@ -624,19 +637,21 @@ function PlayerData.new(parent, player)
 		_limbObserver      = nil,
 	}, PlayerData)
 
-	self.conns:Connect(player.CharacterAdded, function(char)
-		self:_onCharacterAdded(char)
-	end, "CharacterAdded")
+	if not parent._settings.CUSTOM_CHARACTER_SYSTEM then
+		self.conns:Connect(player.CharacterAdded, function(char)
+			self:_onCharacterAdded(char)
+		end, "CharacterAdded")
 
-	self.conns:Connect(player.CharacterRemoving, function(char)
-		self:_onCharacterRemoving(char)
-	end, "CharacterRemoving")
+		self.conns:Connect(player.CharacterRemoving, function(char)
+			self:_onCharacterRemoving(char)
+		end, "CharacterRemoving")
+
+		if player.Character then
+			self:_onCharacterAdded(player.Character)
+		end
+	end
 
 	self:_updateTeamSignal()
-
-	if player.Character then
-		self:_onCharacterAdded(player.Character)
-	end
 
 	return self
 end
@@ -795,13 +810,13 @@ end
 
 function Manager:_onLimbLost(player, model, limb)
 	local obs = self._npcLimbObservers[model]
-    if obs then
-        obs:Destroy()
-        self._npcLimbObservers[model] = nil
-    end
-    
-    self._deadModels = self._deadModels or {}
-    self._deadModels[model] = true
+	if obs then
+		obs:Destroy()
+		self._npcLimbObservers[model] = nil
+	end
+	
+	self._deadModels = self._deadModels or {}
+	self._deadModels[model] = true
 	
 	local cb = self._settings.ON_LIMB_LOST
 	self:_fireCallback("ON_LIMB_LOST", cb, player, model, limb)
@@ -810,7 +825,7 @@ end
 function Manager:_isValidNPC(model)
 	if not model or not model:IsA("Model") then return false end
 	if not model:FindFirstChildOfClass("Humanoid") then return false end
-	if Players:GetPlayerFromCharacter(model) then return false end
+	if getPlayerFromCharacter(self._settings, model) then return false end
 
 	local filter = self._settings.NPC_FILTER
 	if type(filter) == "function" then
@@ -823,7 +838,7 @@ end
 function Manager:_checkNPCValidity(model)
 	if not model or not model:IsA("Model") then return false, false end
 	if not model:FindFirstChildOfClass("Humanoid") then return false, true end
-	if Players:GetPlayerFromCharacter(model) then return false, false end
+	if getPlayerFromCharacter(self._settings, model) then return false, false end
 
 	local filter = self._settings.NPC_FILTER
 	if type(filter) == "function" then
@@ -1421,6 +1436,27 @@ end
 
 function Manager:Get(key)
 	return self._settings[key]
+end
+
+function Manager:RegisterPlayerCharacter(player, model)
+	if self._destroyed or not self._running then return end
+	if not player or not model then return end
+	if not model:IsA("Model") then return end
+
+	local pd = self._playerTable[player]
+	if not pd then
+		pd = PlayerData.new(self, player)
+		self._playerTable[player] = pd
+	end
+	pd:_onCharacterAdded(model)
+end
+
+function Manager:UnregisterPlayerCharacter(player, model)
+	if self._destroyed then return end
+	local pd = self._playerTable[player]
+	if pd then
+		pd:_onCharacterRemoving(model)
+	end
 end
 
 function Manager:Destroy()
