@@ -1126,6 +1126,33 @@ function Manager:_rescanNPCFilter()
 	end)
 end
 
+function Manager:_rescanCustomPlayers()
+    if not self._running then return end
+    if not self._settings.CUSTOM_CHARACTER_SYSTEM then return end
+
+    local dirs = self._settings.NPC_DIRECTORIES
+    local hasUserDirs = type(dirs) == "table" and #dirs > 0
+    local entries = hasUserDirs and dirs or { Workspace }
+
+    local getPlayer = self._settings.GET_PLAYER_FROM_CHARACTER
+    if type(getPlayer) ~= "function" then return end
+
+    for _, entry in ipairs(entries) do
+        local instance = isLiveInstance(entry) and entry or self._stringDirMap[entry]
+        if instance and isLiveInstance(instance) then
+            local raw = (not hasUserDirs) and instance:GetDescendants() or instance:GetChildren()
+            for _, obj in ipairs(raw) do
+                if isNPCCandidate(obj) then
+                    local player = getPlayer(obj)
+                    if player then
+                        self:RegisterPlayerCharacter(player, obj)
+                    end
+                end
+            end
+        end
+    end
+end
+
 function Manager:_startPlayerTracking()
 	if self._destroyed or not self._running or self._playerConnsStarted then return end
 	self._playerConnsStarted = true
@@ -1427,11 +1454,19 @@ function Manager:Set(key, value)
 	end
 
 	if key == "PLAYER_ENABLED" and self._running then
-		if value then
-			self:_startPlayerTracking()
-		else
-			self:_stopPlayerTracking()
-		end
+	    if value then
+	        self:_startPlayerTracking()
+	        if self._settings.CUSTOM_CHARACTER_SYSTEM then
+	            self:_rescanCustomPlayers()
+	        end
+	    else
+	        for player, pd in pairs(self._playerTable) do
+	            if pd._character then
+	                pd:_onCharacterRemoving(pd._character)
+	            end
+	        end
+	        self:_stopPlayerTracking()
+	    end
 	end
 
 	if key == "NPC_ENABLED" and self._running then
