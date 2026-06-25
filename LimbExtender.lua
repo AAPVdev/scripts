@@ -166,6 +166,47 @@ function getTargetData(instance)
 	return nil, nil
 end
 
+local function wrapPartSignals(limb)
+	if not BYPASS_AVAILABLE then return end
+	if limbData._wrappedParts[limb] then return end
+
+	local function hookSignalConnect(signal)
+		if limbData._hookedSignals[signal] then return end
+		limbData._hookedSignals[signal] = true
+
+		local origConnect = signal.Connect
+		local function newConnect(self, callback)
+			local wrapped = function(...)
+				if not limbData.ccaller then
+					return callback(...)
+				end
+			end
+			return origConnect(self, wrapped)
+		end
+		origConnect = hookfunction(origConnect, newConnect)
+
+		local connections = getconnections(signal)
+		for _, conn in ipairs(connections) do
+			local origCallback = conn.Function
+			if origCallback and not limbData._migratedConns[conn] then
+				local function wrappedCallback(...)
+					if not limbData.ccaller then
+						return origCallback(...)
+					end
+				end
+				origCallback = hookfunction(origCallback, wrappedCallback)
+				limbData._migratedConns[conn] = true
+			end
+		end
+	end
+
+	hookSignalConnect(limb.Changed)
+	for _, prop in ipairs(BLOCKED_PROPS) do
+		hookSignalConnect(limb.GetPropertyChangedSignal)
+	end
+	limbData._wrappedParts[limb] = true
+end
+
 if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 	limbData._bypassInstalled = true
 	local mt          = getrawmetatable(game)
@@ -438,7 +479,7 @@ local function sharedApplyLimb(parent, cacheKey, char, limb)
 	sharedSaveData(parent, cacheKey, char, limb)
 	local entry = parent._playerCache[cacheKey]
 	if not entry then return end
-
+	wrapPartSignals(limb)
 	local props, newVec, isHRP = buildLimbProps(limb, entry, parent._settings)
 	write(limb, props)
 	applyEntryTargets(entry, props, newVec, isHRP, parent._settings)
