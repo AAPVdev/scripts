@@ -154,18 +154,8 @@ local function buildLimbProps(limb, entry, settings)
 end
 
 local function write(limb, props)
-	local prev
-	if BYPASS_AVAILABLE then
-		prev = limbData.ccaller
-		limbData.ccaller = true
-	end
-
 	for k, v in pairs(props) do
 		limb[k] = v
-	end
-
-	if BYPASS_AVAILABLE then
-		limbData.ccaller = prev
 	end
 end
 
@@ -174,47 +164,6 @@ function getTargetData(instance)
 	local cached = limbData.instanceLookup[instance]
 	if cached then return cached.data, cached.type end
 	return nil, nil
-end
-
-local function wrapPartSignals(limb)
-	if not BYPASS_AVAILABLE then return end
-	if limbData._wrappedParts[limb] then return end
-
-	local function hookSignalConnect(signal)
-		if limbData._hookedSignals[signal] then return end
-		limbData._hookedSignals[signal] = true
-
-		local origConnect = signal.Connect
-		local function newConnect(self, callback)
-			local wrapped = function(...)
-				if not limbData.ccaller then
-					return callback(...)
-				end
-			end
-			return origConnect(self, wrapped)
-		end
-		origConnect = hookfunction(origConnect, newConnect)
-
-		local connections = getconnections(signal)
-		for _, conn in ipairs(connections) do
-			local origCallback = conn.Function
-			if origCallback and not limbData._migratedConns[conn] then
-				local function wrappedCallback(...)
-					if not limbData.ccaller then
-						return origCallback(...)
-					end
-				end
-				origCallback = hookfunction(origCallback, wrappedCallback)
-				limbData._migratedConns[conn] = true
-			end
-		end
-	end
-
-	hookSignalConnect(limb.Changed)
-	for _, prop in ipairs(BLOCKED_PROPS) do
-		hookSignalConnect(limb.GetPropertyChangedSignal)
-	end
-	limbData._wrappedParts[limb] = true
 end
 
 if BYPASS_AVAILABLE and not limbData._bypassInstalled then
@@ -491,7 +440,6 @@ local function sharedApplyLimb(parent, cacheKey, char, limb)
 	if not entry then return end
 
 	local props, newVec, isHRP = buildLimbProps(limb, entry, parent._settings)
-    wrapPartSignals(limb)
 	write(limb, props)
 	applyEntryTargets(entry, props, newVec, isHRP, parent._settings)
 
