@@ -684,6 +684,7 @@ function LimbExtender:_doRestartBatched()
 	self._managerGeneration = self._generation
 	self._manager:Start()
 	if self._ESP then self._ESP:Start() end
+	self:_applyCustomGameScript() 
 end
 
 function LimbExtender:_doCosmeticUpdateBatched()
