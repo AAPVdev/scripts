@@ -4,7 +4,6 @@ local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local localplayer = Players.LocalPlayer
 
-local ReplicatorService
 local getNil = function(name, class)
     for _, v in next, getnilinstances() do
         if v.ClassName == class and v.Name == name then
@@ -12,7 +11,9 @@ local getNil = function(name, class)
         end
     end
 end
-ReplicatorService = require(getNil("ReplicatorService", "ModuleScript"))
+
+local WorldService = require(getNil("WorldService", "ModuleScript"))
+local ReplicatorService = require(getNil("ReplicatorService", "ModuleScript"))
 
 local actorLookup = {}
 
@@ -31,9 +32,7 @@ local proxy = setmetatable({}, {
         if oldActor and oldActor.Character then
             actorLookup[oldActor.Character] = nil
         end
-        
         realActors[uid] = actor
-        
         if actor and actor.Character then
             actorLookup[actor.Character] = actor
         end
@@ -69,20 +68,21 @@ local function setup()
     extender:Set("GET_PLAYER_FROM_CHARACTER", customGetPlayer)
 
     if extender:Get("PLAYER_ENABLED") then
-        for _, model in ipairs(Workspace.Model:GetChildren()) do
+        
+        for _, model in ipairs(WorldService.ActiveWorld:GetChildren()) do
             registerIfPlayer(model)
         end
 
-        local conn1 = Workspace.Model.ChildAdded:Connect(function(desc)
-            registerIfPlayer(desc)
+        local conn1 = WorldService.ActiveWorld.ChildAdded:Connect(function(child)
+            registerIfPlayer(child)
         end)
         table.insert(connections, conn1)
 
-        local conn2 = Workspace.Model.ChildRemoved:Connect(function(desc)
-            if not desc:IsA("Model") then return end
-            local player = customGetPlayer(desc)
+        local conn2 = WorldService.ActiveWorld.ChildRemoved:Connect(function(child)
+            if not child:IsA("Model") then return end
+            local player = customGetPlayer(child)
             if player then
-                extender:UnregisterPlayerCharacter(player, desc)
+                extender:UnregisterPlayerCharacter(player, child)
             end
         end)
         table.insert(connections, conn2)
@@ -90,5 +90,4 @@ local function setup()
 end
 
 setup()
-
 extender._customSetup = setup
