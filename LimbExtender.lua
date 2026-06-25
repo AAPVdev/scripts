@@ -561,7 +561,7 @@ function LimbExtender:_applyLimbs(player, char, limb)
 		cacheKey = self._npcIdMap[char]
 	end
 	sharedApplyLimb(self, cacheKey, char, limb)
-	if self._settings.ESP then
+	if self._settings.ESP and self._ESP then
 		local tracked = self._ESP:Track(char)
 		if not tracked then
 			task_spawn(function()
