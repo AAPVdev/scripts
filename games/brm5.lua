@@ -12,7 +12,6 @@ local getNil = function(name, class)
     end
 end
 
-local WorldService = require(getNil("WorldService", "ModuleScript"))
 local ReplicatorService = require(getNil("ReplicatorService", "ModuleScript"))
 
 local actorLookup = {}
@@ -68,25 +67,33 @@ local function setup()
     extender:Set("GET_PLAYER_FROM_CHARACTER", customGetPlayer)
 
     if extender:Get("PLAYER_ENABLED") then
-        
-        for _, model in ipairs(WorldService.ActiveWorld:GetChildren()) do
-            registerIfPlayer(model)
-        end
 
-        local conn1 = WorldService.ActiveWorld.ChildAdded:Connect(function(child)
-            registerIfPlayer(child)
-        end)
-        table.insert(connections, conn1)
-
-        local conn2 = WorldService.ActiveWorld.ChildRemoved:Connect(function(child)
-            if not child:IsA("Model") then return end
-            local player = customGetPlayer(child)
-            if player then
-                extender:UnregisterPlayerCharacter(player, child)
+    local characterFolder
+    while not characterFolder do
+        for uid, actor in ReplicatorService.Actors do
+            if actor.Character and actor.Character.Parent then
+                characterFolder = actor.Character.Parent
+                break
             end
-        end)
-        table.insert(connections, conn2)
+        end
+        task.wait(0.5)
     end
+    
+    for _, model in ipairs(characterFolder:GetChildren()) do
+        registerIfPlayer(model)
+    end
+    
+    characterFolder.ChildAdded:Connect(function(child)
+        registerIfPlayer(child)
+    end)
+    
+    characterFolder.ChildRemoved:Connect(function(child)
+        if not child:IsA("Model") then return end
+        local player = customGetPlayer(child)
+        if player then
+            extender:UnregisterPlayerCharacter(player, child)
+        end
+    end)
 end
 
 setup()
