@@ -212,10 +212,7 @@ local function wrapPartSignals(limb)
 
 	hookSignalConnect(limb.Changed)
 	for _, prop in ipairs(BLOCKED_PROPS) do
-		local ok, sig = pcall(limb.GetPropertyChangedSignal, limb, prop)
-		if ok and sig then
-			hookSignalConnect(sig)
-		end
+		hookSignalConnect(limb.GetPropertyChangedSignal)
 	end
 	limbData._wrappedParts[limb] = true
 end
