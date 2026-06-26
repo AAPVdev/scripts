@@ -523,7 +523,6 @@ function LimbExtender:_applyLimbs(player, char, limb)
 end
 
 function LimbExtender:_removeLimbs(player, char, limb)
-	if self._suppressOnLimbLost then return end
 	local cacheKey = player and player.Name or self._npcIdMap[char]
 	sharedRestoreLimb(self, cacheKey, limb)
 	if self._ESP and char then self._ESP:Untrack(char) end
@@ -597,7 +596,6 @@ end
 
 function LimbExtender:_doRestartBatched()
 	if not self._running then return end
-	self._suppressOnLimbLost = true
 	self._manager:Stop()
 
 	local cache = self._playerCache
@@ -666,8 +664,6 @@ function LimbExtender:_doRestartBatched()
 		end
 	end
 
-	self._suppressOnLimbLost = false
-
 	if self._ESP then self._ESP:Stop() end
 	if not self._running then return end
 
@@ -711,7 +707,6 @@ function LimbExtender.new(userSettings)
 		_running             = false,
 		_destroyed           = false,
 		_npcIdMap            = {},
-		_suppressOnLimbLost  = false,
 		_needsRestart        = false,
 		_needsCosmeticUpdate = false,
 		_workRunning         = false,
