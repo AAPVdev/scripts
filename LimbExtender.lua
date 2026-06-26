@@ -193,10 +193,11 @@ local function wrapPartSignals(limb)
 
 	hookSignalConnect(limb.Changed)
 
-    for _, prop in ipairs(BLOCKED_PROPS) do
+    for prop, _ in pairs(BLOCKED_PROPS) do 
         local ok, sig = pcall(limb.GetPropertyChangedSignal, limb, prop)
         if ok and sig then
             hookSignalConnect(sig)
+			task.wait()
         end
     end
 
