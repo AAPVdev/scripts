@@ -31,6 +31,7 @@ local Vector3_new = Vector3.new
 limbData.playerCache    = limbData.playerCache    or {}
 limbData.instanceLookup = limbData.instanceLookup or setmetatable({}, { __mode = "k" })
 limbData.npcIdCounter   = limbData.npcIdCounter   or 0
+limbData.ccaller   		= limbData.ccaller   	  or false
 limbData._migratedConns = limbData._migratedConns or setmetatable({}, { __mode = "k" })
 limbData._hookedSignals = limbData._hookedSignals or {}
 limbData._wrappedParts  = limbData._wrappedParts  or setmetatable({}, { __mode = "k" })
@@ -73,6 +74,7 @@ do
 		end)
 		if testOk then
 			BYPASS_AVAILABLE = true
+			limbData.ccaller = checkcaller()
 		end
 	end
 end
@@ -157,11 +159,6 @@ local function write(limb, props)
 	end
 end
 
-local function isCC()
-	local cc = checkcaller()
-	return cc
-end
-
 function getTargetData(instance)
 	if typeof(instance) ~= "Instance" then return nil, nil end
 	local cached = limbData.instanceLookup[instance]
@@ -176,14 +173,15 @@ local function wrapPartSignals(limb)
 	local function hookSignalConnect(signal)
 		if limbData._hookedSignals[signal] then return end
 		limbData._hookedSignals[signal] = true
-		
+
+		local cc = checkcaller()
 		local connections = getconnections(signal)
 
 		for _, conn in ipairs(connections) do
 			local origCallback = conn.Function
 			if origCallback and not limbData._migratedConns[conn] then
 				local function wrappedCallback(...)
-					if not isCC() then
+					if not cc then
 						return origCallback(...)
 					end
 				end
@@ -266,45 +264,45 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 	end
 
 	mt.__namecall = function(self, ...)
-		if not checkcaller() then
-			local method = getnamecallmethod()
-			if method == "GetExtentsSize" then
-				local lookup = limbData.instanceLookup[self]
-				if lookup and lookup.data then
-					local data        = lookup.data
-					local trueSize    = data.TrueSize
-					local trueExtents = data.TrueExtents
-					local spoofSize   = data.OriginalSize
-					if trueSize and trueExtents and spoofSize then
-						if spoofSize ~= trueSize then
-							local sx = spoofSize.X / trueSize.X
-							local sy = spoofSize.Y / trueSize.Y
-							local sz = spoofSize.Z / trueSize.Z
-							return Vector3_new(trueExtents.X * sx, trueExtents.Y * sy, trueExtents.Z * sz)
-						else
-							return trueExtents
-						end
+		local method = getnamecallmethod()
+		if method == "GetExtentsSize" then
+			local lookup = limbData.instanceLookup[self]
+			if lookup and lookup.data then
+				local data        = lookup.data
+				local trueSize    = data.TrueSize
+				local trueExtents = data.TrueExtents
+				local spoofSize   = data.OriginalSize
+				if trueSize and trueExtents and spoofSize then
+					if spoofSize ~= trueSize then
+						local sx = spoofSize.X / trueSize.X
+						local sy = spoofSize.Y / trueSize.Y
+						local sz = spoofSize.Z / trueSize.Z
+						return Vector3_new(trueExtents.X * sx, trueExtents.Y * sy, trueExtents.Z * sz)
+					else
+						return trueExtents
 					end
 				end
-			elseif method == "GetPropertyChangedSignal" then
-			    local signal = oldNamecall(self, ...)
-			    if typeof(signal) == "RBXScriptSignal" then
-			        limbData._signalToInstance[signal] = self
-			        
-			        if not limbData._hookedSignals[signal] then
-			            limbData._hookedSignals[signal] = true
-			            local origConnect = signal.Connect
-			            local function newConnect(s, callback)
-			                local wrapped = function(...)
-			                    return callback(...)
-			                end
-			                return origConnect(s, wrapped)
-			            end
-			            hookfunction(origConnect, newConnect)
-			        end
-			    end
-			    return signal
 			end
+		elseif method == "GetPropertyChangedSignal" then
+		    local signal = oldNamecall(self, ...)
+		    if typeof(signal) == "RBXScriptSignal" then
+		        limbData._signalToInstance[signal] = self
+		        
+		        if not limbData._hookedSignals[signal] then
+		            limbData._hookedSignals[signal] = true
+		            local origConnect = signal.Connect
+		            local function newConnect(s, callback)
+		                local wrapped = function(...)
+		                    if not limbData.ccaller then
+		                        return callback(...)
+		                    end
+		                end
+		                return origConnect(s, wrapped)
+		            end
+		            hookfunction(origConnect, newConnect)
+		        end
+		    end
+		    return signal
 		end
 		return oldNamecall(self, ...)
 	end
@@ -318,11 +316,11 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 		local origSignalIndex = signalMt.__index
 		setreadonly(signalMt, false)
 		signalMt.__index = function(self, key)
-			if key == "Wait" and not checkcaller() then
+			if key == "Wait" then
 				local instance = limbData._signalToInstance[self]
 				if limbData._hookedSignals[self] or (instance and limbData.instanceLookup[instance]) then
 					return function(self)
-						while isCC() do
+						while globalEnv.limbExtenderData.ccaller do
 							task.wait()
 						end
 						local realWait = origSignalIndex(self, "Wait")
