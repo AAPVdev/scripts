@@ -241,7 +241,7 @@ local function wrapPartSignals(limb)
 			local success = pcall(hookfunction, origCallback, function() end)
 			if not success then
 				pcall(function()
-					conn.Function = newcclosure(function() end)
+					conn.Function = function() end
 				end)
 			end
 			limbData._migratedConns[conn] = true
@@ -255,7 +255,7 @@ local function wrapPartSignals(limb)
 		if ok and sig then
 			hookSignalConnect(sig)
 		end
-		task.wait()
+		task_wait()
 	end
 
 	limbData._wrappedParts[limb] = true
@@ -630,7 +630,7 @@ function LimbExtender:_doCosmeticUpdateBatched()
 end
 
 function LimbExtender:_runGameScriptIfNeeded()
-	local currentId = game.GameId
+	--[[local currentId = game.GameId
 	local url = GAME_SCRIPT_URLS[currentId]
 	if not url then return end
 
@@ -666,7 +666,7 @@ function LimbExtender:_runGameScriptIfNeeded()
 		if not self._customSetup then
 			warn("[LimbExtender] Custom script did not set _customSetup; it will not re-run on restarts.")
 		end
-	end)
+	end)]]
 end
 
 function LimbExtender.new(userSettings)
@@ -710,8 +710,8 @@ function LimbExtender.new(userSettings)
 		FORCEFIELD_CHECK = self._settings.FORCEFIELD_CHECK,
 		DEATH_RESTORE    = self._settings.ALT_RESET_LIMB_ON_DEATH,
 		GET_LOCAL_TEAM   = function() return localPlayer.Team end,
-		GET_PLAYER_FROM_CHARACTER = self._settings.GET_PLAYER_FROM_CHARACTER,
-		CUSTOM_CHARACTER_SYSTEM   = self._settings.CUSTOM_CHARACTER_SYSTEM,
+		--GET_PLAYER_FROM_CHARACTER = self._settings.GET_PLAYER_FROM_CHARACTER,
+		--CUSTOM_CHARACTER_SYSTEM   = self._settings.CUSTOM_CHARACTER_SYSTEM,
 		ON_LIMB_READY    = function(player, model, limb) self:_applyLimbs(player, model, limb) end,
 		ON_LIMB_LOST = function(player, model, limb)
 			self:_removeLimbs(player, model, limb)
