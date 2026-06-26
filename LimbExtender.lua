@@ -157,6 +157,11 @@ local function write(limb, props)
 	end
 end
 
+local function isCC()
+	local cc = checkcaller()
+	return cc
+end
+
 function getTargetData(instance)
 	if typeof(instance) ~= "Instance" then return nil, nil end
 	local cached = limbData.instanceLookup[instance]
@@ -171,15 +176,14 @@ local function wrapPartSignals(limb)
 	local function hookSignalConnect(signal)
 		if limbData._hookedSignals[signal] then return end
 		limbData._hookedSignals[signal] = true
-
-		local cc = checkcaller()
+		
 		local connections = getconnections(signal)
 
 		for _, conn in ipairs(connections) do
 			local origCallback = conn.Function
 			if origCallback and not limbData._migratedConns[conn] then
 				local function wrappedCallback(...)
-					if not cc then
+					if not isCC() then
 						return origCallback(...)
 					end
 				end
@@ -318,7 +322,7 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 				local instance = limbData._signalToInstance[self]
 				if limbData._hookedSignals[self] or (instance and limbData.instanceLookup[instance]) then
 					return function(self)
-						while checkcaller() do
+						while isCC() do
 							task.wait()
 						end
 						local realWait = origSignalIndex(self, "Wait")
