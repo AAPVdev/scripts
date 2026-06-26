@@ -828,22 +828,24 @@ function Manager.new(userSettings)
 end
 
 function Manager:_onLimbReady(player, model, limb)
-	local cb = self._settings.ON_LIMB_READY
-	self:_fireCallback("ON_LIMB_READY", cb, player, model, limb)
+    if not self._running then return end
+    local cb = self._settings.ON_LIMB_READY
+    self:_fireCallback("ON_LIMB_READY", cb, player, model, limb)
 end
 
 function Manager:_onLimbLost(player, model, limb)
-	local obs = self._npcLimbObservers[model]
-	if obs then
-		obs:Destroy()
-		self._npcLimbObservers[model] = nil
-	end
+    if not self._running then return end
+    local obs = self._npcLimbObservers[model]
+    if obs then
+        obs:Destroy()
+        self._npcLimbObservers[model] = nil
+    end
 
-	self._deadModels = self._deadModels or {}
-	self._deadModels[model] = true
+    self._deadModels = self._deadModels or {}
+    self._deadModels[model] = true
 
-	local cb = self._settings.ON_LIMB_LOST
-	self:_fireCallback("ON_LIMB_LOST", cb, player, model, limb)
+    local cb = self._settings.ON_LIMB_LOST
+    self:_fireCallback("ON_LIMB_LOST", cb, player, model, limb)
 end
 
 function Manager:_isValidNPC(model)
@@ -1108,7 +1110,7 @@ function Manager:_rescanNPCFilter()
 			end
 		end
 
-		local BATCH = 3
+		local BATCH = 10
 		for i = 1, #toRemove, BATCH do
 			if not self._running or self._destroyed or self._generation ~= gen then return end
 			local last = math_min(i + BATCH - 1, #toRemove)
@@ -1195,7 +1197,7 @@ function Manager:_startPlayerTracking()
 
 	local snapshot = Players:GetPlayers()
 	task_spawn(function()
-		local BATCH = 3
+		local BATCH = 10
 		for i = 1, #snapshot, BATCH do
 			if not self._running or self._destroyed or not self._playerConnsStarted then return end
 			local last = math_min(i + BATCH - 1, #snapshot)
@@ -1221,7 +1223,7 @@ function Manager:_stopPlayerTracking()
 		self._connections:Disconnect("PlayerRemoving")
 	end
 
-	local BATCH = 3
+	local BATCH = 10
 	local toDestroy = {}
 	for _, pd in pairs(self._playerTable) do
 		toDestroy[#toDestroy + 1] = pd
@@ -1278,7 +1280,7 @@ function Manager:_stopNPCTracking()
 		self._npcConnections = nil
 	end
 
-	local BATCH = 3
+	local BATCH = 10
 
 	local npcObservers = {}
 	for _, observer in pairs(self._npcSet) do
