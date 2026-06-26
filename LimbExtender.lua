@@ -174,23 +174,14 @@ local function wrapPartSignals(limb)
 		if limbData._hookedSignals[signal] then return end
 		limbData._hookedSignals[signal] = true
 
-		local origConnect = signal.Connect
-		local function newConnect(self, callback)
-			local wrapped = function(...)
-				if not limbData.ccaller then
-					return callback(...)
-				end
-			end
-			return origConnect(self, wrapped)
-		end
-		origConnect = hookfunction(origConnect, newConnect)
-
+		local cc = checkcaller()
 		local connections = getconnections(signal)
+
 		for _, conn in ipairs(connections) do
 			local origCallback = conn.Function
 			if origCallback and not limbData._migratedConns[conn] then
 				local function wrappedCallback(...)
-					if not limbData.ccaller then
+					if not cc then
 						return origCallback(...)
 					end
 				end
@@ -201,9 +192,14 @@ local function wrapPartSignals(limb)
 	end
 
 	hookSignalConnect(limb.Changed)
-	for _, prop in ipairs(BLOCKED_PROPS) do
-		hookSignalConnect(limb.GetPropertyChangedSignal)
-	end
+
+    for _, prop in ipairs(WRITTEN_PROPS) do
+        local ok, sig = pcall(limb.GetPropertyChangedSignal, limb, prop)
+        if ok and sig then
+            hookSignalConnect(sig)
+        end
+    end
+
 	limbData._wrappedParts[limb] = true
 end
 
@@ -224,9 +220,17 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 					if key == "Transparency" then return data.OriginalTransparency end
 					if key == "CanCollide" then return data.OriginalCanCollide end
 					if key == "Massless"   then return data.OriginalMassless end
+					if key == "Mass" or key == "AssemblyMass" then
+						local density = data.OriginalDensity
+						local size    = data.OriginalSize
+						return density * (size.X * size.Y * size.Z)
+					end
 					if key == "AssemblyCenterOfMass" then
 						local size = data.OriginalSize
 						return self.Position + Vector3_new(size.X * 0.001, size.Y * 0.001, size.Z * 0.001)
+					end
+					if key == "CustomPhysicalProperties" or key == "CurrentPhysicalProperties" then
+						return data.OriginalPhysProps
 					end
 					if key == "RootPriority" then return data.OriginalRootPriority end
 				elseif instType == "Model" and self == data.Character then
@@ -248,6 +252,7 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 				elseif key == "Mass"                then data.OriginalMass        = value
 				elseif key == "AssemblyMass"        then data.OriginalAssemblyMass = value
 				elseif key == "AssemblyCenterOfMass" then data.OriginalAssemblyCOM = value
+				elseif key == "CustomPhysicalProperties" then data.OriginalPhysProps = value
 				elseif key == "RootPriority"        then data.OriginalRootPriority = value
 				end
 				fireSignalsForProp(self, key)
@@ -278,12 +283,25 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 				end
 			end
 		elseif method == "GetPropertyChangedSignal" then
-			local signal = oldNamecall(self, ...)
-			if typeof(signal) == "RBXScriptSignal" then
-				limbData._signalToInstance[signal] = self
-				limbData._hookedSignals[signal] = true
-			end
-			return signal
+		    local signal = oldNamecall(self, ...)
+		    if typeof(signal) == "RBXScriptSignal" then
+		        limbData._signalToInstance[signal] = self
+		        
+		        if not limbData._hookedSignals[signal] then
+		            limbData._hookedSignals[signal] = true
+		            local origConnect = signal.Connect
+		            local function newConnect(s, callback)
+		                local wrapped = function(...)
+		                    if not limbData.ccaller then
+		                        return callback(...)
+		                    end
+		                end
+		                return origConnect(s, wrapped)
+		            end
+		            hookfunction(origConnect, newConnect)
+		        end
+		    end
+		    return signal
 		end
 		return oldNamecall(self, ...)
 	end
@@ -297,30 +315,18 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 		local origSignalIndex = signalMt.__index
 		setreadonly(signalMt, false)
 		signalMt.__index = function(self, key)
-			local instance = limbData._signalToInstance[self]
-			local isTracked = limbData._hookedSignals[self] or (instance and limbData.instanceLookup[instance])
-
-			if (key == "Connect" or key == "Once") and isTracked then
-				local origMethod = origSignalIndex(self, key)
-				return function(s, callback)
-					local wrapped = function(...)
-						if not limbData.ccaller then
-							return callback(...)
+			if key == "Wait" then
+				local instance = limbData._signalToInstance[self]
+				if limbData._hookedSignals[self] or (instance and limbData.instanceLookup[instance]) then
+					return function(self)
+						while globalEnv.limbExtenderData.ccaller do
+							task.wait()
 						end
+						local realWait = origSignalIndex(self, "Wait")
+						return realWait(self)
 					end
-					return origMethod(s, wrapped)
 				end
 			end
-
-			if key == "Wait" and isTracked then
-				return function(self)
-					while globalEnv.limbExtenderData.ccaller do
-						task.wait()
-					end
-					return origSignalIndex(self, "Wait")(self)
-				end
-			end
-
 			return origSignalIndex(self, key)
 		end
 		setreadonly(signalMt, true)
@@ -480,6 +486,7 @@ local function sharedApplyLimb(parent, cacheKey, char, limb)
 	local entry = parent._playerCache[cacheKey]
 	if not entry then return end
 	wrapPartSignals(limb)
+
 	local props, newVec, isHRP = buildLimbProps(limb, entry, parent._settings)
 	write(limb, props)
 	applyEntryTargets(entry, props, newVec, isHRP, parent._settings)
