@@ -166,9 +166,9 @@ local function wrapPartSignals(limb)
 	local data = lookup.data
 
 	local mt          = getrawmetatable(limb)
-	local oldIndex    = mt.__index
-	local oldNewIndex = mt.__newindex
-	local oldNamecall = mt.__namecall
+	data._oldMetaIndex    = mt.__index
+    data._oldMetaNewIndex = mt.__newindex
+    data._oldMetaNamecall = mt.__namecall
 	setreadonly(mt, false)
 
 	mt.__index = function(self, key)
@@ -177,7 +177,7 @@ local function wrapPartSignals(limb)
 				return data["Original"..key]
 			end
 		end
-		return oldIndex(self, key)
+		return data._oldMetaIndex(self, key)
 	end
 
 	mt.__newindex = function(self, key, value)
@@ -188,7 +188,7 @@ local function wrapPartSignals(limb)
 				return
 			end
 		end
-		return oldNewIndex(self, key, value)
+		return data._oldMetaNewIndex(self, key, value)
 	end
 
 	mt.__namecall = function(self, ...)
@@ -225,7 +225,7 @@ local function wrapPartSignals(limb)
 				return dummySignal
 			end
 		end
-		return oldNamecall(self, ...)
+		return data._oldMetaNamecall(self, ...)
 	end
 
 	setreadonly(mt, true)
@@ -259,6 +259,31 @@ local function wrapPartSignals(limb)
 	end
 
 	limbData._wrappedParts[limb] = true
+end
+
+local function unwrapPartSignals(limb)
+    if not BYPASS_AVAILABLE then return end
+    if not limbData._wrappedParts[limb] then return end
+
+    local lookup = limbData.instanceLookup[limb]
+    local data = lookup and lookup.data
+    if not data then return end
+
+    local mt = getrawmetatable(limb)
+    setreadonly(mt, false)
+    if data._oldMetaIndex then
+        mt.__index = data._oldMetaIndex
+        data._oldMetaIndex = nil
+    end
+    if data._oldMetaNewIndex then
+        mt.__newindex = data._oldMetaNewIndex
+        data._oldMetaNewIndex = nil
+    end
+    if data._oldMetaNamecall then
+        mt.__namecall = data._oldMetaNamecall
+        data._oldMetaNamecall = nil
+    end
+    setreadonly(mt, true)
 end
 
 local PROPS_TO_WATCH = {
@@ -452,7 +477,7 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 		})
 	end
 
-	if entry.Limb then limbData.instanceLookup[entry.Limb] = nil end
+	if entry.Limb then unwrapPartSignals(entry.Limb) limbData.instanceLookup[entry.Limb] = nil end
 	if activeLimb and activeLimb ~= entry.Limb then limbData.instanceLookup[activeLimb] = nil end
 	if entry.Character then limbData.instanceLookup[entry.Character] = nil end
 	cache[cacheKey] = nil
