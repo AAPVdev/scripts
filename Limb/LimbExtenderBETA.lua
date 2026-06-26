@@ -84,7 +84,7 @@ local BLOCKED_PROPS = {
 }
 
 local ESP_SOURCE_URL     = "https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/esp/SIXSEVENESP.lua"
-local MANAGER_SOURCE_URL = "https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/limb/managerBETA.lua"
+local MANAGER_SOURCE_URL = "https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/Limb/managerBETA.lua"
 
 local GAME_SCRIPT_URLS = {
 	[1054526971] = "https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/games/brm5.lua",
