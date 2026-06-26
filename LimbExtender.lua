@@ -31,7 +31,6 @@ local Vector3_new = Vector3.new
 limbData.playerCache    = limbData.playerCache    or {}
 limbData.instanceLookup = limbData.instanceLookup or setmetatable({}, { __mode = "k" })
 limbData.npcIdCounter   = limbData.npcIdCounter   or 0
-limbData.ccaller   		= limbData.ccaller   	  or false
 limbData._migratedConns = limbData._migratedConns or setmetatable({}, { __mode = "k" })
 limbData._hookedSignals = limbData._hookedSignals or {}
 limbData._wrappedParts  = limbData._wrappedParts  or setmetatable({}, { __mode = "k" })
@@ -74,7 +73,6 @@ do
 		end)
 		if testOk then
 			BYPASS_AVAILABLE = true
-			limbData.ccaller = checkcaller()
 		end
 	end
 end
@@ -159,54 +157,15 @@ local function write(limb, props)
 	end
 end
 
-function getTargetData(instance)
-	if typeof(instance) ~= "Instance" then return nil, nil end
-	local cached = limbData.instanceLookup[instance]
-	if cached then return cached.data, cached.type end
-	return nil, nil
-end
-
 local function wrapPartSignals(limb)
 	if not BYPASS_AVAILABLE then return end
 	if limbData._wrappedParts[limb] then return end
 
-	local function hookSignalConnect(signal)
-		if limbData._hookedSignals[signal] then return end
-		limbData._hookedSignals[signal] = true
+	local lookup = limbData.instanceLookup[limb]
+	if not lookup or not lookup.data then return end
+	local data = lookup.data
 
-		local cc = checkcaller()
-		local connections = getconnections(signal)
-
-		for _, conn in ipairs(connections) do
-			local origCallback = conn.Function
-			if origCallback and not limbData._migratedConns[conn] then
-				local function wrappedCallback(...)
-					if not cc then
-						return origCallback(...)
-					end
-				end
-				origCallback = hookfunction(origCallback, wrappedCallback)
-				limbData._migratedConns[conn] = true
-			end
-		end
-	end
-
-	hookSignalConnect(limb.Changed)
-
-    for prop, _ in pairs(BLOCKED_PROPS) do 
-        local ok, sig = pcall(limb.GetPropertyChangedSignal, limb, prop)
-        if ok and sig then
-            hookSignalConnect(sig)
-			task.wait()
-        end
-    end
-
-	limbData._wrappedParts[limb] = true
-end
-
-if BYPASS_AVAILABLE and not limbData._bypassInstalled then
-	limbData._bypassInstalled = true
-	local mt          = getrawmetatable(game)
+	local mt          = getrawmetatable(limb)
 	local oldIndex    = mt.__index
 	local oldNewIndex = mt.__newindex
 	local oldNamecall = mt.__namecall
@@ -214,29 +173,8 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 
 	mt.__index = function(self, key)
 		if not checkcaller() then
-			local data, instType = getTargetData(self)
-			if data then
-				if instType == "Part" and self == data.Limb and BLOCKED_PROPS[key] then
-					if key == "Size"       then return data.OriginalSize end
-					if key == "Transparency" then return data.OriginalTransparency end
-					if key == "CanCollide" then return data.OriginalCanCollide end
-					if key == "Massless"   then return data.OriginalMassless end
-					if key == "Mass" or key == "AssemblyMass" then
-						local density = data.OriginalDensity
-						local size    = data.OriginalSize
-						return density * (size.X * size.Y * size.Z)
-					end
-					if key == "AssemblyCenterOfMass" then
-						local size = data.OriginalSize
-						return self.Position + Vector3_new(size.X * 0.001, size.Y * 0.001, size.Z * 0.001)
-					end
-					if key == "CustomPhysicalProperties" or key == "CurrentPhysicalProperties" then
-						return data.OriginalPhysProps
-					end
-					if key == "RootPriority" then return data.OriginalRootPriority end
-				elseif instType == "Model" and self == data.Character then
-					if key == "ExtentsSize" then return data.OriginalExtents end
-				end
+			if BLOCKED_PROPS[key] then
+				return data["Original"..key]
 			end
 		end
 		return oldIndex(self, key)
@@ -244,18 +182,8 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 
 	mt.__newindex = function(self, key, value)
 		if not checkcaller() then
-			local data, instType = getTargetData(self)
-			if data and instType == "Part" and self == data.Limb and BLOCKED_PROPS[key] then
-				if key == "Size"                    then data.OriginalSize        = value
-				elseif key == "Transparency"        then data.OriginalTransparency = value
-				elseif key == "CanCollide"          then data.OriginalCanCollide  = value
-				elseif key == "Massless"            then data.OriginalMassless    = value
-				elseif key == "Mass"                then data.OriginalMass        = value
-				elseif key == "AssemblyMass"        then data.OriginalAssemblyMass = value
-				elseif key == "AssemblyCenterOfMass" then data.OriginalAssemblyCOM = value
-				elseif key == "CustomPhysicalProperties" then data.OriginalPhysProps = value
-				elseif key == "RootPriority"        then data.OriginalRootPriority = value
-				end
+			if BLOCKED_PROPS[key] then
+				data["Original"..key] = value
 				fireSignalsForProp(self, key)
 				return
 			end
@@ -264,74 +192,73 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 	end
 
 	mt.__namecall = function(self, ...)
-		local method = getnamecallmethod()
-		if method == "GetExtentsSize" then
-			local lookup = limbData.instanceLookup[self]
-			if lookup and lookup.data then
-				local data        = lookup.data
-				local trueSize    = data.TrueSize
-				local trueExtents = data.TrueExtents
-				local spoofSize   = data.OriginalSize
-				if trueSize and trueExtents and spoofSize then
-					if spoofSize ~= trueSize then
-						local sx = spoofSize.X / trueSize.X
-						local sy = spoofSize.Y / trueSize.Y
-						local sz = spoofSize.Z / trueSize.Z
-						return Vector3_new(trueExtents.X * sx, trueExtents.Y * sy, trueExtents.Z * sz)
-					else
-						return trueExtents
+		if not checkcaller() then
+			local method = getnamecallmethod()
+			if method == "GetExtentsSize" then
+				if lookup and lookup.data then
+					local d           = lookup.data
+					local trueSize    = d.TrueSize
+					local trueExtents = d.TrueExtents
+					local spoofSize   = d.OriginalSize
+					if trueSize and trueExtents and spoofSize then
+						if spoofSize ~= trueSize then
+							local sx = spoofSize.X / trueSize.X
+							local sy = spoofSize.Y / trueSize.Y
+							local sz = spoofSize.Z / trueSize.Z
+							return Vector3_new(trueExtents.X * sx, trueExtents.Y * sy, trueExtents.Z * sz)
+						else
+							return trueExtents
+						end
 					end
 				end
+			elseif method == "GetPropertyChangedSignal" then
+				local dummySignal = setmetatable({}, {
+					__index = function(_, k)
+						if k == "Connect" or k == "Once" then
+							return function()
+								return { Disconnect = function() end }
+							end
+						end
+						return function() end
+					end
+				})
+				return dummySignal
 			end
-		elseif method == "GetPropertyChangedSignal" then
-		    local signal = oldNamecall(self, ...)
-		    if typeof(signal) == "RBXScriptSignal" then
-		        limbData._signalToInstance[signal] = self
-		        
-		        if not limbData._hookedSignals[signal] then
-		            limbData._hookedSignals[signal] = true
-		            local origConnect = signal.Connect
-		            local function newConnect(s, callback)
-		                local wrapped = function(...)
-		                    if not limbData.ccaller then
-		                        return callback(...)
-		                    end
-		                end
-		                return origConnect(s, wrapped)
-		            end
-		            hookfunction(origConnect, newConnect)
-		        end
-		    end
-		    return signal
 		end
 		return oldNamecall(self, ...)
 	end
 
 	setreadonly(mt, true)
 
-	if not limbData._signalIndexHooked then
-		limbData._signalIndexHooked = true
-		local testSignal = game.Changed
-		local signalMt = getrawmetatable(testSignal)
-		local origSignalIndex = signalMt.__index
-		setreadonly(signalMt, false)
-		signalMt.__index = function(self, key)
-			if key == "Wait" then
-				local instance = limbData._signalToInstance[self]
-				if limbData._hookedSignals[self] or (instance and limbData.instanceLookup[instance]) then
-					return function(self)
-						while globalEnv.limbExtenderData.ccaller do
-							task.wait()
-						end
-						local realWait = origSignalIndex(self, "Wait")
-						return realWait(self)
-					end
-				end
+	local function hookSignalConnect(signal)
+		if limbData._hookedSignals[signal] then return end
+		limbData._hookedSignals[signal] = true
+
+		local connections = getconnections(signal)
+		for _, conn in ipairs(connections) do
+			if limbData._migratedConns[conn] then continue end
+			local origCallback = conn.Function
+			local success = pcall(hookfunction, origCallback, function() end)
+			if not success then
+				pcall(function()
+					conn.Function = newcclosure(function() end)
+				end)
 			end
-			return origSignalIndex(self, key)
+			limbData._migratedConns[conn] = true
 		end
-		setreadonly(signalMt, true)
 	end
+
+	hookSignalConnect(limb.Changed)
+
+	for prop, _ in pairs(BLOCKED_PROPS) do
+		local ok, sig = pcall(limb.GetPropertyChangedSignal, limb, prop)
+		if ok and sig then
+			hookSignalConnect(sig)
+		end
+		task.wait()
+	end
+
+	limbData._wrappedParts[limb] = true
 end
 
 local PROPS_TO_WATCH = {
