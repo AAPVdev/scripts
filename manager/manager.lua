@@ -828,24 +828,36 @@ function Manager.new(userSettings)
 end
 
 function Manager:_onLimbReady(player, model, limb)
-    if not self._running then return end
-    local cb = self._settings.ON_LIMB_READY
-    self:_fireCallback("ON_LIMB_READY", cb, player, model, limb)
+	if not self._running then return end
+	if player then
+		if not self._settings.PLAYER_ENABLED then return end
+	else
+		if not self._settings.NPC_ENABLED then return end
+	end
+
+	local cb = self._settings.ON_LIMB_READY
+	self:_fireCallback("ON_LIMB_READY", cb, player, model, limb)
 end
 
 function Manager:_onLimbLost(player, model, limb)
-    if not self._running then return end
-    local obs = self._npcLimbObservers[model]
-    if obs then
-        obs:Destroy()
-        self._npcLimbObservers[model] = nil
-    end
+	if not self._running then return end
+	if player then
+		if not self._settings.PLAYER_ENABLED then return end
+	else
+		if not self._settings.NPC_ENABLED then return end
+	end
 
-    self._deadModels = self._deadModels or {}
-    self._deadModels[model] = true
+	local obs = self._npcLimbObservers[model]
+	if obs then
+		obs:Destroy()
+		self._npcLimbObservers[model] = nil
+	end
 
-    local cb = self._settings.ON_LIMB_LOST
-    self:_fireCallback("ON_LIMB_LOST", cb, player, model, limb)
+	self._deadModels = self._deadModels or {}
+	self._deadModels[model] = true
+
+	local cb = self._settings.ON_LIMB_LOST
+	self:_fireCallback("ON_LIMB_LOST", cb, player, model, limb)
 end
 
 function Manager:_isValidNPC(model)
