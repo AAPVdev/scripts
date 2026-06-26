@@ -534,33 +534,35 @@ function LimbExtender:_processDirtyWork()
 		end
 	end
 
-	if self._dirtyRestart and not self._restartLock then
-		self._restartLock = true
-		self._dirtyRestart = false
-		self._dirtyCosmetic = false
+	while self._dirtyRestart or self._dirtyCosmetic do
+		if self._dirtyRestart and not self._restartLock then
+			self._restartLock = true
+			self._dirtyRestart = false
+			self._dirtyCosmetic = false
 
-		for key in pairs(RESTART_KEYS) do
-			if s[key] ~= nil then
-				if key == "ALT_RESET_LIMB_ON_DEATH" then
-					self._manager:Set("DEATH_RESTORE", s[key])
-				elseif key == "NPC_DIRECTORIES" then
-					self._manager._settings.NPC_DIRECTORIES = s[key]
-				else
-					self._manager._settings[key] = s[key]
+			for key in pairs(RESTART_KEYS) do
+				if s[key] ~= nil then
+					if key == "ALT_RESET_LIMB_ON_DEATH" then
+						self._manager:Set("DEATH_RESTORE", s[key])
+					elseif key == "NPC_DIRECTORIES" then
+						self._manager._settings.NPC_DIRECTORIES = s[key]
+					else
+						self._manager._settings[key] = s[key]
+					end
 				end
 			end
-		end
 
-		self:_doRestartBatched()
-		self._restartLock = false
-
-		if self._dirtyRestart then
-			self._workScheduled = true
-			task_spawn(function() self:_processDirtyWork() end)
+			pcall(self._doRestartBatched, self)
+			self._restartLock = false
+		elseif self._dirtyCosmetic then
+			self._dirtyCosmetic = false
+			self:_doCosmeticUpdateBatched()
 		end
-	elseif self._dirtyCosmetic then
-		self._dirtyCosmetic = false
-		self:_doCosmeticUpdateBatched()
+	end
+
+	if self._dirtyRestart or self._dirtyCosmetic or self._dirtyESP then
+		self._workScheduled = true
+		task_spawn(function() self:_processDirtyWork() end)
 	end
 end
 
@@ -580,14 +582,14 @@ function LimbExtender:_doRestartBatched()
 		for j = i, last do
 			local entry = cache[keys[j]]
 			if entry and entry.Limb then
-				sharedRestoreLimb(self, keys[j], entry.Limb)
+				pcall(sharedRestoreLimb, self, keys[j], entry.Limb)
 				if self._ESP and entry.Character then
-					self._ESP:Untrack(entry.Character)
+					pcall(function() self._ESP:Untrack(entry.Character) end)
 				end
 			elseif entry and entry.Character then
 				limbData.instanceLookup[entry.Character] = nil
 				if self._ESP then
-					self._ESP:Untrack(entry.Character)
+					pcall(function() self._ESP:Untrack(entry.Character) end)
 				end
 				cache[keys[j]] = nil
 			end
@@ -710,8 +712,6 @@ function LimbExtender.new(userSettings)
 		FORCEFIELD_CHECK = self._settings.FORCEFIELD_CHECK,
 		DEATH_RESTORE    = self._settings.ALT_RESET_LIMB_ON_DEATH,
 		GET_LOCAL_TEAM   = function() return localPlayer.Team end,
-		--GET_PLAYER_FROM_CHARACTER = self._settings.GET_PLAYER_FROM_CHARACTER,
-		--CUSTOM_CHARACTER_SYSTEM   = self._settings.CUSTOM_CHARACTER_SYSTEM,
 		ON_LIMB_READY    = function(player, model, limb) self:_applyLimbs(player, model, limb) end,
 		ON_LIMB_LOST = function(player, model, limb)
 			self:_removeLimbs(player, model, limb)
