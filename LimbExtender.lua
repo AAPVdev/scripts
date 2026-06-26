@@ -497,6 +497,9 @@ local function reapplyCosmeticToEntry(entry, settings)
 end
 
 function LimbExtender:_applyLimbs(player, char, limb)
+	if player and not self._settings.PLAYER_ENABLED then return end
+	if not player and not self._settings.NPC_ENABLED then return end
+	
 	local cacheKey
 	if player then
 		cacheKey = player.Name
@@ -595,83 +598,19 @@ function LimbExtender:_processDirtyWork()
 end
 
 function LimbExtender:_doRestartBatched()
-	if not self._running then return end
-	self._manager:Stop()
+    if not self._running then return end
+    self._manager:Stop()
 
-	local cache = self._playerCache
-	local keys = {}
-	for k in pairs(cache) do table_insert(keys, k) end
+    table_clear(self._playerCache)
 
-	local BATCH = 5
-	for i = 1, #keys, BATCH do
-		if not self._running then break end
-		local last = math_min(i + BATCH - 1, #keys)
-		for j = i, last do
-			local entry = cache[keys[j]]
-			if entry and entry.Limb then
-				local success, err = pcall(sharedRestoreLimb, self, keys[j], entry.Limb)
-				if not success then
-					warn("[LimbExtender] Failed to restore limb for " .. tostring(keys[j]) .. ": " .. tostring(err))
-				end
-				if self._ESP and entry.Character then
-					pcall(function() self._ESP:Untrack(entry.Character) end)
-				end
-			elseif entry and entry.Character then
-				limbData.instanceLookup[entry.Character] = nil
-				if self._ESP then
-					pcall(function() self._ESP:Untrack(entry.Character) end)
-				end
-				cache[keys[j]] = nil
-			end
-		end
-		task_wait()
-	end
+    if self._ESP then self._ESP:Stop() end
+    if not self._running then return end
 
-	local forcedRestore = {}
-	for _, key in ipairs(keys) do
-		local entry = cache[key]
-		if entry and entry.Character and entry.Limb then
-			local model = entry.Character
-			local limbName = entry.Limb.Name
-			if model and model.Parent and limbName then
-				local part = model:FindFirstChild(limbName)
-				if part and part:IsA("BasePart") then
-					table_insert(forcedRestore, {
-						part = part,
-						size = entry.OriginalSize,
-						transparency = entry.OriginalTransparency,
-						cancollide = entry.OriginalCanCollide,
-						massless = entry.OriginalMassless,
-						rootpriority = entry.OriginalRootPriority,
-					})
-				end
-			end
-		end
-		cache[key] = nil
-	end
-	table_clear(cache)
-
-	for _, data in ipairs(forcedRestore) do
-		local part = data.part
-		if part and part.Parent then
-			pcall(write, part, {
-				Size = data.size,
-				Transparency = data.transparency,
-				CanCollide = data.cancollide,
-				Massless = data.massless,
-				RootPriority = data.rootpriority,
-			})
-		end
-	end
-
-	if self._ESP then self._ESP:Stop() end
-	if not self._running then return end
-
-	self._generation = self._generation + 1
-	self._managerGeneration = self._generation
-	self._manager:Start()
-	if self._ESP then self._ESP:Start() end
-	self:_runGameScriptIfNeeded()
+    self._generation = self._generation + 1
+    self._managerGeneration = self._generation
+    self._manager:Start()
+    if self._ESP then self._ESP:Start() end
+    self:_runGameScriptIfNeeded()
 end
 
 function LimbExtender:_doCosmeticUpdateBatched()
