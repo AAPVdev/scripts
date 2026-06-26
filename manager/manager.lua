@@ -828,25 +828,11 @@ function Manager.new(userSettings)
 end
 
 function Manager:_onLimbReady(player, model, limb)
-	if not self._running then return end
-	if player then
-		if not self._settings.PLAYER_ENABLED then return end
-	else
-		if not self._settings.NPC_ENABLED then return end
-	end
-
 	local cb = self._settings.ON_LIMB_READY
 	self:_fireCallback("ON_LIMB_READY", cb, player, model, limb)
 end
 
 function Manager:_onLimbLost(player, model, limb)
-	if not self._running then return end
-	if player then
-		if not self._settings.PLAYER_ENABLED then return end
-	else
-		if not self._settings.NPC_ENABLED then return end
-	end
-
 	local obs = self._npcLimbObservers[model]
 	if obs then
 		obs:Destroy()
@@ -1122,7 +1108,7 @@ function Manager:_rescanNPCFilter()
 			end
 		end
 
-		local BATCH = 10
+		local BATCH = 3
 		for i = 1, #toRemove, BATCH do
 			if not self._running or self._destroyed or self._generation ~= gen then return end
 			local last = math_min(i + BATCH - 1, #toRemove)
@@ -1209,7 +1195,7 @@ function Manager:_startPlayerTracking()
 
 	local snapshot = Players:GetPlayers()
 	task_spawn(function()
-		local BATCH = 10
+		local BATCH = 3
 		for i = 1, #snapshot, BATCH do
 			if not self._running or self._destroyed or not self._playerConnsStarted then return end
 			local last = math_min(i + BATCH - 1, #snapshot)
@@ -1235,22 +1221,23 @@ function Manager:_stopPlayerTracking()
 		self._connections:Disconnect("PlayerRemoving")
 	end
 
-	local BATCH = 10
+	local BATCH = 3
 	local toDestroy = {}
 	for _, pd in pairs(self._playerTable) do
 		toDestroy[#toDestroy + 1] = pd
 	end
 	table_clear(self._playerTable)
 
-	task_spawn(function()
-		for i = 1, #toDestroy, BATCH do
-			local last = math_min(i + BATCH - 1, #toDestroy)
-			for j = i, last do
-				toDestroy[j]:Destroy()
-			end
+	-- Synchronous destruction with yields
+	for i = 1, #toDestroy, BATCH do
+		local last = math_min(i + BATCH - 1, #toDestroy)
+		for j = i, last do
+			pcall(function() toDestroy[j]:Destroy() end)
+		end
+		if i + BATCH <= #toDestroy then
 			task.wait()
 		end
-	end)
+	end
 end
 
 function Manager:_startNPCTracking()
@@ -1292,7 +1279,7 @@ function Manager:_stopNPCTracking()
 		self._npcConnections = nil
 	end
 
-	local BATCH = 10
+	local BATCH = 3
 
 	local npcObservers = {}
 	for _, observer in pairs(self._npcSet) do
@@ -1315,22 +1302,27 @@ function Manager:_stopNPCTracking()
 	table_clear(self._stringDirMap)
 	table_clear(self._npcDirOwners)
 
-	task_spawn(function()
-		for i = 1, #npcObservers, BATCH do
-			local last = math_min(i + BATCH - 1, #npcObservers)
-			for j = i, last do
-				npcObservers[j]:Destroy()
-			end
+	-- Synchronous destruction of NPC observers
+	for i = 1, #npcObservers, BATCH do
+		local last = math_min(i + BATCH - 1, #npcObservers)
+		for j = i, last do
+			pcall(function() npcObservers[j]:Destroy() end)
+		end
+		if i + BATCH <= #npcObservers then
 			task.wait()
 		end
-		for i = 1, #limbObservers, BATCH do
-			local last = math_min(i + BATCH - 1, #limbObservers)
-			for j = i, last do
-				limbObservers[j]:Destroy()
-			end
+	end
+
+	-- Synchronous destruction of limb observers
+	for i = 1, #limbObservers, BATCH do
+		local last = math_min(i + BATCH - 1, #limbObservers)
+		for j = i, last do
+			pcall(function() limbObservers[j]:Destroy() end)
+		end
+		if i + BATCH <= #limbObservers then
 			task.wait()
 		end
-	end)
+	end
 end
 
 function Manager:Start()
