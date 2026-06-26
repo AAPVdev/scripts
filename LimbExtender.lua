@@ -452,7 +452,9 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 	local cache = parent._playerCache
 	local entry = cache[cacheKey]
 	if not entry then return end
-
+	
+	if entry.Limb then unwrapPartSignals(entry.Limb) limbData.instanceLookup[entry.Limb] = nil end
+	
 	if entry._watchConns then
 		for _, conn in ipairs(entry._watchConns) do
 			conn:Disconnect()
@@ -477,7 +479,6 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 		})
 	end
 
-	if entry.Limb then unwrapPartSignals(entry.Limb) limbData.instanceLookup[entry.Limb] = nil end
 	if activeLimb and activeLimb ~= entry.Limb then limbData.instanceLookup[activeLimb] = nil end
 	if entry.Character then limbData.instanceLookup[entry.Character] = nil end
 	cache[cacheKey] = nil
