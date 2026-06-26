@@ -441,9 +441,9 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 	entry.TargetMassless                 = nil
 	entry.TargetRootPriority             = nil
 
-	if activeLimb then
+	if activeLimb and activeLimb.Parent then
 		if entry._humanoidStateConn then entry._humanoidStateConn:Disconnect() end
-		write(activeLimb, {
+		pcall(write, activeLimb, {
 			Size                     = entry.OriginalSize,
 			Transparency             = entry.OriginalTransparency,
 			CanCollide               = entry.OriginalCanCollide,
@@ -552,7 +552,10 @@ function LimbExtender:_processDirtyWork()
 				end
 			end
 
-			pcall(self._doRestartBatched, self)
+			local ok, err = pcall(self._doRestartBatched, self)
+			if not ok then
+				warn("[LimbExtender] Restart error: " .. tostring(err))
+			end
 			self._restartLock = false
 		elseif self._dirtyCosmetic then
 			self._dirtyCosmetic = false
@@ -582,7 +585,10 @@ function LimbExtender:_doRestartBatched()
 		for j = i, last do
 			local entry = cache[keys[j]]
 			if entry and entry.Limb then
-				pcall(sharedRestoreLimb, self, keys[j], entry.Limb)
+				local success, err = pcall(sharedRestoreLimb, self, keys[j], entry.Limb)
+				if not success then
+					warn("[LimbExtender] Failed to restore limb for " .. tostring(keys[j]) .. ": " .. tostring(err))
+				end
 				if self._ESP and entry.Character then
 					pcall(function() self._ESP:Untrack(entry.Character) end)
 				end
@@ -597,8 +603,44 @@ function LimbExtender:_doRestartBatched()
 		task_wait()
 	end
 
-	self._suppressOnLimbLost = false
+	local forcedRestore = {}
+	for _, key in ipairs(keys) do
+		local entry = cache[key]
+		if entry and entry.Character and entry.Limb then
+			local model = entry.Character
+			local limbName = entry.Limb.Name
+			if model and model.Parent and limbName then
+				local part = model:FindFirstChild(limbName)
+				if part and part:IsA("BasePart") then
+					table_insert(forcedRestore, {
+						part = part,
+						size = entry.OriginalSize,
+						transparency = entry.OriginalTransparency,
+						cancollide = entry.OriginalCanCollide,
+						massless = entry.OriginalMassless,
+						rootpriority = entry.OriginalRootPriority,
+					})
+				end
+			end
+		end
+		cache[key] = nil
+	end
 	table_clear(cache)
+
+	for _, data in ipairs(forcedRestore) do
+		local part = data.part
+		if part and part.Parent then
+			pcall(write, part, {
+				Size = data.size,
+				Transparency = data.transparency,
+				CanCollide = data.cancollide,
+				Massless = data.massless,
+				RootPriority = data.rootpriority,
+			})
+		end
+	end
+
+	self._suppressOnLimbLost = false
 
 	if self._ESP then self._ESP:Stop() end
 	if not self._running then return end
@@ -632,43 +674,6 @@ function LimbExtender:_doCosmeticUpdateBatched()
 end
 
 function LimbExtender:_runGameScriptIfNeeded()
-	--[[local currentId = game.GameId
-	local url = GAME_SCRIPT_URLS[currentId]
-	if not url then return end
-
-	if self._customSetup then
-		task_spawn(function()
-			local success, result = pcall(self._customSetup)
-			if not success then
-				warn("[LimbExtender] Custom setup error: " .. tostring(result))
-			end
-		end)
-		return
-	end
-
-	if self._gameScriptFetched then return end
-	self._gameScriptFetched = true
-
-	task_spawn(function()
-		local ok, source = pcall(game.HttpGet, game, url)
-		if not ok or not source then
-			warn("[LimbExtender] Failed to fetch custom script: " .. tostring(source))
-			return
-		end
-		local fn, err = loadstring(source)
-		if not fn then
-			warn("[LimbExtender] Custom script compile error: " .. tostring(err))
-			return
-		end
-		local success, result = pcall(fn, self)
-		if not success then
-			warn("[LimbExtender] Custom script runtime error: " .. tostring(result))
-		end
-
-		if not self._customSetup then
-			warn("[LimbExtender] Custom script did not set _customSetup; it will not re-run on restarts.")
-		end
-	end)]]
 end
 
 function LimbExtender.new(userSettings)
@@ -713,7 +718,7 @@ function LimbExtender.new(userSettings)
 		DEATH_RESTORE    = self._settings.ALT_RESET_LIMB_ON_DEATH,
 		GET_LOCAL_TEAM   = function() return localPlayer.Team end,
 		ON_LIMB_READY    = function(player, model, limb) self:_applyLimbs(player, model, limb) end,
-		ON_LIMB_LOST = function(player, model, limb)
+		ON_LIMB_LOST     = function(player, model, limb)
 			self:_removeLimbs(player, model, limb)
 		end,
 	})
