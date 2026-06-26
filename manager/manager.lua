@@ -101,7 +101,7 @@ local DEFAULTS = {
 
 	ON_CALLBACK_ERROR = nil,
 
-	REQUIRE_ANCHOR = false,
+	REQUIRE_ANCHOR = true,
 
 	GET_PLAYER_FROM_CHARACTER = nil,
 	CUSTOM_CHARACTER_SYSTEM = false,
@@ -1052,7 +1052,7 @@ function Manager:_activateDirectory(dir, useDescendants)
 
 	local gen = self._generation
 	task_spawn(function()
-		local BATCH = 10
+		local BATCH = 6
 		for i = 1, #candidates, BATCH do
 			if not self._running or self._destroyed or self._generation ~= gen then
 				return
@@ -1108,7 +1108,7 @@ function Manager:_rescanNPCFilter()
 			end
 		end
 
-		local BATCH = 3
+		local BATCH = 6
 		for i = 1, #toRemove, BATCH do
 			if not self._running or self._destroyed or self._generation ~= gen then return end
 			local last = math_min(i + BATCH - 1, #toRemove)
@@ -1195,7 +1195,7 @@ function Manager:_startPlayerTracking()
 
 	local snapshot = Players:GetPlayers()
 	task_spawn(function()
-		local BATCH = 3
+		local BATCH = 6
 		for i = 1, #snapshot, BATCH do
 			if not self._running or self._destroyed or not self._playerConnsStarted then return end
 			local last = math_min(i + BATCH - 1, #snapshot)
@@ -1221,23 +1221,22 @@ function Manager:_stopPlayerTracking()
 		self._connections:Disconnect("PlayerRemoving")
 	end
 
-	local BATCH = 3
+	local BATCH = 6
 	local toDestroy = {}
 	for _, pd in pairs(self._playerTable) do
 		toDestroy[#toDestroy + 1] = pd
 	end
 	table_clear(self._playerTable)
 
-	-- Synchronous destruction with yields
-	for i = 1, #toDestroy, BATCH do
-		local last = math_min(i + BATCH - 1, #toDestroy)
-		for j = i, last do
-			pcall(function() toDestroy[j]:Destroy() end)
-		end
-		if i + BATCH <= #toDestroy then
+	task_spawn(function()
+		for i = 1, #toDestroy, BATCH do
+			local last = math_min(i + BATCH - 1, #toDestroy)
+			for j = i, last do
+				toDestroy[j]:Destroy()
+			end
 			task.wait()
 		end
-	end
+	end)
 end
 
 function Manager:_startNPCTracking()
@@ -1279,7 +1278,7 @@ function Manager:_stopNPCTracking()
 		self._npcConnections = nil
 	end
 
-	local BATCH = 3
+	local BATCH = 6
 
 	local npcObservers = {}
 	for _, observer in pairs(self._npcSet) do
@@ -1302,27 +1301,22 @@ function Manager:_stopNPCTracking()
 	table_clear(self._stringDirMap)
 	table_clear(self._npcDirOwners)
 
-	-- Synchronous destruction of NPC observers
-	for i = 1, #npcObservers, BATCH do
-		local last = math_min(i + BATCH - 1, #npcObservers)
-		for j = i, last do
-			pcall(function() npcObservers[j]:Destroy() end)
-		end
-		if i + BATCH <= #npcObservers then
+	task_spawn(function()
+		for i = 1, #npcObservers, BATCH do
+			local last = math_min(i + BATCH - 1, #npcObservers)
+			for j = i, last do
+				npcObservers[j]:Destroy()
+			end
 			task.wait()
 		end
-	end
-
-	-- Synchronous destruction of limb observers
-	for i = 1, #limbObservers, BATCH do
-		local last = math_min(i + BATCH - 1, #limbObservers)
-		for j = i, last do
-			pcall(function() limbObservers[j]:Destroy() end)
-		end
-		if i + BATCH <= #limbObservers then
+		for i = 1, #limbObservers, BATCH do
+			local last = math_min(i + BATCH - 1, #limbObservers)
+			for j = i, last do
+				limbObservers[j]:Destroy()
+			end
 			task.wait()
 		end
-	end
+	end)
 end
 
 function Manager:Start()
