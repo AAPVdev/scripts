@@ -484,9 +484,6 @@ local function reapplyCosmeticToEntry(entry, settings)
 end
 
 function LimbExtender:_applyLimbs(player, char, limb)
-	if player and not self._settings.PLAYER_ENABLED then return end
-	if not player and not self._settings.NPC_ENABLED then return end
-	
 	local cacheKey
 	if player then
 		cacheKey = player.Name
