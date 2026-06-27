@@ -510,6 +510,7 @@ function LimbExtender:_applyLimbs(player, char, limb)
 end
 
 function LimbExtender:_removeLimbs(player, char, limb)
+	if self._suppressOnLimbLost then return end
 	local cacheKey = player and player.Name or self._npcIdMap[char]
 	sharedRestoreLimb(self, cacheKey, limb)
 	if self._ESP and char then self._ESP:Untrack(char) end
@@ -582,19 +583,47 @@ function LimbExtender:_processDirtyWork()
 end
 
 function LimbExtender:_doRestartBatched()
-    if not self._running then return end
-    self._manager:Stop()
+	if not self._running then return end
+	self._suppressOnLimbLost = true
+	self._manager:Stop()
 
-    table_clear(self._playerCache)
+	local cache = self._playerCache
+	local keys = {}
+	for k in pairs(cache) do table_insert(keys, k) end
 
-    if self._ESP then self._ESP:Stop() end
-    if not self._running then return end
+	local BATCH = 5
+	for i = 1, #keys, BATCH do
+		if not self._running then break end
+		local last = math_min(i + BATCH - 1, #keys)
+		for j = i, last do
+			local entry = cache[keys[j]]
+			if entry and entry.Limb then
+				sharedRestoreLimb(self, keys[j], entry.Limb)
+				if self._ESP and entry.Character then
+					self._ESP:Untrack(entry.Character)
+				end
+			elseif entry and entry.Character then
+				limbData.instanceLookup[entry.Character] = nil
+				if self._ESP then
+					self._ESP:Untrack(entry.Character)
+				end
+				cache[keys[j]] = nil
+			end
+		end
+		task_wait()
+	end
 
-    self._generation = self._generation + 1
-    self._managerGeneration = self._generation
-    self._manager:Start()
-    if self._ESP then self._ESP:Start() end
-    self:_runGameScriptIfNeeded()
+	self._suppressOnLimbLost = false
+	table_clear(cache)
+
+	if self._ESP then self._ESP:Stop() end
+	if not self._running then return end
+
+	self._generation = self._generation + 1
+	self._managerGeneration = self._generation
+	self._manager:Start()
+	if self._ESP then self._ESP:Start() end
+	self:_runGameScriptIfNeeded()
 end
 
 function LimbExtender:_doCosmeticUpdateBatched()
@@ -619,6 +648,43 @@ function LimbExtender:_doCosmeticUpdateBatched()
 end
 
 function LimbExtender:_runGameScriptIfNeeded()
+	local currentId = game.GameId
+	local url = GAME_SCRIPT_URLS[currentId]
+	if not url then return end
+
+	if self._customSetup then
+		task_spawn(function()
+			local success, result = pcall(self._customSetup)
+			if not success then
+				warn("[LimbExtender] Custom setup error: " .. tostring(result))
+			end
+		end)
+		return
+	end
+
+	if self._gameScriptFetched then return end
+	self._gameScriptFetched = true
+
+	task_spawn(function()
+		local ok, source = pcall(game.HttpGet, game, url)
+		if not ok or not source then
+			warn("[LimbExtender] Failed to fetch custom script: " .. tostring(source))
+			return
+		end
+		local fn, err = loadstring(source)
+		if not fn then
+			warn("[LimbExtender] Custom script compile error: " .. tostring(err))
+			return
+		end
+		local success, result = pcall(fn, self)
+		if not success then
+			warn("[LimbExtender] Custom script runtime error: " .. tostring(result))
+		end
+
+		if not self._customSetup then
+			warn("[LimbExtender] Custom script did not set _customSetup; it will not re-run on restarts.")
+		end
+	end)
 end
 
 function LimbExtender.new(userSettings)
@@ -636,6 +702,7 @@ function LimbExtender.new(userSettings)
 		_dirtyRestart        = false,
 		_dirtyCosmetic       = false,
 		_dirtyESP            = false,
+		_suppressOnLimbLost  = false,
 		_workScheduled       = false,
 		_restartLock 		 = false,
 		_generation 		 = 0,
