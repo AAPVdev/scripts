@@ -157,78 +157,16 @@ local function write(limb, props)
 	end
 end
 
+function getTargetData(instance)
+	if typeof(instance) ~= "Instance" then return nil, nil end
+	local cached = limbData.instanceLookup[instance]
+	if cached then return cached.data, cached.type end
+	return nil, nil
+end
+
 local function wrapPartSignals(limb)
 	if not BYPASS_AVAILABLE then return end
 	if limbData._wrappedParts[limb] then return end
-
-	local lookup = limbData.instanceLookup[limb]
-	if not lookup or not lookup.data then return end
-	local data = lookup.data
-
-	local mt          = getrawmetatable(limb)
-	data._oldMetaIndex    = mt.__index
-    data._oldMetaNewIndex = mt.__newindex
-    data._oldMetaNamecall = mt.__namecall
-	setreadonly(mt, false)
-
-	mt.__index = function(self, key)
-		if not checkcaller() then
-			if BLOCKED_PROPS[key] then
-				return data["Original"..key]
-			end
-		end
-		return data._oldMetaIndex(self, key)
-	end
-
-	mt.__newindex = function(self, key, value)
-		if not checkcaller() then
-			if BLOCKED_PROPS[key] then
-				data["Original"..key] = value
-				fireSignalsForProp(self, key)
-				return
-			end
-		end
-		return data._oldMetaNewIndex(self, key, value)
-	end
-
-	mt.__namecall = function(self, ...)
-		if not checkcaller() then
-			local method = getnamecallmethod()
-			if method == "GetExtentsSize" then
-				if lookup and lookup.data then
-					local d           = lookup.data
-					local trueSize    = d.TrueSize
-					local trueExtents = d.TrueExtents
-					local spoofSize   = d.OriginalSize
-					if trueSize and trueExtents and spoofSize then
-						if spoofSize ~= trueSize then
-							local sx = spoofSize.X / trueSize.X
-							local sy = spoofSize.Y / trueSize.Y
-							local sz = spoofSize.Z / trueSize.Z
-							return Vector3_new(trueExtents.X * sx, trueExtents.Y * sy, trueExtents.Z * sz)
-						else
-							return trueExtents
-						end
-					end
-				end
-			elseif method == "GetPropertyChangedSignal" then
-				local dummySignal = setmetatable({}, {
-					__index = function(_, k)
-						if k == "Connect" or k == "Once" then
-							return function()
-								return { Disconnect = function() end }
-							end
-						end
-						return function() end
-					end
-				})
-				return dummySignal
-			end
-		end
-		return data._oldMetaNamecall(self, ...)
-	end
-
-	setreadonly(mt, true)
 
 	local function hookSignalConnect(signal)
 		if limbData._hookedSignals[signal] then return end
@@ -261,29 +199,79 @@ local function wrapPartSignals(limb)
 	limbData._wrappedParts[limb] = true
 end
 
-local function unwrapPartSignals(limb)
-    if not BYPASS_AVAILABLE then return end
-    if not limbData._wrappedParts[limb] then return end
+if BYPASS_AVAILABLE and not limbData._bypassInstalled then
+	limbData._bypassInstalled = true
+	local mt          = getrawmetatable(game)
+	local oldIndex    = mt.__index
+	local oldNewIndex = mt.__newindex
+	local oldNamecall = mt.__namecall
+	setreadonly(mt, false)
 
-    local lookup = limbData.instanceLookup[limb]
-    local data = lookup and lookup.data
-    if not data then return end
+	mt.__index = function(self, key)
+		if not checkcaller() then
+			local data = getTargetData(self)
+			if data then
+				if BLOCKED_PROPS[key] then
+					return data["Original"..key]
+				end
+			end
+		end
+		return oldIndex(self, key)
+	end
 
-    local mt = getrawmetatable(limb)
-    setreadonly(mt, false)
-    if data._oldMetaIndex then
-        mt.__index = data._oldMetaIndex
-        data._oldMetaIndex = nil
-    end
-    if data._oldMetaNewIndex then
-        mt.__newindex = data._oldMetaNewIndex
-        data._oldMetaNewIndex = nil
-    end
-    if data._oldMetaNamecall then
-        mt.__namecall = data._oldMetaNamecall
-        data._oldMetaNamecall = nil
-    end
-    setreadonly(mt, true)
+	mt.__newindex = function(self, key, value)
+		if not checkcaller() then
+			local data = getTargetData(self)
+			if data then
+				if BLOCKED_PROPS[key] then
+					data["Original"..key] = value
+					fireSignalsForProp(self, key)
+					return
+				end
+			end
+		end
+		return oldNewIndex(self, key, value)
+	end
+
+	mt.__namecall = function(self, ...)
+		if not checkcaller() then
+			local lookup = limbData.instanceLookup[self]
+			local method = getnamecallmethod()
+			if method == "GetExtentsSize" then
+				if lookup and lookup.data then
+					local d           = lookup.data
+					local trueSize    = d.TrueSize
+					local trueExtents = d.TrueExtents
+					local spoofSize   = d.OriginalSize
+					if trueSize and trueExtents and spoofSize then
+						if spoofSize ~= trueSize then
+							local sx = spoofSize.X / trueSize.X
+							local sy = spoofSize.Y / trueSize.Y
+							local sz = spoofSize.Z / trueSize.Z
+							return Vector3_new(trueExtents.X * sx, trueExtents.Y * sy, trueExtents.Z * sz)
+						else
+							return trueExtents
+						end
+					end
+				end
+			elseif method == "GetPropertyChangedSignal" then
+				local dummySignal = setmetatable({}, {
+					__index = function(_, k)
+						if k == "Connect" or k == "Once" then
+							return function()
+								return { Disconnect = function() end }
+							end
+						end
+						return function() end
+					end
+				})
+				return dummySignal
+			end
+		end
+		return oldNamecall(self, ...)
+	end
+
+	setreadonly(mt, true)
 end
 
 local PROPS_TO_WATCH = {
@@ -453,8 +441,6 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 	local entry = cache[cacheKey]
 	if not entry then return end
 	
-	if entry.Limb then unwrapPartSignals(entry.Limb) limbData.instanceLookup[entry.Limb] = nil end
-	
 	if entry._watchConns then
 		for _, conn in ipairs(entry._watchConns) do
 			conn:Disconnect()
@@ -479,6 +465,7 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 		})
 	end
 
+	if entry.Limb then limbData.instanceLookup[entry.Limb] = nil end
 	if activeLimb and activeLimb ~= entry.Limb then limbData.instanceLookup[activeLimb] = nil end
 	if entry.Character then limbData.instanceLookup[entry.Character] = nil end
 	cache[cacheKey] = nil
