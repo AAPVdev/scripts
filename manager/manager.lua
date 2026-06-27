@@ -1255,10 +1255,10 @@ function Manager:_stopPlayerTracking()
 	end
 	table_clear(self._playerTable)
 
-	local gen = self._generation
+	local gen = self._generation 
 
 	for i = 1, #toDestroy, BATCH do
-		if not self._running or self._destroyed or self._generation ~= gen then return end
+		if self._destroyed or self._generation ~= gen then return end
 		local last = math_min(i + BATCH - 1, #toDestroy)
 		for j = i, last do
 			toDestroy[j]:Destroy()
@@ -1271,6 +1271,7 @@ function Manager:_stopNPCTracking()
 	if not self._npcConnsStarted then return end
 	self._npcConnsStarted = false
 	self._generation = self._generation + 1
+	
 	if self._npcConnections then
 		self._npcConnections:Destroy()
 		self._npcConnections = nil
@@ -1302,7 +1303,7 @@ function Manager:_stopNPCTracking()
 	local gen = self._generation
 
 	for i = 1, #npcObservers, BATCH do
-		if not self._running or self._destroyed or self._generation ~= gen then return end
+		if self._destroyed or self._generation ~= gen then return end
 		local last = math_min(i + BATCH - 1, #npcObservers)
 		for j = i, last do
 			npcObservers[j]:Destroy()
@@ -1310,7 +1311,7 @@ function Manager:_stopNPCTracking()
 		task.wait()
 	end
 	for i = 1, #limbObservers, BATCH do
-		if not self._running or self._destroyed or self._generation ~= gen then return end
+		if self._destroyed or self._generation ~= gen then return end
 		local last = math_min(i + BATCH - 1, #limbObservers)
 		for j = i, last do
 			limbObservers[j]:Destroy()
