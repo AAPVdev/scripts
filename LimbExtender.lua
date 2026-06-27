@@ -19,7 +19,6 @@ globalEnv.limbExtenderData = limbData
 local type, typeof = type, typeof
 local pcall = pcall
 local pairs, ipairs = pairs, ipairs
-local math_max = math.max
 local math_min = math.min
 local task_spawn = task.spawn
 local task_wait = task.wait
@@ -33,6 +32,7 @@ limbData.instanceLookup = limbData.instanceLookup or setmetatable({}, { __mode =
 limbData.npcIdCounter   = limbData.npcIdCounter   or 0
 limbData._migratedConns = limbData._migratedConns or setmetatable({}, { __mode = "k" })
 limbData._hookedSignals = limbData._hookedSignals or {}
+limbData._signalWaiters = limbData._signalWaiters or setmetatable({}, { __mode = "k" })
 limbData._wrappedParts  = limbData._wrappedParts  or setmetatable({}, { __mode = "k" })
 limbData._signalToInstance = limbData._signalToInstance or setmetatable({}, { __mode = "k" })
 
@@ -255,23 +255,48 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 					end
 				end
 			elseif method == "GetPropertyChangedSignal" then
-				local dummySignal = setmetatable({}, {
-					__index = function(_, k)
-						if k == "Connect" or k == "Once" then
-							return function()
-								return { Disconnect = function() end }
-							end
-						end
-						return function() end
-					end
-				})
-				return dummySignal
+				local signal = oldNamecall(self, ...)
+				if typeof(signal) == "RBXScriptSignal" then
+					limbData._signalToInstance[signal] = self
+					limbData._hookedSignals[signal] = true
+				end
+				return signal
 			end
 		end
 		return oldNamecall(self, ...)
 	end
-
 	setreadonly(mt, true)
+
+	if not limbData._signalIndexHooked then
+		limbData._signalIndexHooked = true
+		local testSignal = game.Changed
+		local signalMt = getrawmetatable(testSignal)
+		local origSignalIndex = signalMt.__index
+		setreadonly(signalMt, false)
+		signalMt.__index = function(self, key)
+			if not checkcaller() then
+				local instance = limbData._signalToInstance[self]
+				local isTracked = limbData._hookedSignals[self] or (instance and limbData.instanceLookup[instance])
+				if (key == "Connect" or key == "Once") and isTracked then
+					local origMethod = origSignalIndex(self, key)
+					return function(s, callback)
+						return origMethod(s, callback)
+					end
+				end
+
+				if key == "Wait" and isTracked then
+					return function(self)
+						while true do
+							task.wait()
+						end
+						return origSignalIndex(self, "Wait")(self)
+					end
+				end
+			end
+			return origSignalIndex(self, key)
+		end
+		setreadonly(signalMt, true)
+	end
 end
 
 local PROPS_TO_WATCH = {
