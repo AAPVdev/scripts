@@ -1228,44 +1228,68 @@ function Manager:_stopPlayerTracking()
 	end
 	table_clear(self._playerTable)
 
-	task_spawn(function()
-		for i = 1, #toDestroy, BATCH do
-			local last = math_min(i + BATCH - 1, #toDestroy)
-			for j = i, last do
-				toDestroy[j]:Destroy()
-			end
-			task.wait()
+	local gen = self._generation
+
+	for i = 1, #toDestroy, BATCH do
+		if not self._running or self._destroyed or self._generation ~= gen then return end
+		local last = math_min(i + BATCH - 1, #toDestroy)
+		for j = i, last do
+			toDestroy[j]:Destroy()
 		end
-	end)
+		task.wait()
+	end
 end
 
-function Manager:_startNPCTracking()
-	if self._destroyed or not self._running or self._npcConnsStarted then return end
-	self._npcConnsStarted = true
-	self._npcConnections = ConnectionManager.new()
+function Manager:_stopNPCTracking()
+	if not self._npcConnsStarted then return end
+	self._npcConnsStarted = false
+	self._generation = self._generation + 1
+	if self._npcConnections then
+		self._npcConnections:Destroy()
+		self._npcConnections = nil
+	end
 
-	local dirs = self._settings.NPC_DIRECTORIES
-	local hasUserDirs = type(dirs) == "table" and #dirs > 0
-	local entries = hasUserDirs and dirs or { Workspace }
+	local BATCH = 6
+
+	local npcObservers = {}
+	for _, observer in pairs(self._npcSet) do
+		if observer then npcObservers[#npcObservers + 1] = observer end
+	end
+	table_clear(self._npcSet)
+
+	local limbObservers = {}
+	for _, limbObs in pairs(self._npcLimbObservers) do
+		if limbObs then limbObservers[#limbObservers + 1] = limbObs end
+	end
+	table_clear(self._npcLimbObservers)
+
+	for model in pairs(self._pendingNPCWatchers) do
+		self:_cancelPendingNPCWatch(model)
+	end
+	table_clear(self._pendingNPCWatchers)
+
+	table_clear(self._dirUidMap)
+	table_clear(self._stringDirMap)
+	table_clear(self._npcDirOwners)
 
 	local gen = self._generation
-	task_spawn(function()
-		for _, entry in ipairs(entries) do
-			if not self._running or self._destroyed or self._generation ~= gen then return end
 
-			if isLiveInstance(entry) then
-				self:_activateDirectory(entry, not hasUserDirs)
-			elseif type(entry) == "string" then
-				local resolved = resolvePathAsync(entry)
-				if resolved and self._running and self._npcConnsStarted
-					and not self._destroyed and self._generation == gen then
-					self._stringDirMap[entry] = resolved
-					self:_activateDirectory(resolved, not hasUserDirs)
-				end
-			end
-			task.wait()
+	for i = 1, #npcObservers, BATCH do
+		if not self._running or self._destroyed or self._generation ~= gen then return end
+		local last = math_min(i + BATCH - 1, #npcObservers)
+		for j = i, last do
+			npcObservers[j]:Destroy()
 		end
-	end)
+		task.wait()
+	end
+	for i = 1, #limbObservers, BATCH do
+		if not self._running or self._destroyed or self._generation ~= gen then return end
+		local last = math_min(i + BATCH - 1, #limbObservers)
+		for j = i, last do
+			limbObservers[j]:Destroy()
+		end
+		task.wait()
+	end
 end
 
 function Manager:_stopNPCTracking()
