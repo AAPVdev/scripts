@@ -1194,22 +1194,49 @@ function Manager:_startPlayerTracking()
 	end, "PlayerRemoving")
 
 	local snapshot = Players:GetPlayers()
-	task_spawn(function()
-		local BATCH = 6
-		for i = 1, #snapshot, BATCH do
-			if not self._running or self._destroyed or not self._playerConnsStarted then return end
-			local last = math_min(i + BATCH - 1, #snapshot)
-			for j = i, last do
-				local p = snapshot[j]
-				if p ~= localPlayer and not self._playerTable[p] then
-					if isLiveInstance(p) then
-						self._playerTable[p] = PlayerData.new(self, p)
-					end
+	local gen = self._generation
+
+	local BATCH = 6
+	for i = 1, #snapshot, BATCH do
+		if not self._running or self._destroyed or self._playerConnsStarted == false then return end
+		local last = math_min(i + BATCH - 1, #snapshot)
+		for j = i, last do
+			local p = snapshot[j]
+			if p ~= localPlayer and not self._playerTable[p] then
+				if isLiveInstance(p) then
+					self._playerTable[p] = PlayerData.new(self, p)
 				end
 			end
-			task.wait()
 		end
-	end)
+		task.wait()
+	end
+end
+
+function Manager:_startNPCTracking()
+	if self._destroyed or not self._running or self._npcConnsStarted then return end
+	self._npcConnsStarted = true
+	self._npcConnections = ConnectionManager.new()
+
+	local dirs = self._settings.NPC_DIRECTORIES
+	local hasUserDirs = type(dirs) == "table" and #dirs > 0
+	local entries = hasUserDirs and dirs or { Workspace }
+
+	local gen = self._generation
+	for _, entry in ipairs(entries) do
+		if not self._running or self._destroyed or self._generation ~= gen then return end
+
+		if isLiveInstance(entry) then
+			self:_activateDirectory(entry, not hasUserDirs)
+		elseif type(entry) == "string" then
+			local resolved = resolvePathAsync(entry)
+			if resolved and self._running and self._npcConnsStarted
+				and not self._destroyed and self._generation == gen then
+				self._stringDirMap[entry] = resolved
+				self:_activateDirectory(resolved, not hasUserDirs)
+			end
+		end
+		task.wait()
+	end
 end
 
 function Manager:_stopPlayerTracking()
