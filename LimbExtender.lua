@@ -229,7 +229,10 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 					return
 				end
 			end
+		else
+			limbData._suppressSignal = true
 		end
+		limbData._suppressSignal = false
 		return oldNewIndex(self, key, value)
 	end
 
@@ -280,13 +283,13 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 				if (key == "Connect" or key == "Once") and isTracked then
 					local origMethod = origSignalIndex(self, key)
 					return function(s, callback)
+
 						return origMethod(s, callback)
 					end
 				end
-
 				if key == "Wait" and isTracked then
 					return function(self)
-						while true do
+						while not limbData._suppressSignal do
 							task.wait()
 						end
 						return origSignalIndex(self, "Wait")(self)
