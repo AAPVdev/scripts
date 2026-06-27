@@ -573,6 +573,8 @@ function LimbExtender:_processDirtyWork()
 		elseif self._dirtyCosmetic then
 			self._dirtyCosmetic = false
 			self:_doCosmeticUpdateBatched()
+		else
+			task.wait()
 		end
 	end
 
