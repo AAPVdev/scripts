@@ -30,6 +30,7 @@ local Vector3_new = Vector3.new
 limbData.playerCache    = limbData.playerCache    or {}
 limbData.instanceLookup = limbData.instanceLookup or setmetatable({}, { __mode = "k" })
 limbData.npcIdCounter   = limbData.npcIdCounter   or 0
+limbData._suppressSignal = limbData._suppressSignal or 0
 limbData._migratedConns = limbData._migratedConns or setmetatable({}, { __mode = "k" })
 limbData._hookedSignals = limbData._hookedSignals or setmetatable({}, { __mode = "k" })
 limbData._wrappedParts  = limbData._wrappedParts  or setmetatable({}, { __mode = "k" })
@@ -177,28 +178,11 @@ local function wrapPartSignals(limb)
 		    local origCallback = conn.Function
 		    local isRunning = false
 		
-		    local success = pcall(hookfunction, origCallback, function(...)
-		        if limbData._suppressSignal or isRunning then
-		            return
-		        end
-		        isRunning = true
-		        local result = origCallback(...) 
-		        isRunning = false
-		        return result
-		    end)
-		    if not success then
-		        pcall(function()
-		            conn.Function = function(...)
-		                if limbData._suppressSignal or isRunning then
-		                    return
-		                end
-		                isRunning = true
-		                local result = origCallback(...)
-		                isRunning = false
-		                return result
-		            end
-		        end)
-		    end
+			local success = pcall(hookfunction, origCallback, function(...)
+			    if (limbData._suppressSignal or 0) > 0 then return end
+			    return origCallback(...)
+			end)
+			
 		    limbData._migratedConns[conn] = true
 		end
     end
@@ -247,9 +231,9 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 	        end
 	        return oldNewIndex(self, key, value)
 	    else
-	        limbData._suppressSignal = true
+	        limbData._suppressSignal = limbData._suppressSignal + 1
 	        oldNewIndex(self, key, value)
-	        limbData._suppressSignal = false
+	        limbData._suppressSignal = limbData._suppressSignal - 1
 	    end
 	end
 
@@ -301,9 +285,8 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 		            local origMethod = origSignalIndex(self, key)
 					return function(s, callback)
 					    local wrapped = function(...)
-					        if not limbData._suppressSignal then
-					            return callback(...)
-					        end
+					        if (limbData._suppressSignal or 0) > 0 then return end
+					        return callback(...)
 					    end
 					    return origMethod(s, wrapped)
 					end
