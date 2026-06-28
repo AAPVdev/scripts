@@ -31,8 +31,7 @@ limbData.playerCache    = limbData.playerCache    or {}
 limbData.instanceLookup = limbData.instanceLookup or setmetatable({}, { __mode = "k" })
 limbData.npcIdCounter   = limbData.npcIdCounter   or 0
 limbData._migratedConns = limbData._migratedConns or setmetatable({}, { __mode = "k" })
-limbData._hookedSignals = limbData._hookedSignals or {}
-limbData._signalWaiters = limbData._signalWaiters or setmetatable({}, { __mode = "k" })
+limbData._hookedSignals = limbData._hookedSignals or setmetatable({}, { __mode = "k" })
 limbData._wrappedParts  = limbData._wrappedParts  or setmetatable({}, { __mode = "k" })
 limbData._signalToInstance = limbData._signalToInstance or setmetatable({}, { __mode = "k" })
 
@@ -285,14 +284,6 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 					return function(s, callback)
 
 						return origMethod(s, callback)
-					end
-				end
-				if key == "Wait" and isTracked then
-					return function(self)
-						while not limbData._suppressSignal do
-							task.wait()
-						end
-						return origSignalIndex(self, "Wait")(self)
 					end
 				end
 			end
