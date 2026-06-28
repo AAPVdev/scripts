@@ -172,27 +172,35 @@ local function wrapPartSignals(limb)
         limbData._hookedSignals[signal] = true
 
         local connections = getconnections(signal)
-        for _, conn in ipairs(connections) do
-            if limbData._migratedConns[conn] then continue end
-            local origCallback = conn.Function
-            
-            local success = pcall(hookfunction, origCallback, function(...)
-                if not limbData._suppressSignal then
-                    return origCallback(...)
-                end
-            end)
-            if not success then
-                
-                pcall(function()
-                    conn.Function = function(...)
-                        if not limbData._suppressSignal then
-                            return origCallback(...)
-                        end
-                    end
-                end)
-            end
-            limbData._migratedConns[conn] = true
-        end
+		for _, conn in ipairs(connections) do
+		    if limbData._migratedConns[conn] then continue end
+		    local origCallback = conn.Function
+		    local isRunning = false
+		
+		    local success = pcall(hookfunction, origCallback, function(...)
+		        if limbData._suppressSignal or isRunning then
+		            return
+		        end
+		        isRunning = true
+		        local result = origCallback(...) 
+		        isRunning = false
+		        return result
+		    end)
+		    if not success then
+		        pcall(function()
+		            conn.Function = function(...)
+		                if limbData._suppressSignal or isRunning then
+		                    return
+		                end
+		                isRunning = true
+		                local result = origCallback(...)
+		                isRunning = false
+		                return result
+		            end
+		        end)
+		    end
+		    limbData._migratedConns[conn] = true
+		end
     end
 
     hookSignalConnect(limb.Changed)
