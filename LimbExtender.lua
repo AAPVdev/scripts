@@ -173,15 +173,14 @@ local function wrapPartSignals(limb)
 
 		local connections = getconnections(signal)
 		for _, conn in ipairs(connections) do
-			if limbData._migratedConns[conn] then continue end
-			local origCallback = conn.Function
-			local success = pcall(hookfunction, origCallback, function() end)
-			if not success then
-				pcall(function()
-					conn.Function = function() end
-				end)
-			end
-			limbData._migratedConns[conn] = true
+		    if limbData._migratedConns[conn] then continue end
+		    local origCallback = conn.Function
+		    conn.Function = function(...)
+		        if not limbData._suppressSignal then
+		            return origCallback(...)
+		        end
+		    end
+		    limbData._migratedConns[conn] = true
 		end
 	end
 
@@ -219,20 +218,21 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 	end
 
 	mt.__newindex = function(self, key, value)
-		if not checkcaller() then
-			local data = getTargetData(self)
-			if data then
-				if BLOCKED_PROPS[key] then
-					data["Original"..key] = value
-					fireSignalsForProp(self, key)
-					return
-				end
-			end
-		else
-			limbData._suppressSignal = true
-		end
-		limbData._suppressSignal = false
-		return oldNewIndex(self, key, value)
+	    if not checkcaller() then
+	        local data = getTargetData(self)
+	        if data then
+	            if BLOCKED_PROPS[key] then
+	                data["Original"..key] = value
+	                fireSignalsForProp(self, key)
+	                return
+	            end
+	        end
+	        return oldNewIndex(self, key, value)
+	    else
+	        limbData._suppressSignal = true
+	        oldNewIndex(self, key, value)
+	        limbData._suppressSignal = false
+	    end
 	end
 
 	mt.__namecall = function(self, ...)
@@ -281,9 +281,14 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 		        local isTracked = limbData._hookedSignals[self] or (instance and limbData.instanceLookup[instance])
 		        if (key == "Connect" or key == "Once") and isTracked then
 		            local origMethod = origSignalIndex(self, key)
-		            return function(s, callback)
-		                return origMethod(s, function() end)
-		            end
+					return function(s, callback)
+					    local wrapped = function(...)
+					        if not limbData._suppressSignal then
+					            return callback(...)
+					        end
+					    end
+					    return origMethod(s, wrapped)
+					end
 		        end
 		    end
 		    return origSignalIndex(self, key)
