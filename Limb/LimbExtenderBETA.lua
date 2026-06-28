@@ -19,7 +19,6 @@ globalEnv.limbExtenderData = limbData
 local type, typeof = type, typeof
 local pcall = pcall
 local pairs, ipairs = pairs, ipairs
-local math_max = math.max
 local math_min = math.min
 local task_spawn = task.spawn
 local task_wait = task.wait
@@ -32,7 +31,7 @@ limbData.playerCache    = limbData.playerCache    or {}
 limbData.instanceLookup = limbData.instanceLookup or setmetatable({}, { __mode = "k" })
 limbData.npcIdCounter   = limbData.npcIdCounter   or 0
 limbData._migratedConns = limbData._migratedConns or setmetatable({}, { __mode = "k" })
-limbData._hookedSignals = limbData._hookedSignals or {}
+limbData._hookedSignals = limbData._hookedSignals or setmetatable({}, { __mode = "k" })
 limbData._wrappedParts  = limbData._wrappedParts  or setmetatable({}, { __mode = "k" })
 limbData._signalToInstance = limbData._signalToInstance or setmetatable({}, { __mode = "k" })
 
@@ -84,7 +83,7 @@ local BLOCKED_PROPS = {
 }
 
 local ESP_SOURCE_URL     = "https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/esp/SIXSEVENESP.lua"
-local MANAGER_SOURCE_URL = "https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/Limb/managerBETA.lua"
+local MANAGER_SOURCE_URL = "https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/manager/manager.lua"
 
 local GAME_SCRIPT_URLS = {
 	[1054526971] = "https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/games/brm5.lua",
@@ -157,78 +156,16 @@ local function write(limb, props)
 	end
 end
 
+function getTargetData(instance)
+	if typeof(instance) ~= "Instance" then return nil, nil end
+	local cached = limbData.instanceLookup[instance]
+	if cached then return cached.data, cached.type end
+	return nil, nil
+end
+
 local function wrapPartSignals(limb)
-	--[[if not BYPASS_AVAILABLE then return end
+	if not BYPASS_AVAILABLE then return end
 	if limbData._wrappedParts[limb] then return end
-
-	local lookup = limbData.instanceLookup[limb]
-	if not lookup or not lookup.data then return end
-	local data = lookup.data
-
-	local mt          = getrawmetatable(limb)
-	data._oldMetaIndex    = mt.__index
-    data._oldMetaNewIndex = mt.__newindex
-    data._oldMetaNamecall = mt.__namecall
-	setreadonly(mt, false)
-
-	mt.__index = function(self, key)
-		if not checkcaller() then
-			if BLOCKED_PROPS[key] then
-				return data["Original"..key]
-			end
-		end
-		return data._oldMetaIndex(self, key)
-	end
-
-	mt.__newindex = function(self, key, value)
-		if not checkcaller() then
-			if BLOCKED_PROPS[key] then
-				data["Original"..key] = value
-				fireSignalsForProp(self, key)
-				return
-			end
-		end
-		return data._oldMetaNewIndex(self, key, value)
-	end
-
-	mt.__namecall = function(self, ...)
-		if not checkcaller() then
-			local method = getnamecallmethod()
-			if method == "GetExtentsSize" then
-				if lookup and lookup.data then
-					local d           = lookup.data
-					local trueSize    = d.TrueSize
-					local trueExtents = d.TrueExtents
-					local spoofSize   = d.OriginalSize
-					if trueSize and trueExtents and spoofSize then
-						if spoofSize ~= trueSize then
-							local sx = spoofSize.X / trueSize.X
-							local sy = spoofSize.Y / trueSize.Y
-							local sz = spoofSize.Z / trueSize.Z
-							return Vector3_new(trueExtents.X * sx, trueExtents.Y * sy, trueExtents.Z * sz)
-						else
-							return trueExtents
-						end
-					end
-				end
-			elseif method == "GetPropertyChangedSignal" then
-				local dummySignal = setmetatable({}, {
-					__index = function(_, k)
-						if k == "Connect" or k == "Once" then
-							return function()
-								return { Disconnect = function() end }
-							end
-						end
-						return function() end
-					end
-				})
-				return dummySignal
-			end
-		end
-		return data._oldMetaNamecall(self, ...)
-	end
-
-	setreadonly(mt, true)
 
 	local function hookSignalConnect(signal)
 		if limbData._hookedSignals[signal] then return end
@@ -258,32 +195,101 @@ local function wrapPartSignals(limb)
 		task_wait()
 	end
 
-	limbData._wrappedParts[limb] = true]]
+	limbData._wrappedParts[limb] = true
 end
 
-local function unwrapPartSignals(limb)
-    --[[if not BYPASS_AVAILABLE then return end
-    if not limbData._wrappedParts[limb] then return end
+if BYPASS_AVAILABLE and not limbData._bypassInstalled then
+	limbData._bypassInstalled = true
+	local mt          = getrawmetatable(game)
+	local oldIndex    = mt.__index
+	local oldNewIndex = mt.__newindex
+	local oldNamecall = mt.__namecall
+	setreadonly(mt, false)
 
-    local lookup = limbData.instanceLookup[limb]
-    local data = lookup and lookup.data
-    if not data then return end
+	mt.__index = function(self, key)
+		if not checkcaller() then
+			local data = getTargetData(self)
+			if data then
+				if BLOCKED_PROPS[key] then
+					return data["Original"..key]
+				end
+			end
+		end
+		return oldIndex(self, key)
+	end
 
-    local mt = getrawmetatable(limb)
-    setreadonly(mt, false)
-    if data._oldMetaIndex then
-        mt.__index = data._oldMetaIndex
-        data._oldMetaIndex = nil
-    end
-    if data._oldMetaNewIndex then
-        mt.__newindex = data._oldMetaNewIndex
-        data._oldMetaNewIndex = nil
-    end
-    if data._oldMetaNamecall then
-        mt.__namecall = data._oldMetaNamecall
-        data._oldMetaNamecall = nil
-    end
-    setreadonly(mt, true)]]
+	mt.__newindex = function(self, key, value)
+		if not checkcaller() then
+			local data = getTargetData(self)
+			if data then
+				if BLOCKED_PROPS[key] then
+					data["Original"..key] = value
+					fireSignalsForProp(self, key)
+					return
+				end
+			end
+		else
+			limbData._suppressSignal = true
+		end
+		limbData._suppressSignal = false
+		return oldNewIndex(self, key, value)
+	end
+
+	mt.__namecall = function(self, ...)
+		if not checkcaller() then
+			local lookup = limbData.instanceLookup[self]
+			local method = getnamecallmethod()
+			if method == "GetExtentsSize" then
+				if lookup and lookup.data then
+					local d           = lookup.data
+					local trueSize    = d.TrueSize
+					local trueExtents = d.TrueExtents
+					local spoofSize   = d.OriginalSize
+					if trueSize and trueExtents and spoofSize then
+						if spoofSize ~= trueSize then
+							local sx = spoofSize.X / trueSize.X
+							local sy = spoofSize.Y / trueSize.Y
+							local sz = spoofSize.Z / trueSize.Z
+							return Vector3_new(trueExtents.X * sx, trueExtents.Y * sy, trueExtents.Z * sz)
+						else
+							return trueExtents
+						end
+					end
+				end
+			elseif method == "GetPropertyChangedSignal" then
+				local signal = oldNamecall(self, ...)
+				if typeof(signal) == "RBXScriptSignal" then
+					limbData._signalToInstance[signal] = self
+					limbData._hookedSignals[signal] = true
+				end
+				return signal
+			end
+		end
+		return oldNamecall(self, ...)
+	end
+	setreadonly(mt, true)
+
+	if not limbData._signalIndexHooked then
+		limbData._signalIndexHooked = true
+		local testSignal = game.Changed
+		local signalMt = getrawmetatable(testSignal)
+		local origSignalIndex = signalMt.__index
+		setreadonly(signalMt, false)
+		signalMt.__index = function(self, key)
+		    if not checkcaller() then
+		        local instance = limbData._signalToInstance[self]
+		        local isTracked = limbData._hookedSignals[self] or (instance and limbData.instanceLookup[instance])
+		        if (key == "Connect" or key == "Once") and isTracked then
+		            local origMethod = origSignalIndex(self, key)
+		            return function(s, callback)
+		                return origMethod(s, function() end)
+		            end
+		        end
+		    end
+		    return origSignalIndex(self, key)
+		end
+		setreadonly(signalMt, true)
+	end
 end
 
 local PROPS_TO_WATCH = {
@@ -453,8 +459,6 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 	local entry = cache[cacheKey]
 	if not entry then return end
 	
-	if entry.Limb then unwrapPartSignals(entry.Limb) limbData.instanceLookup[entry.Limb] = nil end
-	
 	if entry._watchConns then
 		for _, conn in ipairs(entry._watchConns) do
 			conn:Disconnect()
@@ -479,6 +483,7 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 		})
 	end
 
+	if entry.Limb then limbData.instanceLookup[entry.Limb] = nil end
 	if activeLimb and activeLimb ~= entry.Limb then limbData.instanceLookup[activeLimb] = nil end
 	if entry.Character then limbData.instanceLookup[entry.Character] = nil end
 	cache[cacheKey] = nil
@@ -497,9 +502,6 @@ local function reapplyCosmeticToEntry(entry, settings)
 end
 
 function LimbExtender:_applyLimbs(player, char, limb)
-	if player and not self._settings.PLAYER_ENABLED then return end
-	if not player and not self._settings.NPC_ENABLED then return end
-	
 	local cacheKey
 	if player then
 		cacheKey = player.Name
@@ -526,6 +528,7 @@ function LimbExtender:_applyLimbs(player, char, limb)
 end
 
 function LimbExtender:_removeLimbs(player, char, limb)
+	if self._suppressOnLimbLost then return end
 	local cacheKey = player and player.Name or self._npcIdMap[char]
 	sharedRestoreLimb(self, cacheKey, limb)
 	if self._ESP and char then self._ESP:Untrack(char) end
@@ -588,6 +591,8 @@ function LimbExtender:_processDirtyWork()
 		elseif self._dirtyCosmetic then
 			self._dirtyCosmetic = false
 			self:_doCosmeticUpdateBatched()
+		else
+			task.wait()
 		end
 	end
 
@@ -598,19 +603,47 @@ function LimbExtender:_processDirtyWork()
 end
 
 function LimbExtender:_doRestartBatched()
-    if not self._running then return end
-    self._manager:Stop()
+	if not self._running then return end
+	self._suppressOnLimbLost = true
+	self._manager:Stop()
 
-    table_clear(self._playerCache)
+	local cache = self._playerCache
+	local keys = {}
+	for k in pairs(cache) do table_insert(keys, k) end
 
-    if self._ESP then self._ESP:Stop() end
-    if not self._running then return end
+	local BATCH = 6
+	for i = 1, #keys, BATCH do
+		if not self._running then break end
+		local last = math_min(i + BATCH - 1, #keys)
+		for j = i, last do
+			local entry = cache[keys[j]]
+			if entry and entry.Limb then
+				sharedRestoreLimb(self, keys[j], entry.Limb)
+				if self._ESP and entry.Character then
+					self._ESP:Untrack(entry.Character)
+				end
+			elseif entry and entry.Character then
+				limbData.instanceLookup[entry.Character] = nil
+				if self._ESP then
+					self._ESP:Untrack(entry.Character)
+				end
+				cache[keys[j]] = nil
+			end
+		end
+		task_wait()
+	end
 
-    self._generation = self._generation + 1
-    self._managerGeneration = self._generation
-    self._manager:Start()
-    if self._ESP then self._ESP:Start() end
-    self:_runGameScriptIfNeeded()
+	self._suppressOnLimbLost = false
+	table_clear(cache)
+
+	if self._ESP then self._ESP:Stop() end
+	if not self._running then return end
+
+	self._generation = self._generation + 1
+	self._managerGeneration = self._generation
+	self._manager:Start()
+	if self._ESP then self._ESP:Start() end
+	self:_runGameScriptIfNeeded()
 end
 
 function LimbExtender:_doCosmeticUpdateBatched()
@@ -635,6 +668,43 @@ function LimbExtender:_doCosmeticUpdateBatched()
 end
 
 function LimbExtender:_runGameScriptIfNeeded()
+	local currentId = game.GameId
+	local url = GAME_SCRIPT_URLS[currentId]
+	if not url then return end
+
+	if self._customSetup then
+		task_spawn(function()
+			local success, result = pcall(self._customSetup)
+			if not success then
+				warn("[LimbExtender] Custom setup error: " .. tostring(result))
+			end
+		end)
+		return
+	end
+
+	if self._gameScriptFetched then return end
+	self._gameScriptFetched = true
+
+	task_spawn(function()
+		local ok, source = pcall(game.HttpGet, game, url)
+		if not ok or not source then
+			warn("[LimbExtender] Failed to fetch custom script: " .. tostring(source))
+			return
+		end
+		local fn, err = loadstring(source)
+		if not fn then
+			warn("[LimbExtender] Custom script compile error: " .. tostring(err))
+			return
+		end
+		local success, result = pcall(fn, self)
+		if not success then
+			warn("[LimbExtender] Custom script runtime error: " .. tostring(result))
+		end
+
+		if not self._customSetup then
+			warn("[LimbExtender] Custom script did not set _customSetup; it will not re-run on restarts.")
+		end
+	end)
 end
 
 function LimbExtender.new(userSettings)
@@ -652,6 +722,7 @@ function LimbExtender.new(userSettings)
 		_dirtyRestart        = false,
 		_dirtyCosmetic       = false,
 		_dirtyESP            = false,
+		_suppressOnLimbLost  = false,
 		_workScheduled       = false,
 		_restartLock 		 = false,
 		_generation 		 = 0,
