@@ -164,37 +164,47 @@ function getTargetData(instance)
 end
 
 local function wrapPartSignals(limb)
-	if not BYPASS_AVAILABLE then return end
-	if limbData._wrappedParts[limb] then return end
+    if not BYPASS_AVAILABLE then return end
+    if limbData._wrappedParts[limb] then return end
 
-	local function hookSignalConnect(signal)
-		if limbData._hookedSignals[signal] then return end
-		limbData._hookedSignals[signal] = true
+    local function hookSignalConnect(signal)
+        if limbData._hookedSignals[signal] then return end
+        limbData._hookedSignals[signal] = true
 
-		local connections = getconnections(signal)
-		for _, conn in ipairs(connections) do
-		    if limbData._migratedConns[conn] then continue end
-		    local origCallback = conn.Function
-		    conn.Function = function(...)
-		        if not limbData._suppressSignal then
-		            return origCallback(...)
-		        end
-		    end
-		    limbData._migratedConns[conn] = true
-		end
-	end
+        local connections = getconnections(signal)
+        for _, conn in ipairs(connections) do
+            if limbData._migratedConns[conn] then continue end
+            local origCallback = conn.Function
+            
+            local success = pcall(hookfunction, origCallback, function(...)
+                if not limbData._suppressSignal then
+                    return origCallback(...)
+                end
+            end)
+            if not success then
+                
+                pcall(function()
+                    conn.Function = function(...)
+                        if not limbData._suppressSignal then
+                            return origCallback(...)
+                        end
+                    end
+                end)
+            end
+            limbData._migratedConns[conn] = true
+        end
+    end
 
-	hookSignalConnect(limb.Changed)
+    hookSignalConnect(limb.Changed)
+    for prop, _ in pairs(BLOCKED_PROPS) do
+        local ok, sig = pcall(limb.GetPropertyChangedSignal, limb, prop)
+        if ok and sig then
+            hookSignalConnect(sig)
+        end
+        task_wait()
+    end
 
-	for prop, _ in pairs(BLOCKED_PROPS) do
-		local ok, sig = pcall(limb.GetPropertyChangedSignal, limb, prop)
-		if ok and sig then
-			hookSignalConnect(sig)
-		end
-		task_wait()
-	end
-
-	limbData._wrappedParts[limb] = true
+    limbData._wrappedParts[limb] = true
 end
 
 if BYPASS_AVAILABLE and not limbData._bypassInstalled then
