@@ -276,18 +276,17 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 		local origSignalIndex = signalMt.__index
 		setreadonly(signalMt, false)
 		signalMt.__index = function(self, key)
-			if not checkcaller() then
-				local instance = limbData._signalToInstance[self]
-				local isTracked = limbData._hookedSignals[self] or (instance and limbData.instanceLookup[instance])
-				if (key == "Connect" or key == "Once") and isTracked then
-					local origMethod = origSignalIndex(self, key)
-					return function(s, callback)
-
-						return origMethod(s, callback)
-					end
-				end
-			end
-			return origSignalIndex(self, key)
+		    if not checkcaller() then
+		        local instance = limbData._signalToInstance[self]
+		        local isTracked = limbData._hookedSignals[self] or (instance and limbData.instanceLookup[instance])
+		        if (key == "Connect" or key == "Once") and isTracked then
+		            local origMethod = origSignalIndex(self, key)
+		            return function(s, callback)
+		                return origMethod(s, function() end)
+		            end
+		        end
+		    end
+		    return origSignalIndex(self, key)
 		end
 		setreadonly(signalMt, true)
 	end
