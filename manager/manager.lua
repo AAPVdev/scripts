@@ -1320,57 +1320,6 @@ function Manager:_stopNPCTracking()
 	end
 end
 
-function Manager:_stopNPCTracking()
-	if not self._npcConnsStarted then return end
-	self._npcConnsStarted = false
-	self._generation = self._generation + 1
-
-	if self._npcConnections then
-		self._npcConnections:Destroy()
-		self._npcConnections = nil
-	end
-
-	local BATCH = 6
-
-	local npcObservers = {}
-	for _, observer in pairs(self._npcSet) do
-		if observer then npcObservers[#npcObservers + 1] = observer end
-	end
-	table_clear(self._npcSet)
-
-	local limbObservers = {}
-	for _, limbObs in pairs(self._npcLimbObservers) do
-		if limbObs then limbObservers[#limbObservers + 1] = limbObs end
-	end
-	table_clear(self._npcLimbObservers)
-
-	for model in pairs(self._pendingNPCWatchers) do
-		self:_cancelPendingNPCWatch(model)
-	end
-	table_clear(self._pendingNPCWatchers)
-
-	table_clear(self._dirUidMap)
-	table_clear(self._stringDirMap)
-	table_clear(self._npcDirOwners)
-
-	task_spawn(function()
-		for i = 1, #npcObservers, BATCH do
-			local last = math_min(i + BATCH - 1, #npcObservers)
-			for j = i, last do
-				npcObservers[j]:Destroy()
-			end
-			task.wait()
-		end
-		for i = 1, #limbObservers, BATCH do
-			local last = math_min(i + BATCH - 1, #limbObservers)
-			for j = i, last do
-				limbObservers[j]:Destroy()
-			end
-			task.wait()
-		end
-	end)
-end
-
 function Manager:Start()
 	if self._destroyed or self._running then return end
 	self._running = true
