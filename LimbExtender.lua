@@ -176,12 +176,17 @@ local function wrapPartSignals(limb)
 		for _, conn in ipairs(connections) do
 		    if limbData._migratedConns[conn] then continue end
 		    local origCallback = conn.Function
+			local safeRef = origCallback
 		    local isRunning = false
 		
-			local success = pcall(hookfunction, origCallback, function(...)
-			    if (limbData._suppressSignal or 0) > 0 then return end
-			    return origCallback(...)
-			end)
+		    local success = pcall(hookfunction, origCallback, function(...)
+		        if (limbData._suppressSignal or 0) > 0 then return end
+		        if isRunning then return end
+		        isRunning = true
+		        local result = safeRef(...)
+		        isRunning = false
+		        return result
+		    end)
 			
 		    limbData._migratedConns[conn] = true
 		end
@@ -284,9 +289,15 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 		        if (key == "Connect" or key == "Once") and isTracked then
 		            local origMethod = origSignalIndex(self, key)
 					return function(s, callback)
+					    local safeCallback = callback
+					    local isRunning = false
 					    local wrapped = function(...)
 					        if (limbData._suppressSignal or 0) > 0 then return end
-					        return callback(...)
+					        if isRunning then return end
+					        isRunning = true
+					        local result = safeCallback(...)
+					        isRunning = false
+					        return result
 					    end
 					    return origMethod(s, wrapped)
 					end
