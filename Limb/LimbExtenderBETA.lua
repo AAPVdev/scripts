@@ -216,24 +216,10 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 				if BLOCKED_PROPS[key] then
 					data["Original"..key] = value
 					fireSignalsForProp(self, key)
-					return
 				end
-			end
-			return oldNewIndex(self, key, value)
-		else
-			local entry = limbData.instanceLookup[self] and limbData.instanceLookup[self].data
-			if entry and entry._conns then
-				for _, conn in ipairs(entry._conns) do
-					pcall(function() conn:Disable() end)
-				end
-				oldNewIndex(self, key, value)
-				for _, conn in ipairs(entry._conns) do
-					pcall(function() conn:Enable() end)
-				end
-			else
-				oldNewIndex(self, key, value)
 			end
 		end
+		return oldNewIndex(self, key, value)
 	end
 
 	mt.__namecall = function(self, ...)
