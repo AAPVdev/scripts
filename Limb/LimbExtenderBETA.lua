@@ -34,7 +34,6 @@ limbData._migratedConns = limbData._migratedConns or setmetatable({}, { __mode =
 limbData._hookedSignals = limbData._hookedSignals or setmetatable({}, { __mode = "k" })
 limbData._wrappedParts  = limbData._wrappedParts  or setmetatable({}, { __mode = "k" })
 limbData._signalToInstance = limbData._signalToInstance or setmetatable({}, { __mode = "k" })
-limbData._suppressSignal = 0
 
 if type(limbData.terminate) == "function" then
 	limbData.terminate()
@@ -168,48 +167,24 @@ local function wrapPartSignals(limb)
 	if not BYPASS_AVAILABLE then return end
 	if limbData._wrappedParts[limb] then return end
 
-	local function hookSignalConnect(signal)
+	local entry = limbData.instanceLookup[limb] and limbData.instanceLookup[limb].data
+	if not entry then return end
+
+	local function collectConnections(signal)
 		if limbData._hookedSignals[signal] then return end
 		limbData._hookedSignals[signal] = true
 
 		local connections = getconnections(signal)
 		for _, conn in ipairs(connections) do
-			if limbData._migratedConns[conn] then continue end
-			local origCallback = conn.Function
-			local safeRef = origCallback
-			local isRunning = false
-
-			local newFunc = function(...)
-				local entry = limbData.instanceLookup[limb] and limbData.instanceLookup[limb].data
-				if entry and entry._silenced then return end
-				if (limbData._suppressSignal or 0) > 0 then return end
-				if isRunning then return end
-				isRunning = true
-				if entry then entry._acRunning = true end
-				local success, result = pcall(safeRef, ...)
-				if entry then entry._acRunning = false end
-				isRunning = false
-				if not success then
-					warn("[LimbExtender] Anti-cheat callback error: ", result)
-				end
-				return result
-			end
-
-			local success = pcall(hookfunction, origCallback, newFunc)
-			if not success then
-				pcall(function()
-					conn.Function = newFunc
-				end)
-			end
-			limbData._migratedConns[conn] = true
+			table_insert(entry._conns, conn)
 		end
 	end
 
-	hookSignalConnect(limb.Changed)
+	collectConnections(limb.Changed)
 	for prop, _ in pairs(BLOCKED_PROPS) do
 		local ok, sig = pcall(limb.GetPropertyChangedSignal, limb, prop)
 		if ok and sig then
-			hookSignalConnect(sig)
+			collectConnections(sig)
 		end
 		task_wait()
 	end
@@ -250,22 +225,17 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 			return oldNewIndex(self, key, value)
 		else
 			local entry = limbData.instanceLookup[self] and limbData.instanceLookup[self].data
-			if entry then
-				local waited = 0
-				local MAX_WAIT = 100
-				while entry._acRunning and waited < MAX_WAIT do
-					task.wait(0.03)
-					waited = waited + 1
+			if entry and entry._conns then
+				for _, conn in ipairs(entry._conns) do
+					pcall(function() conn:Disable() end)
 				end
-				if waited >= MAX_WAIT then
-					entry._acRunning = false
-					entry._silenced = true
-					warn("[LimbExtender] Lock timeout, silencing callbacks for: ", self)
+				oldNewIndex(self, key, value)
+				for _, conn in ipairs(entry._conns) do
+					pcall(function() conn:Enable() end)
 				end
+			else
+				oldNewIndex(self, key, value)
 			end
-			limbData._suppressSignal = (limbData._suppressSignal or 0) + 1
-			oldNewIndex(self, key, value)
-			limbData._suppressSignal = limbData._suppressSignal - 1
 		end
 	end
 
@@ -316,24 +286,14 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 				if (key == "Connect" or key == "Once") and isTracked then
 					local origMethod = origSignalIndex(self, key)
 					return function(s, callback)
-						local safeCallback = callback
-						local isRunning = false
-						local wrapped = function(...)
-							local entry = instance and limbData.instanceLookup[instance] and limbData.instanceLookup[instance].data
-							if entry and entry._silenced then return end
-							if (limbData._suppressSignal or 0) > 0 then return end
-							if isRunning then return end
-							isRunning = true
-							if entry then entry._acRunning = true end
-							local success, result = pcall(safeCallback, ...)
-							if entry then entry._acRunning = false end
-							isRunning = false
-							if not success then
-								warn("[LimbExtender] New connection callback error: ", result)
+						local conn = origMethod(s, callback)
+						if instance then
+							local entry = limbData.instanceLookup[instance] and limbData.instanceLookup[instance].data
+							if entry and entry._conns then
+								table_insert(entry._conns, conn)
 							end
-							return result
 						end
-						return origMethod(s, wrapped)
+						return conn
 					end
 				end
 			end
@@ -463,6 +423,7 @@ local function sharedSaveData(parent, cacheKey, char, limb)
 	entry.OriginalRootPriority = limb.RootPriority or 0
 	if not entry.TrueSize    then entry.TrueSize    = entry.OriginalSize end
 	if not entry.TrueExtents then entry.TrueExtents = extents end
+	entry._conns = entry._conns or {}
 	limbData.instanceLookup[limb] = { data = entry, type = "Part" }
 	limbData.instanceLookup[char] = { data = entry, type = "Model" }
 end
@@ -479,6 +440,18 @@ local function applyEntryTargets(entry, props, newVec, isHRP, settings)
 	end
 end
 
+local function attachCollisionGuard(entry, limb, char, settings)
+	if settings.LIMB_CAN_COLLIDE then return end
+	local FORCE_NO_COLLIDE = { CanCollide = false }
+	local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+	if not humanoid then return end
+	local function forceCollisions()
+		write(limb, FORCE_NO_COLLIDE)
+	end
+	entry._humanoidStateConn = humanoid.StateChanged:Connect(forceCollisions)
+	forceCollisions()
+end
+
 local function sharedApplyLimb(parent, cacheKey, char, limb)
 	sharedSaveData(parent, cacheKey, char, limb)
 	local entry = parent._playerCache[cacheKey]
@@ -489,7 +462,8 @@ local function sharedApplyLimb(parent, cacheKey, char, limb)
 	write(limb, props)
 	applyEntryTargets(entry, props, newVec, isHRP, parent._settings)
 
-	setupLimbWatchdog(entry, limb)
+	if not BYPASS_AVAILABLE then setupLimbWatchdog(entry, limb) end
+	attachCollisionGuard(entry, limb, char, parent._settings)
 end
 
 local function sharedRestoreLimb(parent, cacheKey, activeLimb)
@@ -509,6 +483,7 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 	entry.TargetCanCollide               = nil
 	entry.TargetMassless                 = nil
 	entry.TargetRootPriority             = nil
+	entry._conns = nil
 
 	if activeLimb and activeLimb.Parent then
 		if entry._humanoidStateConn then entry._humanoidStateConn:Disconnect() end
@@ -535,7 +510,8 @@ local function reapplyCosmeticToEntry(entry, settings)
 	write(limb, props)
 	applyEntryTargets(entry, props, newVec, isHRP, settings)
 
-	setupLimbWatchdog(entry, limb)
+	if not BYPASS_AVAILABLE then setupLimbWatchdog(entry, limb) end
+	attachCollisionGuard(entry, limb, entry.Character, settings)
 end
 
 function LimbExtender:_applyLimbs(player, char, limb)
