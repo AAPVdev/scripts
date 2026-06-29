@@ -164,32 +164,29 @@ function getTargetData(instance)
 end
 
 local function wrapPartSignals(limb)
-	if not BYPASS_AVAILABLE then return end
-	if limbData._wrappedParts[limb] then return end
+    if not BYPASS_AVAILABLE then return end
+    if limbData._wrappedParts[limb] then return end
 
-	local entry = limbData.instanceLookup[limb] and limbData.instanceLookup[limb].data
-	if not entry then return end
+    local function hookSignalConnect(signal)
+        if limbData._hookedSignals[signal] then return end
+        limbData._hookedSignals[signal] = true
 
-	local function collectConnections(signal)
-		if limbData._hookedSignals[signal] then return end
-		limbData._hookedSignals[signal] = true
+        local connections = getconnections(signal)
+        for _, conn in ipairs(connections) do
+            pcall(function() conn:Disable() end)
+        end
+    end
 
-		local connections = getconnections(signal)
-		for _, conn in ipairs(connections) do
-			table_insert(entry._conns, conn)
-		end
-	end
+    hookSignalConnect(limb.Changed)
+    for prop, _ in pairs(BLOCKED_PROPS) do
+        local ok, sig = pcall(limb.GetPropertyChangedSignal, limb, prop)
+        if ok and sig then
+            hookSignalConnect(sig)
+        end
+        task_wait()
+    end
 
-	collectConnections(limb.Changed)
-	for prop, _ in pairs(BLOCKED_PROPS) do
-		local ok, sig = pcall(limb.GetPropertyChangedSignal, limb, prop)
-		if ok and sig then
-			collectConnections(sig)
-		end
-		task_wait()
-	end
-
-	limbData._wrappedParts[limb] = true
+    limbData._wrappedParts[limb] = true
 end
 
 if BYPASS_AVAILABLE and not limbData._bypassInstalled then
@@ -280,24 +277,19 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 		local origSignalIndex = signalMt.__index
 		setreadonly(signalMt, false)
 		signalMt.__index = function(self, key)
-			if not checkcaller() then
-				local instance = limbData._signalToInstance[self]
-				local isTracked = limbData._hookedSignals[self] or (instance and limbData.instanceLookup[instance])
-				if (key == "Connect" or key == "Once") and isTracked then
-					local origMethod = origSignalIndex(self, key)
-					return function(s, callback)
-						local conn = origMethod(s, callback)
-						if instance then
-							local entry = limbData.instanceLookup[instance] and limbData.instanceLookup[instance].data
-							if entry and entry._conns then
-								table_insert(entry._conns, conn)
-							end
-						end
-						return conn
-					end
-				end
-			end
-			return origSignalIndex(self, key)
+		    if not checkcaller() then
+		        local instance = limbData._signalToInstance[self]
+		        local isTracked = limbData._hookedSignals[self] or (instance and limbData.instanceLookup[instance])
+		        if (key == "Connect" or key == "Once") and isTracked then
+		            local origMethod = origSignalIndex(self, key)
+		            return function(s, callback)
+		                local conn = origMethod(s, callback)
+		                pcall(function() conn:Disable() end)
+		                return conn
+		            end
+		        end
+		    end
+		    return origSignalIndex(self, key)
 		end
 		setreadonly(signalMt, true)
 	end
