@@ -30,11 +30,11 @@ local Vector3_new = Vector3.new
 limbData.playerCache    = limbData.playerCache    or {}
 limbData.instanceLookup = limbData.instanceLookup or setmetatable({}, { __mode = "k" })
 limbData.npcIdCounter   = limbData.npcIdCounter   or 0
-limbData._suppressSignal = limbData._suppressSignal or 0
 limbData._migratedConns = limbData._migratedConns or setmetatable({}, { __mode = "k" })
 limbData._hookedSignals = limbData._hookedSignals or setmetatable({}, { __mode = "k" })
 limbData._wrappedParts  = limbData._wrappedParts  or setmetatable({}, { __mode = "k" })
 limbData._signalToInstance = limbData._signalToInstance or setmetatable({}, { __mode = "k" })
+limbData._suppressSignal = 0
 
 if type(limbData.terminate) == "function" then
 	limbData.terminate()
@@ -165,38 +165,56 @@ function getTargetData(instance)
 end
 
 local function wrapPartSignals(limb)
-    if not BYPASS_AVAILABLE then return end
-    if limbData._wrappedParts[limb] then return end
+	if not BYPASS_AVAILABLE then return end
+	if limbData._wrappedParts[limb] then return end
 
-    local function hookSignalConnect(signal)
-        if limbData._hookedSignals[signal] then return end
-        limbData._hookedSignals[signal] = true
+	local function hookSignalConnect(signal)
+		if limbData._hookedSignals[signal] then return end
+		limbData._hookedSignals[signal] = true
 
-        local connections = getconnections(signal)
+		local connections = getconnections(signal)
 		for _, conn in ipairs(connections) do
-		    if limbData._migratedConns[conn] then continue end
-		    local origCallback = conn.Function
-		    local isRunning = false
-		
-			local success = pcall(hookfunction, origCallback, function(...)
-			    if (limbData._suppressSignal or 0) > 0 then return end
-			    return origCallback(...)
-			end)
-			
-		    limbData._migratedConns[conn] = true
+			if limbData._migratedConns[conn] then continue end
+			local origCallback = conn.Function
+			local safeRef = origCallback
+			local isRunning = false
+
+			local newFunc = function(...)
+				local entry = limbData.instanceLookup[limb] and limbData.instanceLookup[limb].data
+				if entry and entry._silenced then return end
+				if (limbData._suppressSignal or 0) > 0 then return end
+				if isRunning then return end
+				isRunning = true
+				if entry then entry._acRunning = true end
+				local success, result = pcall(safeRef, ...)
+				if entry then entry._acRunning = false end
+				isRunning = false
+				if not success then
+					warn("[LimbExtender] Anti-cheat callback error: ", result)
+				end
+				return result
+			end
+
+			local success = pcall(hookfunction, origCallback, newFunc)
+			if not success then
+				pcall(function()
+					conn.Function = newFunc
+				end)
+			end
+			limbData._migratedConns[conn] = true
 		end
-    end
+	end
 
-    hookSignalConnect(limb.Changed)
-    for prop, _ in pairs(BLOCKED_PROPS) do
-        local ok, sig = pcall(limb.GetPropertyChangedSignal, limb, prop)
-        if ok and sig then
-            hookSignalConnect(sig)
-        end
-        task_wait()
-    end
+	hookSignalConnect(limb.Changed)
+	for prop, _ in pairs(BLOCKED_PROPS) do
+		local ok, sig = pcall(limb.GetPropertyChangedSignal, limb, prop)
+		if ok and sig then
+			hookSignalConnect(sig)
+		end
+		task_wait()
+	end
 
-    limbData._wrappedParts[limb] = true
+	limbData._wrappedParts[limb] = true
 end
 
 if BYPASS_AVAILABLE and not limbData._bypassInstalled then
@@ -220,21 +238,35 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 	end
 
 	mt.__newindex = function(self, key, value)
-	    if not checkcaller() then
-	        local data = getTargetData(self)
-	        if data then
-	            if BLOCKED_PROPS[key] then
-	                data["Original"..key] = value
-	                fireSignalsForProp(self, key)
-	                return
-	            end
-	        end
-	        return oldNewIndex(self, key, value)
-	    else
-	        limbData._suppressSignal = limbData._suppressSignal + 1
-	        oldNewIndex(self, key, value)
-	        limbData._suppressSignal = limbData._suppressSignal - 1
-	    end
+		if not checkcaller() then
+			local data = getTargetData(self)
+			if data then
+				if BLOCKED_PROPS[key] then
+					data["Original"..key] = value
+					fireSignalsForProp(self, key)
+					return
+				end
+			end
+			return oldNewIndex(self, key, value)
+		else
+			local entry = limbData.instanceLookup[self] and limbData.instanceLookup[self].data
+			if entry then
+				local waited = 0
+				local MAX_WAIT = 100
+				while entry._acRunning and waited < MAX_WAIT do
+					task.wait(0.03)
+					waited = waited + 1
+				end
+				if waited >= MAX_WAIT then
+					entry._acRunning = false
+					entry._silenced = true
+					warn("[LimbExtender] Lock timeout, silencing callbacks for: ", self)
+				end
+			end
+			limbData._suppressSignal = (limbData._suppressSignal or 0) + 1
+			oldNewIndex(self, key, value)
+			limbData._suppressSignal = limbData._suppressSignal - 1
+		end
 	end
 
 	mt.__namecall = function(self, ...)
@@ -278,21 +310,34 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 		local origSignalIndex = signalMt.__index
 		setreadonly(signalMt, false)
 		signalMt.__index = function(self, key)
-		    if not checkcaller() then
-		        local instance = limbData._signalToInstance[self]
-		        local isTracked = limbData._hookedSignals[self] or (instance and limbData.instanceLookup[instance])
-		        if (key == "Connect" or key == "Once") and isTracked then
-		            local origMethod = origSignalIndex(self, key)
+			if not checkcaller() then
+				local instance = limbData._signalToInstance[self]
+				local isTracked = limbData._hookedSignals[self] or (instance and limbData.instanceLookup[instance])
+				if (key == "Connect" or key == "Once") and isTracked then
+					local origMethod = origSignalIndex(self, key)
 					return function(s, callback)
-					    local wrapped = function(...)
-					        if (limbData._suppressSignal or 0) > 0 then return end
-					        return callback(...)
-					    end
-					    return origMethod(s, wrapped)
+						local safeCallback = callback
+						local isRunning = false
+						local wrapped = function(...)
+							local entry = instance and limbData.instanceLookup[instance] and limbData.instanceLookup[instance].data
+							if entry and entry._silenced then return end
+							if (limbData._suppressSignal or 0) > 0 then return end
+							if isRunning then return end
+							isRunning = true
+							if entry then entry._acRunning = true end
+							local success, result = pcall(safeCallback, ...)
+							if entry then entry._acRunning = false end
+							isRunning = false
+							if not success then
+								warn("[LimbExtender] New connection callback error: ", result)
+							end
+							return result
+						end
+						return origMethod(s, wrapped)
 					end
-		        end
-		    end
-		    return origSignalIndex(self, key)
+				end
+			end
+			return origSignalIndex(self, key)
 		end
 		setreadonly(signalMt, true)
 	end
@@ -451,7 +496,7 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 	local cache = parent._playerCache
 	local entry = cache[cacheKey]
 	if not entry then return end
-	
+
 	if entry._watchConns then
 		for _, conn in ipairs(entry._watchConns) do
 			conn:Disconnect()
@@ -466,6 +511,7 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 	entry.TargetRootPriority             = nil
 
 	if activeLimb and activeLimb.Parent then
+		if entry._humanoidStateConn then entry._humanoidStateConn:Disconnect() end
 		pcall(write, activeLimb, {
 			Size                     = entry.OriginalSize,
 			Transparency             = entry.OriginalTransparency,
@@ -483,6 +529,7 @@ end
 
 local function reapplyCosmeticToEntry(entry, settings)
 	local limb = entry.Limb
+	if entry._humanoidStateConn then entry._humanoidStateConn:Disconnect() end
 
 	local props, newVec, isHRP = buildLimbProps(limb, entry, settings)
 	write(limb, props)
