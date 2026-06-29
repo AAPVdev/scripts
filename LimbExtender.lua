@@ -108,21 +108,20 @@ local function ensureMANAGERLoaded()
 end
 
 local function fireSignalsForProp(limb, prop)
-    -- Fire limb.Changed listeners
+    
     local changedSig = limb.Changed
     local changedConns = limbData._signalConnections[changedSig]
     if changedConns then
         for _, entry in ipairs(changedConns) do
-            entry.connection:Fire(prop)  -- Changed passes the property name
+            entry.connection:Fire(prop)  
         end
     end
 
-    -- Fire property-specific listeners
     local propSig = limb:GetPropertyChangedSignal(prop)
     local propConns = limbData._signalConnections[propSig]
     if propConns then
         for _, entry in ipairs(propConns) do
-            entry.connection:Fire()  -- property-specific signals fire with no args (or you can pass prop if needed)
+            entry.connection:Fire()  
         end
     end
 end
@@ -182,17 +181,17 @@ end
 local function wrapPartSignals(limb)
     if not BYPASS_AVAILABLE then return end
 
-	local function hookSignalConnect(signal, signalKey) -- signalKey can be "Changed" or prop name
+	local function hookSignalConnect(signal, signalKey) 
 	    local connections = getconnections(signal)
 	    for _, conn in ipairs(connections) do
 	        pcall(function() conn:Disable() end)
-	        -- Store for later manual firing
+	        
 	        if not limbData._signalConnections[signal] then
 	            limbData._signalConnections[signal] = {}
 	        end
 	        table.insert(limbData._signalConnections[signal], {
 	            connection = conn,
-	            signalType = signalKey   -- helps us know what arguments to pass
+	            signalType = signalKey   
 	        })
 	    end
 	end
@@ -203,7 +202,7 @@ local function wrapPartSignals(limb)
 	for prop, _ in pairs(BLOCKED_PROPS) do
 	    local ok, sig = pcall(limb.GetPropertyChangedSignal, limb, prop)
 	    if ok and sig then
-	        hookSignalConnect(sig, prop)  -- store with the property name
+	        hookSignalConnect(sig, prop)  
 	    end
 	    task.wait()
 	end
@@ -265,12 +264,12 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 					end
 				end
 			elseif method == "GetPropertyChangedSignal" then
-			    local propertyName = ...  -- first argument
+			    local propertyName = ...  
 			    local signal = oldNamecall(self, ...)
 			    if typeof(signal) == "RBXScriptSignal" then
 			        limbData._signalToInstance[signal] = self
 			        limbData._hookedSignals[signal] = true
-			        limbData._signalType[signal] = propertyName  -- new
+			        limbData._signalType[signal] = propertyName  
 			    end
 			    return signal
 			end
@@ -285,11 +284,11 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 		local signalMt = getrawmetatable(testSignal)
 		local origSignalIndex = signalMt.__index
 
-		local inSignalHook = false  -- recursion guard
+		local inSignalHook = false  
 
 		setreadonly(signalMt, false)
 		signalMt.__index = function(self, key)
-			-- If we're inside a getconnections call, just return the original method
+			
 			if inSignalHook then
 				return origSignalIndex(self, key)
 			end
@@ -302,22 +301,21 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 					local origMethod = origSignalIndex(self, key)
 
 					return function(s, callback)
-						-- Allow the real connection to be created
+						
 						local conn = origMethod(s, callback)
 
-						-- Now fetch the ConnectionProxy list safely
 						inSignalHook = true
 						local connections = getconnections(s)
 						for _, c in ipairs(connections) do
 							if c.Function == callback then
 							    c:Disable()
-							    -- Store for later manual firing
+							    
 							    if not limbData._signalConnections[s] then
 							        limbData._signalConnections[s] = {}
 							    end
 							    table.insert(limbData._signalConnections[s], {
 							        connection = c,
-							        signalType = limbData._signalType[s]  -- from _signalType mapping
+							        signalType = limbData._signalType[s]  
 							    })
 							    break
 							end
