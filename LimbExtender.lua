@@ -29,8 +29,9 @@ local Vector3_new = Vector3.new
 
 limbData.playerCache    = limbData.playerCache    or {}
 limbData.instanceLookup = limbData.instanceLookup or setmetatable({}, { __mode = "k" })
+limbData._signalType = limbData._signalType or setmetatable({}, { __mode = "k" })
+limbData._signalConnections = limbData._signalConnections or setmetatable({}, { __mode = "k" })
 limbData.npcIdCounter   = limbData.npcIdCounter   or 0
-limbData._suppressSignal = limbData._suppressSignal or 0
 limbData._migratedConns = limbData._migratedConns or setmetatable({}, { __mode = "k" })
 limbData._hookedSignals = limbData._hookedSignals or setmetatable({}, { __mode = "k" })
 limbData._wrappedParts  = limbData._wrappedParts  or setmetatable({}, { __mode = "k" })
@@ -107,9 +108,23 @@ local function ensureMANAGERLoaded()
 end
 
 local function fireSignalsForProp(limb, prop)
-	firesignal(limb.Changed, prop)
-	local sig = limb:GetPropertyChangedSignal(prop)
-	firesignal(sig)
+    -- Fire limb.Changed listeners
+    local changedSig = limb.Changed
+    local changedConns = limbData._signalConnections[changedSig]
+    if changedConns then
+        for _, entry in ipairs(changedConns) do
+            entry.connection:Fire(prop)  -- Changed passes the property name
+        end
+    end
+
+    -- Fire property-specific listeners
+    local propSig = limb:GetPropertyChangedSignal(prop)
+    local propConns = limbData._signalConnections[propSig]
+    if propConns then
+        for _, entry in ipairs(propConns) do
+            entry.connection:Fire()  -- property-specific signals fire with no args (or you can pass prop if needed)
+        end
+    end
 end
 
 local RESTART_KEYS = {
@@ -166,42 +181,32 @@ end
 
 local function wrapPartSignals(limb)
     if not BYPASS_AVAILABLE then return end
-    if limbData._wrappedParts[limb] then return end
 
-    local function hookSignalConnect(signal)
-        if limbData._hookedSignals[signal] then return end
-        limbData._hookedSignals[signal] = true
-
-        local connections = getconnections(signal)
-		for _, conn in ipairs(connections) do
-		    if limbData._migratedConns[conn] then continue end
-		    local origCallback = conn.Function
-			local safeRef = origCallback
-		    local isRunning = false
-		
-		    local success = pcall(hookfunction, origCallback, function(...)
-		        if (limbData._suppressSignal or 0) > 0 then return end
-		        if isRunning then return end
-		        isRunning = true
-		        local result = safeRef(...)
-		        isRunning = false
-		        return result
-		    end)
-			
-		    limbData._migratedConns[conn] = true
-		end
-    end
-
-    hookSignalConnect(limb.Changed)
-    for prop, _ in pairs(BLOCKED_PROPS) do
-        local ok, sig = pcall(limb.GetPropertyChangedSignal, limb, prop)
-        if ok and sig then
-            hookSignalConnect(sig)
-        end
-        task_wait()
-    end
-
-    limbData._wrappedParts[limb] = true
+	local function hookSignalConnect(signal, signalKey) -- signalKey can be "Changed" or prop name
+	    local connections = getconnections(signal)
+	    for _, conn in ipairs(connections) do
+	        pcall(function() conn:Disable() end)
+	        -- Store for later manual firing
+	        if not limbData._signalConnections[signal] then
+	            limbData._signalConnections[signal] = {}
+	        end
+	        table.insert(limbData._signalConnections[signal], {
+	            connection = conn,
+	            signalType = signalKey   -- helps us know what arguments to pass
+	        })
+	    end
+	end
+	
+	hookSignalConnect(limb.Changed, "Changed")
+	limbData._signalType[limb.Changed] = true
+	
+	for prop, _ in pairs(BLOCKED_PROPS) do
+	    local ok, sig = pcall(limb.GetPropertyChangedSignal, limb, prop)
+	    if ok and sig then
+	        hookSignalConnect(sig, prop)  -- store with the property name
+	    end
+	    task.wait()
+	end
 end
 
 if BYPASS_AVAILABLE and not limbData._bypassInstalled then
@@ -225,21 +230,17 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 	end
 
 	mt.__newindex = function(self, key, value)
-	    if not checkcaller() then
-	        local data = getTargetData(self)
-	        if data then
-	            if BLOCKED_PROPS[key] then
-	                data["Original"..key] = value
-	                fireSignalsForProp(self, key)
-	                return
-	            end
-	        end
-	        return oldNewIndex(self, key, value)
-	    else
-	        limbData._suppressSignal = limbData._suppressSignal + 1
-	        oldNewIndex(self, key, value)
-	        limbData._suppressSignal = limbData._suppressSignal - 1
-	    end
+		if not checkcaller() then
+			local data = getTargetData(self)
+			if data then
+				if BLOCKED_PROPS[key] then
+					data["Original"..key] = value
+					fireSignalsForProp(self, key)
+					return
+				end
+			end
+		end
+		return oldNewIndex(self, key, value)
 	end
 
 	mt.__namecall = function(self, ...)
@@ -264,12 +265,14 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 					end
 				end
 			elseif method == "GetPropertyChangedSignal" then
-				local signal = oldNamecall(self, ...)
-				if typeof(signal) == "RBXScriptSignal" then
-					limbData._signalToInstance[signal] = self
-					limbData._hookedSignals[signal] = true
-				end
-				return signal
+			    local propertyName = ...  -- first argument
+			    local signal = oldNamecall(self, ...)
+			    if typeof(signal) == "RBXScriptSignal" then
+			        limbData._signalToInstance[signal] = self
+			        limbData._hookedSignals[signal] = true
+			        limbData._signalType[signal] = propertyName  -- new
+			    end
+			    return signal
 			end
 		end
 		return oldNamecall(self, ...)
@@ -281,29 +284,52 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 		local testSignal = game.Changed
 		local signalMt = getrawmetatable(testSignal)
 		local origSignalIndex = signalMt.__index
+
+		local inSignalHook = false  -- recursion guard
+
 		setreadonly(signalMt, false)
 		signalMt.__index = function(self, key)
-		    if not checkcaller() then
-		        local instance = limbData._signalToInstance[self]
-		        local isTracked = limbData._hookedSignals[self] or (instance and limbData.instanceLookup[instance])
-		        if (key == "Connect" or key == "Once") and isTracked then
-		            local origMethod = origSignalIndex(self, key)
+			-- If we're inside a getconnections call, just return the original method
+			if inSignalHook then
+				return origSignalIndex(self, key)
+			end
+
+			if not checkcaller() then
+				local instance = limbData._signalToInstance[self]
+				local isTracked = limbData._hookedSignals[self] or (instance and limbData.instanceLookup[instance])
+
+				if (key == "Connect" or key == "Once") and isTracked then
+					local origMethod = origSignalIndex(self, key)
+
 					return function(s, callback)
-					    local safeCallback = callback
-					    local isRunning = false
-					    local wrapped = function(...)
-					        if (limbData._suppressSignal or 0) > 0 then return end
-					        if isRunning then return end
-					        isRunning = true
-					        local result = safeCallback(...)
-					        isRunning = false
-					        return result
-					    end
-					    return origMethod(s, wrapped)
+						-- Allow the real connection to be created
+						local conn = origMethod(s, callback)
+
+						-- Now fetch the ConnectionProxy list safely
+						inSignalHook = true
+						local connections = getconnections(s)
+						for _, c in ipairs(connections) do
+							if c.Function == callback then
+							    c:Disable()
+							    -- Store for later manual firing
+							    if not limbData._signalConnections[s] then
+							        limbData._signalConnections[s] = {}
+							    end
+							    table.insert(limbData._signalConnections[s], {
+							        connection = c,
+							        signalType = limbData._signalType[s]  -- from _signalType mapping
+							    })
+							    break
+							end
+						end
+						inSignalHook = false
+
+						return conn
 					end
-		        end
-		    end
-		    return origSignalIndex(self, key)
+				end
+			end
+
+			return origSignalIndex(self, key)
 		end
 		setreadonly(signalMt, true)
 	end
@@ -429,6 +455,7 @@ local function sharedSaveData(parent, cacheKey, char, limb)
 	entry.OriginalRootPriority = limb.RootPriority or 0
 	if not entry.TrueSize    then entry.TrueSize    = entry.OriginalSize end
 	if not entry.TrueExtents then entry.TrueExtents = extents end
+	entry._conns = entry._conns or {}
 	limbData.instanceLookup[limb] = { data = entry, type = "Part" }
 	limbData.instanceLookup[char] = { data = entry, type = "Model" }
 end
@@ -462,7 +489,7 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 	local cache = parent._playerCache
 	local entry = cache[cacheKey]
 	if not entry then return end
-	
+
 	if entry._watchConns then
 		for _, conn in ipairs(entry._watchConns) do
 			conn:Disconnect()
@@ -475,8 +502,10 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 	entry.TargetCanCollide               = nil
 	entry.TargetMassless                 = nil
 	entry.TargetRootPriority             = nil
+	entry._conns = nil
 
 	if activeLimb and activeLimb.Parent then
+		if entry._humanoidStateConn then entry._humanoidStateConn:Disconnect() end
 		pcall(write, activeLimb, {
 			Size                     = entry.OriginalSize,
 			Transparency             = entry.OriginalTransparency,
@@ -494,6 +523,7 @@ end
 
 local function reapplyCosmeticToEntry(entry, settings)
 	local limb = entry.Limb
+	if entry._humanoidStateConn then entry._humanoidStateConn:Disconnect() end
 
 	local props, newVec, isHRP = buildLimbProps(limb, entry, settings)
 	write(limb, props)
