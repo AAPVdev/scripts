@@ -29,6 +29,7 @@ local Vector3_new = Vector3.new
 
 limbData.playerCache    = limbData.playerCache    or {}
 limbData.instanceLookup = limbData.instanceLookup or setmetatable({}, { __mode = "k" })
+limbData._signalType = limbData._signalType or {}  -- [signal] = "Changed" or "Transparency" etc.
 limbData.npcIdCounter   = limbData.npcIdCounter   or 0
 limbData._migratedConns = limbData._migratedConns or setmetatable({}, { __mode = "k" })
 limbData._hookedSignals = limbData._hookedSignals or setmetatable({}, { __mode = "k" })
@@ -106,9 +107,23 @@ local function ensureMANAGERLoaded()
 end
 
 local function fireSignalsForProp(limb, prop)
-	firesignal(limb.Changed, prop)
-	local sig = limb:GetPropertyChangedSignal(prop)
-	firesignal(sig)
+    -- Fire limb.Changed listeners
+    local changedSig = limb.Changed
+    local changedConns = limbData._signalConnections[changedSig]
+    if changedConns then
+        for _, entry in ipairs(changedConns) do
+            entry.connection:Fire(prop)  -- Changed passes the property name
+        end
+    end
+
+    -- Fire property-specific listeners
+    local propSig = limb:GetPropertyChangedSignal(prop)
+    local propConns = limbData._signalConnections[propSig]
+    if propConns then
+        for _, entry in ipairs(propConns) do
+            entry.connection:Fire()  -- property-specific signals fire with no args (or you can pass prop if needed)
+        end
+    end
 end
 
 local RESTART_KEYS = {
@@ -167,15 +182,31 @@ local function wrapPartSignals(limb)
     if not BYPASS_AVAILABLE then return end
     if limbData._wrappedParts[limb] then return end
 
-    local function hookSignalConnect(signal)
-        if limbData._hookedSignals[signal] then return end
-        limbData._hookedSignals[signal] = true
-
-        local connections = getconnections(signal)
-        for _, conn in ipairs(connections) do
-            pcall(function() conn:Disable() end)
-        end
-    end
+	local function hookSignalConnect(signal, signalKey) -- signalKey can be "Changed" or prop name
+	    local connections = getconnections(signal)
+	    for _, conn in ipairs(connections) do
+	        pcall(function() conn:Disable() end)
+	        -- Store for later manual firing
+	        if not limbData._signalConnections[signal] then
+	            limbData._signalConnections[signal] = {}
+	        end
+	        table.insert(limbData._signalConnections[signal], {
+	            connection = conn,
+	            signalType = signalKey   -- helps us know what arguments to pass
+	        })
+	    end
+	end
+	
+	hookSignalConnect(limb.Changed, "Changed")
+	limbData._signalType[limb.Changed] = "Changed"
+	
+	for prop, _ in pairs(BLOCKED_PROPS) do
+	    local ok, sig = pcall(limb.GetPropertyChangedSignal, limb, prop)
+	    if ok and sig then
+	        hookSignalConnect(sig, prop)  -- store with the property name
+	    end
+	    task.wait()
+	end
 
     hookSignalConnect(limb.Changed)
     for prop, _ in pairs(BLOCKED_PROPS) do
@@ -244,12 +275,14 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 					end
 				end
 			elseif method == "GetPropertyChangedSignal" then
-				local signal = oldNamecall(self, ...)
-				if typeof(signal) == "RBXScriptSignal" then
-					limbData._signalToInstance[signal] = self
-					limbData._hookedSignals[signal] = true
-				end
-				return signal
+			    local propertyName = ...  -- first argument
+			    local signal = oldNamecall(self, ...)
+			    if typeof(signal) == "RBXScriptSignal" then
+			        limbData._signalToInstance[signal] = self
+			        limbData._hookedSignals[signal] = true
+			        limbData._signalType[signal] = propertyName  -- new
+			    end
+			    return signal
 			end
 		end
 		return oldNamecall(self, ...)
