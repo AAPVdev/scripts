@@ -180,7 +180,6 @@ end
 
 local function wrapPartSignals(limb)
     if not BYPASS_AVAILABLE then return end
-    if limbData._wrappedParts[limb] then return end
 
 	local function hookSignalConnect(signal, signalKey) -- signalKey can be "Changed" or prop name
 	    local connections = getconnections(signal)
@@ -198,7 +197,7 @@ local function wrapPartSignals(limb)
 	end
 	
 	hookSignalConnect(limb.Changed, "Changed")
-	limbData._signalType[limb.Changed] = "Changed"
+	limbData._signalType[limb.Changed] = true
 	
 	for prop, _ in pairs(BLOCKED_PROPS) do
 	    local ok, sig = pcall(limb.GetPropertyChangedSignal, limb, prop)
@@ -207,17 +206,6 @@ local function wrapPartSignals(limb)
 	    end
 	    task.wait()
 	end
-
-    hookSignalConnect(limb.Changed)
-    for prop, _ in pairs(BLOCKED_PROPS) do
-        local ok, sig = pcall(limb.GetPropertyChangedSignal, limb, prop)
-        if ok and sig then
-            hookSignalConnect(sig)
-        end
-        task_wait()
-    end
-
-    limbData._wrappedParts[limb] = true
 end
 
 if BYPASS_AVAILABLE and not limbData._bypassInstalled then
@@ -247,6 +235,7 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 				if BLOCKED_PROPS[key] then
 					data["Original"..key] = value
 					fireSignalsForProp(self, key)
+					return
 				end
 			end
 		end
@@ -319,10 +308,17 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 						inSignalHook = true
 						local connections = getconnections(s)
 						for _, c in ipairs(connections) do
-							-- Optional: disable only the new connection by matching the function
 							if c.Function == callback then
-								c:Disable()
-								break
+							    c:Disable()
+							    -- Store for later manual firing
+							    if not limbData._signalConnections[s] then
+							        limbData._signalConnections[s] = {}
+							    end
+							    table.insert(limbData._signalConnections[s], {
+							        connection = c,
+							        signalType = limbData._signalType[s]  -- from _signalType mapping
+							    })
+							    break
 							end
 						end
 						inSignalHook = false
