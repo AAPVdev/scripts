@@ -261,21 +261,45 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 		local testSignal = game.Changed
 		local signalMt = getrawmetatable(testSignal)
 		local origSignalIndex = signalMt.__index
+
+		local inSignalHook = false  -- recursion guard
+
 		setreadonly(signalMt, false)
 		signalMt.__index = function(self, key)
-		    if not checkcaller() then
-		        local instance = limbData._signalToInstance[self]
-		        local isTracked = limbData._hookedSignals[self] or (instance and limbData.instanceLookup[instance])
-		        if (key == "Connect" or key == "Once") and isTracked then
-		            local origMethod = origSignalIndex(self, key)
-		            return function(s, callback)
-		                local conn = origMethod(s, callback)
-		                pcall(function() conn:Disable() end)
-		                return conn
-		            end
-		        end
-		    end
-		    return origSignalIndex(self, key)
+			-- If we're inside a getconnections call, just return the original method
+			if inSignalHook then
+				return origSignalIndex(self, key)
+			end
+
+			if not checkcaller() then
+				local instance = limbData._signalToInstance[self]
+				local isTracked = limbData._hookedSignals[self] or (instance and limbData.instanceLookup[instance])
+
+				if (key == "Connect" or key == "Once") and isTracked then
+					local origMethod = origSignalIndex(self, key)
+
+					return function(s, callback)
+						-- Allow the real connection to be created
+						local conn = origMethod(s, callback)
+
+						-- Now fetch the ConnectionProxy list safely
+						inSignalHook = true
+						local connections = getconnections(s)
+						for _, c in ipairs(connections) do
+							-- Optional: disable only the new connection by matching the function
+							if c.Function == callback then
+								c:Disable()
+								break
+							end
+						end
+						inSignalHook = false
+
+						return conn
+					end
+				end
+			end
+
+			return origSignalIndex(self, key)
 		end
 		setreadonly(signalMt, true)
 	end
