@@ -202,7 +202,6 @@ local function wrapPartSignals(limb)
 	    if ok and sig then
 	        hookSignalConnect(sig, prop)  
 	    end
-	    task.wait()
 	end
 end
 
