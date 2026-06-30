@@ -265,12 +265,12 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 					end
 				end
 			elseif method == "GetPropertyChangedSignal" then
-			    local propertyName = ...  -- first argument
+			    local propertyName = ...
 			    local signal = oldNamecall(self, ...)
-			    if typeof(signal) == "RBXScriptSignal" then
+			    if limbData.instanceLookup[self] and BLOCKED_PROPS[propertyName] then
 			        limbData._signalToInstance[signal] = self
 			        limbData._hookedSignals[signal] = true
-			        limbData._signalType[signal] = propertyName  -- new
+			        limbData._signalType[signal] = propertyName
 			    end
 			    return signal
 			end
