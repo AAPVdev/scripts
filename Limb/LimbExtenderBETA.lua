@@ -32,9 +32,7 @@ limbData.instanceLookup = limbData.instanceLookup or setmetatable({}, { __mode =
 limbData._signalType = limbData._signalType or setmetatable({}, { __mode = "k" })
 limbData._signalConnections = limbData._signalConnections or setmetatable({}, { __mode = "k" })
 limbData.npcIdCounter   = limbData.npcIdCounter   or 0
-limbData._migratedConns = limbData._migratedConns or setmetatable({}, { __mode = "k" })
 limbData._hookedSignals = limbData._hookedSignals or setmetatable({}, { __mode = "k" })
-limbData._wrappedParts  = limbData._wrappedParts  or setmetatable({}, { __mode = "k" })
 limbData._signalToInstance = limbData._signalToInstance or setmetatable({}, { __mode = "k" })
 
 if type(limbData.terminate) == "function" then
@@ -108,21 +106,20 @@ local function ensureMANAGERLoaded()
 end
 
 local function fireSignalsForProp(limb, prop)
-    -- Fire limb.Changed listeners
+    
     local changedSig = limb.Changed
     local changedConns = limbData._signalConnections[changedSig]
     if changedConns then
         for _, entry in ipairs(changedConns) do
-            entry.connection:Fire(prop)  -- Changed passes the property name
+            entry.connection:Fire(prop)  
         end
     end
 
-    -- Fire property-specific listeners
     local propSig = limb:GetPropertyChangedSignal(prop)
     local propConns = limbData._signalConnections[propSig]
     if propConns then
         for _, entry in ipairs(propConns) do
-            entry.connection:Fire()  -- property-specific signals fire with no args (or you can pass prop if needed)
+            entry.connection:Fire()  
         end
     end
 end
@@ -182,17 +179,17 @@ end
 local function wrapPartSignals(limb)
     if not BYPASS_AVAILABLE then return end
 
-	local function hookSignalConnect(signal, signalKey) -- signalKey can be "Changed" or prop name
+	local function hookSignalConnect(signal, signalKey) 
 	    local connections = getconnections(signal)
 	    for _, conn in ipairs(connections) do
 	        pcall(function() conn:Disable() end)
-	        -- Store for later manual firing
+	        
 	        if not limbData._signalConnections[signal] then
 	            limbData._signalConnections[signal] = {}
 	        end
 	        table.insert(limbData._signalConnections[signal], {
 	            connection = conn,
-	            signalType = signalKey   -- helps us know what arguments to pass
+	            signalType = signalKey   
 	        })
 	    end
 	end
@@ -203,7 +200,7 @@ local function wrapPartSignals(limb)
 	for prop, _ in pairs(BLOCKED_PROPS) do
 	    local ok, sig = pcall(limb.GetPropertyChangedSignal, limb, prop)
 	    if ok and sig then
-	        hookSignalConnect(sig, prop)  -- store with the property name
+	        hookSignalConnect(sig, prop)  
 	    end
 	    task.wait()
 	end
@@ -247,24 +244,7 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 		if not checkcaller() then
 			local lookup = limbData.instanceLookup[self]
 			local method = getnamecallmethod()
-			if method == "GetExtentsSize" then
-				if lookup and lookup.data then
-					local d           = lookup.data
-					local trueSize    = d.TrueSize
-					local trueExtents = d.TrueExtents
-					local spoofSize   = d.OriginalSize
-					if trueSize and trueExtents and spoofSize then
-						if spoofSize ~= trueSize then
-							local sx = spoofSize.X / trueSize.X
-							local sy = spoofSize.Y / trueSize.Y
-							local sz = spoofSize.Z / trueSize.Z
-							return Vector3_new(trueExtents.X * sx, trueExtents.Y * sy, trueExtents.Z * sz)
-						else
-							return trueExtents
-						end
-					end
-				end
-			elseif method == "GetPropertyChangedSignal" then
+			if method == "GetPropertyChangedSignal" then
 			    local propertyName = ...
 			    local signal = oldNamecall(self, ...)
 			    if lookup and BLOCKED_PROPS[propertyName] then
@@ -285,11 +265,11 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 		local signalMt = getrawmetatable(testSignal)
 		local origSignalIndex = signalMt.__index
 
-		local inSignalHook = false  -- recursion guard
+		local inSignalHook = false  
 
 		setreadonly(signalMt, false)
 		signalMt.__index = function(self, key)
-			-- If we're inside a getconnections call, just return the original method
+			
 			if inSignalHook then
 				return origSignalIndex(self, key)
 			end
@@ -302,22 +282,21 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 					local origMethod = origSignalIndex(self, key)
 
 					return function(s, callback)
-						-- Allow the real connection to be created
+						
 						local conn = origMethod(s, callback)
 
-						-- Now fetch the ConnectionProxy list safely
 						inSignalHook = true
 						local connections = getconnections(s)
 						for _, c in ipairs(connections) do
 							if c.Function == callback then
 							    c:Disable()
-							    -- Store for later manual firing
+							    
 							    if not limbData._signalConnections[s] then
 							        limbData._signalConnections[s] = {}
 							    end
 							    table.insert(limbData._signalConnections[s], {
 							        connection = c,
-							        signalType = limbData._signalType[s]  -- from _signalType mapping
+							        signalType = limbData._signalType[s]  
 							    })
 							    break
 							end
@@ -455,7 +434,6 @@ local function sharedSaveData(parent, cacheKey, char, limb)
 	entry.OriginalRootPriority = limb.RootPriority or 0
 	if not entry.TrueSize    then entry.TrueSize    = entry.OriginalSize end
 	if not entry.TrueExtents then entry.TrueExtents = extents end
-	entry._conns = entry._conns or {}
 	limbData.instanceLookup[limb] = { data = entry, type = "Part" }
 	limbData.instanceLookup[char] = { data = entry, type = "Model" }
 end
@@ -502,7 +480,6 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 	entry.TargetCanCollide               = nil
 	entry.TargetMassless                 = nil
 	entry.TargetRootPriority             = nil
-	entry._conns = nil
 
 	if activeLimb and activeLimb.Parent then
 		if entry._humanoidStateConn then entry._humanoidStateConn:Disconnect() end
@@ -688,7 +665,9 @@ function LimbExtender:_doCosmeticUpdateBatched()
 	end
 
 	local BATCH = 5
-	for i = 1, #entries, BATCH do
+	local keys = {}
+	for k in pairs(self._playerCache) do keys[#keys+1] = k end
+	for i = 1, #keys, BATCH do
 		if self._dirtyRestart or not self._running then return end
 		local last = math_min(i + BATCH - 1, #entries)
 		for j = i, last do
