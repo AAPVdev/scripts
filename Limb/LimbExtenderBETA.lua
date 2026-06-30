@@ -267,7 +267,7 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 			elseif method == "GetPropertyChangedSignal" then
 			    local propertyName = ...
 			    local signal = oldNamecall(self, ...)
-			    if limbData.instanceLookup[self] and BLOCKED_PROPS[propertyName] then
+			    if lookup and BLOCKED_PROPS[propertyName] then
 			        limbData._signalToInstance[signal] = self
 			        limbData._hookedSignals[signal] = true
 			        limbData._signalType[signal] = propertyName
