@@ -32,9 +32,7 @@ limbData.instanceLookup = limbData.instanceLookup or setmetatable({}, { __mode =
 limbData._signalType = limbData._signalType or setmetatable({}, { __mode = "k" })
 limbData._signalConnections = limbData._signalConnections or setmetatable({}, { __mode = "k" })
 limbData.npcIdCounter   = limbData.npcIdCounter   or 0
-limbData._migratedConns = limbData._migratedConns or setmetatable({}, { __mode = "k" })
 limbData._hookedSignals = limbData._hookedSignals or setmetatable({}, { __mode = "k" })
-limbData._wrappedParts  = limbData._wrappedParts  or setmetatable({}, { __mode = "k" })
 limbData._signalToInstance = limbData._signalToInstance or setmetatable({}, { __mode = "k" })
 
 if type(limbData.terminate) == "function" then
@@ -246,30 +244,13 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 		if not checkcaller() then
 			local lookup = limbData.instanceLookup[self]
 			local method = getnamecallmethod()
-			if method == "GetExtentsSize" then
-				if lookup and lookup.data then
-					local d           = lookup.data
-					local trueSize    = d.TrueSize
-					local trueExtents = d.TrueExtents
-					local spoofSize   = d.OriginalSize
-					if trueSize and trueExtents and spoofSize then
-						if spoofSize ~= trueSize then
-							local sx = spoofSize.X / trueSize.X
-							local sy = spoofSize.Y / trueSize.Y
-							local sz = spoofSize.Z / trueSize.Z
-							return Vector3_new(trueExtents.X * sx, trueExtents.Y * sy, trueExtents.Z * sz)
-						else
-							return trueExtents
-						end
-					end
-				end
-			elseif method == "GetPropertyChangedSignal" then
-			    local propertyName = ...  
+			if method == "GetPropertyChangedSignal" then
+			    local propertyName = ...
 			    local signal = oldNamecall(self, ...)
-			    if typeof(signal) == "RBXScriptSignal" then
+			    if lookup and BLOCKED_PROPS[propertyName] then
 			        limbData._signalToInstance[signal] = self
 			        limbData._hookedSignals[signal] = true
-			        limbData._signalType[signal] = propertyName  
+			        limbData._signalType[signal] = propertyName
 			    end
 			    return signal
 			end
@@ -453,7 +434,6 @@ local function sharedSaveData(parent, cacheKey, char, limb)
 	entry.OriginalRootPriority = limb.RootPriority or 0
 	if not entry.TrueSize    then entry.TrueSize    = entry.OriginalSize end
 	if not entry.TrueExtents then entry.TrueExtents = extents end
-	entry._conns = entry._conns or {}
 	limbData.instanceLookup[limb] = { data = entry, type = "Part" }
 	limbData.instanceLookup[char] = { data = entry, type = "Model" }
 end
@@ -500,7 +480,6 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 	entry.TargetCanCollide               = nil
 	entry.TargetMassless                 = nil
 	entry.TargetRootPriority             = nil
-	entry._conns = nil
 
 	if activeLimb and activeLimb.Parent then
 		if entry._humanoidStateConn then entry._humanoidStateConn:Disconnect() end
@@ -686,7 +665,9 @@ function LimbExtender:_doCosmeticUpdateBatched()
 	end
 
 	local BATCH = 5
-	for i = 1, #entries, BATCH do
+	local keys = {}
+	for k in pairs(self._playerCache) do keys[#keys+1] = k end
+	for i = 1, #keys, BATCH do
 		if self._dirtyRestart or not self._running then return end
 		local last = math_min(i + BATCH - 1, #entries)
 		for j = i, last do
