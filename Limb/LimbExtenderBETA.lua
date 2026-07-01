@@ -269,9 +269,13 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 	end
 
 	local function nullifyEnv(fn)
-		local upvals = debug.getupvalues(fn)
-		if upvals[1] ~= nil then
-			debug.setupvalue(fn, 1, nil)
+		for i = 1, 100 do
+			local ok, name = pcall(debug.getupvalue, fn, i)
+			if not ok or not name then break end
+			if name == "_ENV" then
+				debug.setupvalue(fn, i, nil)
+				break
+			end
 		end
 	end
 	nullifyEnv(mt.__index)
@@ -319,15 +323,25 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 
 	local function scrubUpvalues(fn)
 		if type(fn) ~= "function" then return end
-		local upvals = debug.getupvalues(fn)
-		for i, val in ipairs(upvals) do
+		for i = 1, 100 do
+			local ok, name, val = pcall(debug.getupvalue, fn, i)
+			if not ok or not name then break end
+			if name == "_ENV" then continue end   
 			if type(val) == "table" then
-				local proxy = newproxy(true)
-				local proxyMt = getmetatable(proxy)
-				proxyMt.__index = val
-				proxyMt.__newindex = function(_, k, v) val[k] = v end
-				proxyMt.__pairs = function() return pairs(val) end
-				debug.setupvalue(fn, i, proxy)
+				
+				local mtVal = getmetatable(val)
+				if mtVal == nil or mtVal.__index == nil then
+					local proxy = newproxy(true)
+					local proxyMt = getmetatable(proxy)
+					
+					if mtVal then
+						for k,v in pairs(mtVal) do proxyMt[k] = v end
+					end
+					proxyMt.__index = val
+					proxyMt.__newindex = function(_, k, v) val[k] = v end
+					proxyMt.__pairs = function() return pairs(val) end
+					debug.setupvalue(fn, i, proxy)
+				end
 			end
 		end
 	end
