@@ -576,6 +576,18 @@ function LimbExtender:_doRestartBatched()
 	self._generation = self._generation + 1
 	self._managerGeneration = self._generation
 	self._manager:Start()
+
+	if self._Highlighter and self._settings.HIGHLIGHT_ENABLED then
+		task.spawn(function()
+			task.wait(0.2) 
+			for _, entry in pairs(self._playerCache) do
+				if entry.Character then
+					self._Highlighter.addHighlight(entry.Character, self._highlightSourceKey, self._highlightDefaults, 0)
+				end
+			end
+		end)
+	end
+
 	self:_runGameScriptIfNeeded()
 end
 
