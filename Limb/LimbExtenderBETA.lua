@@ -529,7 +529,7 @@ function LimbExtender:_processDirtyWork()
 			self._dirtyCosmetic = false
 			self:_doCosmeticUpdateBatched()
 		else
-			task.wait()
+			task_wait()
 		end
 	end
 
@@ -579,7 +579,7 @@ function LimbExtender:_doRestartBatched()
 
 	if self._Highlighter and self._settings.HIGHLIGHT_ENABLED then
 		task.spawn(function()
-			task.wait(0.2) 
+			task_wait(0.2) 
 			for _, entry in pairs(self._playerCache) do
 				if entry.Character then
 					self._Highlighter.addHighlight(entry.Character, self._highlightSourceKey, self._highlightDefaults, 0)
