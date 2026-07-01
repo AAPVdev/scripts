@@ -618,7 +618,6 @@ function LimbExtender:_doRestartBatched()
 		task_wait()
 	end
 
-	self._suppressOnLimbLost = false
 	table_clear(cache)
 
 	if self._ESP then self._ESP:Stop() end
@@ -629,6 +628,7 @@ function LimbExtender:_doRestartBatched()
 	self._manager:Start()
 	if self._ESP then self._ESP:Start() end
 	self:_runGameScriptIfNeeded()
+	self._suppressOnLimbLost = false
 end
 
 function LimbExtender:_doCosmeticUpdateBatched()
