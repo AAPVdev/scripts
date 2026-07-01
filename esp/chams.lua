@@ -1,3 +1,219 @@
+-- Bypass made by AnthonyIsntHere
+-- https://github.com/AnthonyIsntHere/anthonysrepository/blob/main/scripts/InstanceBypass.lua
+if not getgenv().__InstanceBypassLoaded then
+    getgenv().__InstanceBypassLoaded = true
+
+    local ProtectedInstances = {}
+
+    local _Instance = Instance.new
+    local _tostring = tostring
+    local Metatable, Metamethods
+
+    local InstanceHook; InstanceHook = hookfunction(Instance.new, clonefunction(newcclosure(function(...)
+        if checkcaller() then
+            local NewInstance = InstanceHook(...)
+            sethiddenproperty(NewInstance, "DefinesCapabilities", true)
+            ProtectedInstances[NewInstance] = true
+
+            if Metatable and Metamethods then
+                Metatable.__namecall = Metamethods.__namecall
+                Metatable.__index = Metamethods.__index
+            end
+
+            Metatable = getrawmetatable(NewInstance)
+            Metamethods = {
+                __namecall = Metatable.__namecall,
+                __index = Metatable.__index
+            }
+
+            setreadonly(Metatable, false)
+            Metatable.__namecall = clonefunction(function(self, ...)
+                if not checkcaller() then
+                    local Arguments = {...}
+                    local Method = getnamecallmethod()
+
+                    if ProtectedInstances[self] then
+                        return task.wait(2^53 - 1)
+                    end
+
+                    if typeof(Method) == "string" and Method:lower():match("^findfirst") or Method:lower():match("^waitforchild") then
+                        local Instance = Metamethods.__namecall(self, ...)
+
+                        if Instance and ProtectedInstances[Instance] then
+                            return task.wait(2^53 - 1)
+                        end
+                    end
+                end
+
+                return Metamethods.__namecall(self, ...)
+            end)
+
+            Metatable.__index = clonefunction(function(self, index)
+                if not checkcaller() then
+                    if typeof(index) == "string" and ((ProtectedInstances[self] and index:lower():match("^is")) or index:lower():match("^findfirst")) then
+                        local IndexFunction = Metamethods.__index(self, index)
+
+                        if typeof(IndexFunction) == "function" and not isfunctionhooked(IndexFunction) then
+                            local IndexFunctionHook; IndexFunctionHook = hookfunction(IndexFunction, clonefunction(newcclosure(function(...)
+                                local Arguments = {...}
+                                restorefunction(IndexFunction)
+
+                                local Instance = IndexFunction(self, Arguments[2])
+                                if Instance and ProtectedInstances[Instance] or ProtectedInstances[self] then
+                                    return task.wait(2^53 - 1)
+                                end
+                            end)))
+                        end
+                    end
+                end
+
+                if ProtectedInstances[self] and typeof(Metamethods.__index(self, index)) ~= "function" and not checkcaller() then
+                    return task.wait(2^53 - 1)
+                end
+
+                return Metamethods.__index(self, index)
+            end)
+
+            return NewInstance
+        end
+
+        return InstanceHook(...)
+    end)))
+
+    local tostringHook; tostringHook = hookfunction(_tostring, clonefunction(newcclosure(function(...)
+        if not checkcaller() then
+            local Arguments = {...}
+            local String = tostringHook(...)
+
+            if ProtectedInstances[Arguments[1]] then
+                return task.wait(2^53 - 1)
+            end
+        end
+
+        return tostringHook(...)
+    end)))
+
+    local GetConstant = function(f, v)
+        for _, Constant in next, debug.getconstants(f) do
+            if not rawequal(Constant, v) then continue end
+            return true
+        end
+        return false
+    end
+
+    for _, x in next, getreg() do
+        local Function = type(x) == "thread" and coroutine.status(x) == "suspended" and debug.info(x, 1, "f")
+        local ScriptInstance = Function and getfenv(Function) and typeof(getfenv(Function).script) == "Instance"
+
+        if not Function or not ScriptInstance then continue end
+        if GetConstant(Function, "WaitForChild") then
+            task.cancel(x)
+        end
+    end
+
+    local Actor = false
+    for _, Thread in next, getactorthreads() do
+        run_on_thread(Thread, [[
+            if Attached then return end
+            getgenv().Attached = true
+
+            local RawMT = getrawmetatable(gethui())
+            local PreviousNamecall = RawMT.__namecall
+            local PreviousIndex = RawMT.__index
+
+            local _tostring = tostring
+
+            local tostringHook; tostringHook = hookfunction(_tostring, clonefunction(newcclosure(function(...)
+                if not checkcaller() then
+                    local Arguments = {...}
+                    local String = tostringHook(...)
+
+                    if Arguments[1] and typeof(Arguments[1]) == "Instance" and gethiddenproperty(Arguments[1], "DefinesCapabilities") then
+                        return task.wait(2^53 - 1)
+                    end
+                end
+
+                return tostringHook(...)
+            end)))
+
+            setreadonly(RawMT, false)
+            RawMT.__namecall = clonefunction(function(self, ...)
+                local Arguments = {...}
+                local Method = getnamecallmethod()
+
+                if not checkcaller() then
+                    if typeof(self) == "Instance" and gethiddenproperty(self, "DefinesCapabilities") then
+                        return task.wait(2^53 - 1)
+                    end
+
+                    if typeof(Method) == "string" and Method:lower():match("^findfirst") or Method:lower():match("^waitforchild") then
+                        local Instance = PreviousNamecall(self, ...)
+
+                        if Instance and typeof(Instance) == "Instance" and gethiddenproperty(Instance, "DefinesCapabilities") then
+                            return task.wait(2^53 - 1)
+                        end
+                    end
+                end
+
+                return PreviousNamecall(self, ...)
+            end)
+
+            RawMT.__index = clonefunction(function(self, index)
+                if not checkcaller() then
+                    if typeof(index) == "string" and index ~= "DefinesCapabilities" then
+                        if index:lower():match("^is") or index:lower():match("^findfirst") then
+                            local IndexFunction = PreviousIndex(self, index)
+
+                            if typeof(IndexFunction) == "function" then
+                                if not isfunctionhooked(IndexFunction) then
+                                    local IndexFunctionHook; IndexFunctionHook = hookfunction(IndexFunction, clonefunction(newcclosure(function(...)
+                                        local Arguments = {...}
+                                        restorefunction(IndexFunction)
+
+                                        local Instance = IndexFunction(self, Arguments[2])
+                                        if Instance or gethiddenproperty(self, "DefinesCapabilities") then
+                                            return task.wait(2^53 - 1)
+                                        end
+                                    end)))
+                                end
+                            end
+                        end
+
+                        if gethiddenproperty(self, "DefinesCapabilities") and typeof(PreviousIndex(self, index)) ~= "function" then
+                            return task.wait(2^53 - 1)
+                        end
+                    end
+                end
+
+                return PreviousIndex(self, index)
+            end)
+            setreadonly(RawMT, true)
+
+            local GetConstant = function(f, v)
+                for _, Constant in next, debug.getconstants(f) do
+                    if not rawequal(Constant, v) then continue end
+                    return true
+                end
+                return false
+            end
+
+            for _, x in next, getreg() do
+                local Function = type(x) == "thread" and coroutine.status(x) == "suspended" and debug.info(x, 1, "f")
+                local ScriptInstance = Function and getfenv(Function) and typeof(getfenv(Function).script) == "Instance"
+
+                if not Function or not ScriptInstance then continue end
+                if GetConstant(Function, "WaitForChild") then
+                    task.cancel(x)
+                end
+            end
+        ]])
+
+        Actor = not Actor or true
+    end
+end
+
+local cloneref = cloneref or function(obj) return obj end
+local Players = cloneref(game:GetService("Players"))
 local hui = gethui()
 
 local module = {}
@@ -5,7 +221,6 @@ module.VERSION = "2.0.0"
 
 local activeHighlights = {}
 local uniqueCounter = 0
-local container = hui  
 
 module.defaults = {
 	FillColor = Color3.fromRGB(255, 255, 0),
@@ -97,7 +312,7 @@ function module.addHighlight(character, sourceKey, properties, priority)
 		applyProperties(highlight, properties)
 	end
 
-	highlight.Parent = container  
+	highlight.Parent = hui
 
 	data.sources[sourceKey] = {
 		highlight = highlight,
