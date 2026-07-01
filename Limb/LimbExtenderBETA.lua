@@ -29,10 +29,11 @@ local Vector3_new = Vector3.new
 
 limbData.playerCache    = limbData.playerCache    or {}
 limbData.instanceLookup = limbData.instanceLookup or setmetatable({}, { __mode = "k" })
-limbData._signalType = limbData._signalType or setmetatable({}, { __mode = "k" })
-limbData._signalConnections = limbData._signalConnections or setmetatable({}, { __mode = "k" })
 limbData.npcIdCounter   = limbData.npcIdCounter   or 0
+limbData._suppressSignal = limbData._suppressSignal or 0
+limbData._migratedConns = limbData._migratedConns or setmetatable({}, { __mode = "k" })
 limbData._hookedSignals = limbData._hookedSignals or setmetatable({}, { __mode = "k" })
+limbData._wrappedParts  = limbData._wrappedParts  or setmetatable({}, { __mode = "k" })
 limbData._signalToInstance = limbData._signalToInstance or setmetatable({}, { __mode = "k" })
 
 if type(limbData.terminate) == "function" then
@@ -79,21 +80,22 @@ end
 local BLOCKED_PROPS = {
 	Size = true, Transparency = true, CanCollide = true, Massless = true,
 	Mass = true, AssemblyMass = true, AssemblyCenterOfMass = true,
-	RootPriority = true,
+    RootPriority = true,
 }
 
-local HIGHLIGHTER_SOURCE_URL = "https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/esp/chams.lua"
+local ESP_SOURCE_URL     = "https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/esp/SIXSEVENESP.lua"
 local MANAGER_SOURCE_URL = "https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/manager/manager.lua"
+
 local GAME_SCRIPT_URLS = {
 	[1054526971] = "https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/games/brm5.lua",
 }
 
-local function ensureHighlighterLoaded()
-	if limbData.Highlighter then return limbData.Highlighter end
+local function ensureESPLoaded()
+	if limbData.ESP then return limbData.ESP end
 	if not (has_loadstring and has_httpget) then return nil end
-	local ok, res = pcall(function() return loadstring(game:HttpGet(HIGHLIGHTER_SOURCE_URL))() end)
-	if ok then limbData.Highlighter = res end
-	return limbData.Highlighter
+	local ok, res = pcall(function() return loadstring(game:HttpGet(ESP_SOURCE_URL))() end)
+	if ok then limbData.ESP = res end
+	return limbData.ESP
 end
 
 local function ensureMANAGERLoaded()
@@ -105,21 +107,9 @@ local function ensureMANAGERLoaded()
 end
 
 local function fireSignalsForProp(limb, prop)
-	local changedSig = limb.Changed
-	local changedConns = limbData._signalConnections[changedSig]
-	if changedConns then
-		for _, entry in ipairs(changedConns) do
-			entry.connection:Fire(prop)
-		end
-	end
-
-	local propSig = limb:GetPropertyChangedSignal(prop)
-	local propConns = limbData._signalConnections[propSig]
-	if propConns then
-		for _, entry in ipairs(propConns) do
-			entry.connection:Fire()
-		end
-	end
+	firesignal(limb.Changed, prop)
+	local sig = limb:GetPropertyChangedSignal(prop)
+	firesignal(sig)
 end
 
 local RESTART_KEYS = {
@@ -132,6 +122,17 @@ local RESTART_KEYS = {
 	ALT_RESET_LIMB_ON_DEATH = true,
 	NPC_DIRECTORIES         = true,
 }
+
+local function applyToggles(s, flags)
+	return {
+		Box      = s.ESP_BOX      and flags.Box,
+		Box3D    = s.ESP_BOX3D    and flags.Box3D,
+		Tracer   = s.ESP_TRACER   and flags.Tracer,
+		Skeleton = s.ESP_SKELETON and flags.Skeleton,
+		Health   = s.ESP_HEALTH   and flags.Health,
+		Label    = s.ESP_LABEL    and flags.Label,
+	}
+end
 
 local function buildLimbProps(limb, entry, settings)
 	local newVec = Vector3_new(settings.LIMB_SIZE, settings.LIMB_SIZE, settings.LIMB_SIZE)
@@ -164,32 +165,43 @@ function getTargetData(instance)
 end
 
 local function wrapPartSignals(limb)
-	if not BYPASS_AVAILABLE then return end
+    if not BYPASS_AVAILABLE then return end
+    if limbData._wrappedParts[limb] then return end
 
-	local function hookSignalConnect(signal, signalKey)
-		local connections = getconnections(signal)
+    local function hookSignalConnect(signal)
+        if limbData._hookedSignals[signal] then return end
+        limbData._hookedSignals[signal] = true
+
+        local connections = getconnections(signal)
 		for _, conn in ipairs(connections) do
-			pcall(function() conn:Disable() end)
-
-			if not limbData._signalConnections[signal] then
-				limbData._signalConnections[signal] = {}
-			end
-			table.insert(limbData._signalConnections[signal], {
-				connection = conn,
-				signalType = signalKey
-			})
+		    if limbData._migratedConns[conn] then continue end
+		    local origCallback = conn.Function
+			local safeRef = origCallback
+		    local isRunning = false
+		
+		    local success = pcall(hookfunction, origCallback, function(...)
+		        if (limbData._suppressSignal or 0) > 0 then return end
+		        if isRunning then return end
+		        isRunning = true
+		        local result = safeRef(...)
+		        isRunning = false
+		        return result
+		    end)
+			
+		    limbData._migratedConns[conn] = true
 		end
-	end
+    end
 
-	hookSignalConnect(limb.Changed, "Changed")
-	limbData._signalType[limb.Changed] = true
+    hookSignalConnect(limb.Changed)
+    for prop, _ in pairs(BLOCKED_PROPS) do
+        local ok, sig = pcall(limb.GetPropertyChangedSignal, limb, prop)
+        if ok and sig then
+            hookSignalConnect(sig)
+        end
+        task_wait()
+    end
 
-	for prop, _ in pairs(BLOCKED_PROPS) do
-		local ok, sig = pcall(limb.GetPropertyChangedSignal, limb, prop)
-		if ok and sig then
-			hookSignalConnect(sig, prop)
-		end
-	end
+    limbData._wrappedParts[limb] = true
 end
 
 if BYPASS_AVAILABLE and not limbData._bypassInstalled then
@@ -213,17 +225,21 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 	end
 
 	mt.__newindex = function(self, key, value)
-		if not checkcaller() then
-			local data = getTargetData(self)
-			if data then
-				if BLOCKED_PROPS[key] then
-					data["Original"..key] = value
-					fireSignalsForProp(self, key)
-					return
-				end
-			end
-		end
-		return oldNewIndex(self, key, value)
+	    if not checkcaller() then
+	        local data = getTargetData(self)
+	        if data then
+	            if BLOCKED_PROPS[key] then
+	                data["Original"..key] = value
+	                fireSignalsForProp(self, key)
+	                return
+	            end
+	        end
+	        return oldNewIndex(self, key, value)
+	    else
+	        limbData._suppressSignal = limbData._suppressSignal + 1
+	        oldNewIndex(self, key, value)
+	        limbData._suppressSignal = limbData._suppressSignal - 1
+	    end
 	end
 
 	mt.__namecall = function(self, ...)
@@ -232,11 +248,10 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 			local method = getnamecallmethod()
 			if method == "GetPropertyChangedSignal" then
 				local propertyName = ...
-				local signal = oldNamecall(self, ...)
-				if lookup and BLOCKED_PROPS[propertyName] then
+			    local signal = oldNamecall(self, ...)
+			    if lookup and BLOCKED_PROPS[propertyName] and typeof(signal) == "RBXScriptSignal" then
 					limbData._signalToInstance[signal] = self
 					limbData._hookedSignals[signal] = true
-					limbData._signalType[signal] = propertyName
 				end
 				return signal
 			end
@@ -250,49 +265,29 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 		local testSignal = game.Changed
 		local signalMt = getrawmetatable(testSignal)
 		local origSignalIndex = signalMt.__index
-
-		local inSignalHook = false
-
 		setreadonly(signalMt, false)
 		signalMt.__index = function(self, key)
-			if inSignalHook then
-				return origSignalIndex(self, key)
-			end
-
-			if not checkcaller() then
-				local instance = limbData._signalToInstance[self]
-				local isTracked = limbData._hookedSignals[self] or (instance and limbData.instanceLookup[instance])
-
-				if (key == "Connect" or key == "Once") and isTracked then
-					local origMethod = origSignalIndex(self, key)
-
+		    if not checkcaller() then
+		        local instance = limbData._signalToInstance[self]
+		        local isTracked = limbData._hookedSignals[self] or (instance and limbData.instanceLookup[instance])
+		        if (key == "Connect" or key == "Once") and isTracked then
+		            local origMethod = origSignalIndex(self, key)
 					return function(s, callback)
-						local conn = origMethod(s, callback)
-
-						inSignalHook = true
-						local connections = getconnections(s)
-						for _, c in ipairs(connections) do
-							if c.Function == callback then
-								c:Disable()
-
-								if not limbData._signalConnections[s] then
-									limbData._signalConnections[s] = {}
-								end
-								table.insert(limbData._signalConnections[s], {
-									connection = c,
-									signalType = limbData._signalType[s]
-								})
-								break
-							end
-						end
-						inSignalHook = false
-
-						return conn
+					    local safeCallback = callback
+					    local isRunning = false
+					    local wrapped = function(...)
+					        if (limbData._suppressSignal or 0) > 0 then return end
+					        if isRunning then return end
+					        isRunning = true
+					        local result = safeCallback(...)
+					        isRunning = false
+					        return result
+					    end
+					    return origMethod(s, wrapped)
 					end
-				end
-			end
-
-			return origSignalIndex(self, key)
+		        end
+		    end
+		    return origSignalIndex(self, key)
 		end
 		setreadonly(signalMt, true)
 	end
@@ -352,11 +347,33 @@ local DEFAULTS = {
 	NPC_DIRECTORIES         = {},
 	CUSTOM_CHARACTER_SYSTEM   = false,
 	GET_PLAYER_FROM_CHARACTER = nil,
-	HIGHLIGHT_ENABLED               = false,
-	HIGHLIGHT_COLOR                 = Color3.fromRGB(255, 50, 50),
-	HIGHLIGHT_TRANSPARENCY          = 0.5,
-	HIGHLIGHT_OUTLINE_COLOR         = Color3.new(1, 1, 1),
-	HIGHLIGHT_OUTLINE_TRANSPARENCY  = 0.5,
+	ESP                     = false,
+	ESP_COLOR               = Color3.fromRGB(255, 50, 50),
+	ESP_BOX3D_COLOR         = Color3.fromRGB(255, 50, 50),
+	ESP_HEALTH_COLOR        = Color3.fromRGB(9, 255, 0),
+	ESP_EMPTY_COLOR         = Color3.fromRGB(255, 0, 0),
+	ESP_SKELETON_COLOR      = Color3.fromRGB(255, 157, 0),
+	ESP_TEXT_COLOR          = Color3.fromRGB(255, 255, 255),
+	ESP_TEXT_SIZE           = 16,
+	ESP_OFFSCREEN_POINT     = true,
+	ESP_FILTER_LOCAL        = true,
+	ESP_MAX_DISTANCE        = 500,
+	ESP_NEAR_DISTANCE       = 100,
+	ESP_MEDIUM_DISTANCE     = 250,
+	ESP_OCCLUSION           = false,
+	ESP_OCCLUSION_FREQUENCY = 4,
+	ESP_BOX      = true,
+	ESP_BOX3D    = false,
+	ESP_TRACER   = true,
+	ESP_SKELETON = true,
+	ESP_HEALTH   = true,
+	ESP_LABEL    = true,
+	ESP_NEAR_FLAGS   = { Box = true,  Tracer = true, Skeleton = true,  Health = true,  Label = true,  Box3D = false },
+	ESP_MEDIUM_FLAGS = { Box = true,  Tracer = true, Skeleton = false, Health = true,  Label = true,  Box3D = false },
+	ESP_FAR_FLAGS    = { Box = true,  Tracer = true, Skeleton = false, Health = false, Label = false, Box3D = false },
+	ESP_TEXT_RESOLVER = nil,
+	ESP_CAN_DRAW      = nil,
+	ESP_TRACER_ORIGIN = nil,
 }
 
 local function mergeSettings(user)
@@ -406,9 +423,9 @@ local function applyEntryTargets(entry, props, newVec, isHRP, settings)
 	entry.TargetCanCollide   = settings.LIMB_CAN_COLLIDE
 	entry.TargetMassless     = not isHRP
 	if isHRP then
-		entry.TargetRootPriority = nil
+		entry.TargetRootPriority             = nil
 	else
-		entry.TargetRootPriority = -127
+		entry.TargetRootPriority             = -127
 	end
 end
 
@@ -429,7 +446,7 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 	local cache = parent._playerCache
 	local entry = cache[cacheKey]
 	if not entry then return end
-
+	
 	if entry._watchConns then
 		for _, conn in ipairs(entry._watchConns) do
 			conn:Disconnect()
@@ -444,7 +461,6 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 	entry.TargetRootPriority             = nil
 
 	if activeLimb and activeLimb.Parent then
-		if entry._humanoidStateConn then entry._humanoidStateConn:Disconnect() end
 		pcall(write, activeLimb, {
 			Size                     = entry.OriginalSize,
 			Transparency             = entry.OriginalTransparency,
@@ -462,7 +478,6 @@ end
 
 local function reapplyCosmeticToEntry(entry, settings)
 	local limb = entry.Limb
-	if entry._humanoidStateConn then entry._humanoidStateConn:Disconnect() end
 
 	local props, newVec, isHRP = buildLimbProps(limb, entry, settings)
 	write(limb, props)
@@ -483,8 +498,17 @@ function LimbExtender:_applyLimbs(player, char, limb)
 		cacheKey = self._npcIdMap[char]
 	end
 	sharedApplyLimb(self, cacheKey, char, limb)
-	if self._Highlighter then
-		self._Highlighter.addHighlight(char, self._highlightSourceKey, self._highlightDefaults, 0)
+	if self._settings.ESP and self._ESP then
+		local tracked = self._ESP:Track(char)
+		if not tracked then
+			task_spawn(function()
+				local attempts = 0
+				while not self._ESP:Track(char) and attempts < 30 do
+					task_wait(0.1)
+					attempts = attempts + 1
+				end
+			end)
+		end
 	end
 end
 
@@ -492,15 +516,39 @@ function LimbExtender:_removeLimbs(player, char, limb)
 	if self._suppressOnLimbLost then return end
 	local cacheKey = player and player.Name or self._npcIdMap[char]
 	sharedRestoreLimb(self, cacheKey, limb)
-	if self._Highlighter and char then
-		self._Highlighter.removeHighlight(char, self._highlightSourceKey)
-	end
+	if self._ESP and char then self._ESP:Untrack(char) end
 	if not player then self._npcIdMap[char] = nil end
 end
 
 function LimbExtender:_processDirtyWork()
 	self._workScheduled = false
 	if not self._running then return end
+
+	local s = self._settings
+
+	if self._dirtyESP then
+		self._dirtyESP = false
+		if s.ESP then
+			local espModule = ensureESPLoaded()
+			if espModule then
+				if not self._ESP then
+					self._ESP = espModule.new(self:_buildESPConfig())
+					if self._running then
+						self._ESP:Start()
+						for _, entry in pairs(self._playerCache) do
+							if entry.Character then self._ESP:Track(entry.Character) end
+						end
+					end
+				else
+					self._ESP:SetOptions(self:_buildESPConfig())
+				end
+			else
+				s.ESP = false
+			end
+		else
+			if self._ESP then self._ESP:Destroy(); self._ESP = nil end
+		end
+	end
 
 	while self._dirtyRestart or self._dirtyCosmetic do
 		if self._dirtyRestart and not self._restartLock then
@@ -509,13 +557,13 @@ function LimbExtender:_processDirtyWork()
 			self._dirtyCosmetic = false
 
 			for key in pairs(RESTART_KEYS) do
-				if self._settings[key] ~= nil then
+				if s[key] ~= nil then
 					if key == "ALT_RESET_LIMB_ON_DEATH" then
-						self._manager:Set("DEATH_RESTORE", self._settings[key])
+						self._manager:Set("DEATH_RESTORE", s[key])
 					elseif key == "NPC_DIRECTORIES" then
-						self._manager._settings.NPC_DIRECTORIES = self._settings[key]
+						self._manager._settings.NPC_DIRECTORIES = s[key]
 					else
-						self._manager._settings[key] = self._settings[key]
+						self._manager._settings[key] = s[key]
 					end
 				end
 			end
@@ -529,11 +577,11 @@ function LimbExtender:_processDirtyWork()
 			self._dirtyCosmetic = false
 			self:_doCosmeticUpdateBatched()
 		else
-			task_wait()
+			task.wait()
 		end
 	end
 
-	if self._dirtyRestart or self._dirtyCosmetic then
+	if self._dirtyRestart or self._dirtyCosmetic or self._dirtyESP then
 		self._workScheduled = true
 		task_spawn(function() self:_processDirtyWork() end)
 	end
@@ -556,13 +604,13 @@ function LimbExtender:_doRestartBatched()
 			local entry = cache[keys[j]]
 			if entry and entry.Limb then
 				sharedRestoreLimb(self, keys[j], entry.Limb)
-				if self._Highlighter and entry.Character then
-					self._Highlighter.removeHighlight(entry.Character, self._highlightSourceKey)
+				if self._ESP and entry.Character then
+					self._ESP:Untrack(entry.Character)
 				end
 			elseif entry and entry.Character then
 				limbData.instanceLookup[entry.Character] = nil
-				if self._Highlighter then
-					self._Highlighter.removeHighlight(entry.Character, self._highlightSourceKey)
+				if self._ESP then
+					self._ESP:Untrack(entry.Character)
 				end
 				cache[keys[j]] = nil
 			end
@@ -573,21 +621,13 @@ function LimbExtender:_doRestartBatched()
 	self._suppressOnLimbLost = false
 	table_clear(cache)
 
+	if self._ESP then self._ESP:Stop() end
+	if not self._running then return end
+
 	self._generation = self._generation + 1
 	self._managerGeneration = self._generation
 	self._manager:Start()
-
-	if self._Highlighter and self._settings.HIGHLIGHT_ENABLED then
-		task.spawn(function()
-			task_wait(0.2) 
-			for _, entry in pairs(self._playerCache) do
-				if entry.Character then
-					self._Highlighter.addHighlight(entry.Character, self._highlightSourceKey, self._highlightDefaults, 0)
-				end
-			end
-		end)
-	end
-
+	if self._ESP then self._ESP:Start() end
 	self:_runGameScriptIfNeeded()
 end
 
@@ -602,9 +642,7 @@ function LimbExtender:_doCosmeticUpdateBatched()
 	end
 
 	local BATCH = 5
-	local keys = {}
-	for k in pairs(self._playerCache) do keys[#keys+1] = k end
-	for i = 1, #keys, BATCH do
+	for i = 1, #entries, BATCH do
 		if self._dirtyRestart or not self._running then return end
 		local last = math_min(i + BATCH - 1, #entries)
 		for j = i, last do
@@ -659,9 +697,7 @@ function LimbExtender.new(userSettings)
 		_settings            = mergeSettings(userSettings),
 		_playerCache         = limbData.playerCache,
 		_manager             = nil,
-		_Highlighter         = nil,
-		_highlightSourceKey  = "LimbExtender",
-		_highlightDefaults   = nil,
+		_ESP                 = nil,
 		_running             = false,
 		_destroyed           = false,
 		_npcIdMap            = {},
@@ -670,6 +706,7 @@ function LimbExtender.new(userSettings)
 		_workRunning         = false,
 		_dirtyRestart        = false,
 		_dirtyCosmetic       = false,
+		_dirtyESP            = false,
 		_suppressOnLimbLost  = false,
 		_workScheduled       = false,
 		_restartLock 		 = false,
@@ -702,18 +739,12 @@ function LimbExtender.new(userSettings)
 		end,
 	})
 
-	if self._settings.HIGHLIGHT_ENABLED then
-		local hlModule = ensureHighlighterLoaded()
-		if hlModule then
-			self._Highlighter = hlModule
-			self._highlightDefaults = {
-				FillColor = self._settings.HIGHLIGHT_COLOR,
-				FillTransparency = self._settings.HIGHLIGHT_TRANSPARENCY,
-				OutlineColor = self._settings.HIGHLIGHT_OUTLINE_COLOR,
-				OutlineTransparency = self._settings.HIGHLIGHT_OUTLINE_TRANSPARENCY,
-			}
+	if self._settings.ESP then
+		local espModule = ensureESPLoaded()
+		if espModule then
+			self._ESP = espModule.new(self:_buildESPConfig())
 		else
-			self._settings.HIGHLIGHT_ENABLED = false
+			self._settings.ESP = false
 		end
 	end
 
@@ -721,14 +752,45 @@ function LimbExtender.new(userSettings)
 	return self
 end
 
+function LimbExtender:_buildESPConfig()
+	local s = self._settings
+	return {
+		Color                = s.ESP_COLOR,
+		Box3DColor           = s.ESP_BOX3D_COLOR,
+		HealthColor          = s.ESP_HEALTH_COLOR,
+		EmptyColor           = s.ESP_EMPTY_COLOR,
+		SkeletonColor        = s.ESP_SKELETON_COLOR,
+		TextColor            = s.ESP_TEXT_COLOR,
+		TextSize             = s.ESP_TEXT_SIZE,
+		UseOffscreenPoint    = s.ESP_OFFSCREEN_POINT,
+		FilterLocalCharacter = s.ESP_FILTER_LOCAL,
+		LOD = {
+			MaxDistance        = s.ESP_MAX_DISTANCE,
+			NearDistance       = s.ESP_NEAR_DISTANCE,
+			MediumDistance     = s.ESP_MEDIUM_DISTANCE,
+			OcclusionEnabled   = s.ESP_OCCLUSION,
+			OcclusionFrequency = s.ESP_OCCLUSION_FREQUENCY,
+		},
+		Flags = {
+			Near   = applyToggles(s, s.ESP_NEAR_FLAGS),
+			Medium = applyToggles(s, s.ESP_MEDIUM_FLAGS),
+			Far    = applyToggles(s, s.ESP_FAR_FLAGS),
+		},
+		TextResolver = s.ESP_TEXT_RESOLVER,
+		CanDraw      = s.ESP_CAN_DRAW,
+		TracerOrigin = s.ESP_TRACER_ORIGIN,
+	}
+end
+
 function LimbExtender:Start()
 	if self._destroyed or self._running then return end
 	self._running = true
 	self._manager:Start()
+	if self._ESP then self._ESP:Start() end
 
 	self:_runGameScriptIfNeeded()
 
-	if self._dirtyRestart or self._dirtyCosmetic then
+	if self._dirtyRestart or self._dirtyCosmetic or self._dirtyESP then
 		self._workScheduled = true
 		task_spawn(function() self:_processDirtyWork() end)
 	end
@@ -742,11 +804,9 @@ function LimbExtender:Stop()
 	self._manager:Stop()
 	for cacheKey, entry in pairs(self._playerCache) do
 		sharedRestoreLimb(self, cacheKey, entry.Limb)
-		if self._Highlighter and entry.Character then
-			self._Highlighter.removeHighlight(entry.Character, self._highlightSourceKey)
-		end
 	end
 	table_clear(self._playerCache)
+	if self._ESP then self._ESP:Stop() end
 end
 
 function LimbExtender:Toggle(state)
@@ -766,89 +826,17 @@ end
 function LimbExtender:Set(key, value)
 	local s = self._settings
 
-	if key == "HIGHLIGHT_ENABLED" then
-		s.HIGHLIGHT_ENABLED = value
-		if value then
-			local hlModule = ensureHighlighterLoaded()
-			if hlModule then
-				if not self._Highlighter then
-					self._Highlighter = hlModule
-					self._highlightDefaults = {
-						FillColor = s.HIGHLIGHT_COLOR,
-						FillTransparency = s.HIGHLIGHT_TRANSPARENCY,
-						OutlineColor = s.HIGHLIGHT_OUTLINE_COLOR,
-						OutlineTransparency = s.HIGHLIGHT_OUTLINE_TRANSPARENCY,
-					}
-					for _, entry in pairs(self._playerCache) do
-						if entry.Character then
-							self._Highlighter.addHighlight(entry.Character, self._highlightSourceKey, self._highlightDefaults, 0)
-						end
-					end
-				end
-			end
+	if key == "ESP_NEAR_FLAGS" or key == "ESP_MEDIUM_FLAGS" or key == "ESP_FAR_FLAGS" then
+		if type(s[key]) ~= "table" then s[key] = {} end
+		if type(value) == "table" then
+			for k, v in pairs(value) do s[key][k] = v end
 		else
-			if self._Highlighter then
-				for _, entry in pairs(self._playerCache) do
-					if entry.Character then
-						self._Highlighter.removeHighlight(entry.Character, self._highlightSourceKey)
-					end
-				end
-				self._Highlighter = nil
-			end
+			s[key] = value
 		end
-		return
-	elseif key == "HIGHLIGHT_COLOR" then
-		s.HIGHLIGHT_COLOR = value
-		if self._Highlighter then
-			local prop = { FillColor = value }
-			self._highlightDefaults.FillColor = value
-			for _, entry in pairs(self._playerCache) do
-				if entry.Character then
-					self._Highlighter.updateHighlight(entry.Character, self._highlightSourceKey, prop)
-				end
-			end
-		end
-		return
-	elseif key == "HIGHLIGHT_TRANSPARENCY" then
-		s.HIGHLIGHT_TRANSPARENCY = value
-		if self._Highlighter then
-			local prop = { FillTransparency = value }
-			self._highlightDefaults.FillTransparency = value
-			for _, entry in pairs(self._playerCache) do
-				if entry.Character then
-					self._Highlighter.updateHighlight(entry.Character, self._highlightSourceKey, prop)
-				end
-			end
-		end
-		return
-	elseif key == "HIGHLIGHT_OUTLINE_COLOR" then
-		s.HIGHLIGHT_OUTLINE_COLOR = value
-		if self._Highlighter then
-			local prop = { OutlineColor = value }
-			self._highlightDefaults.OutlineColor = value
-			for _, entry in pairs(self._playerCache) do
-				if entry.Character then
-					self._Highlighter.updateHighlight(entry.Character, self._highlightSourceKey, prop)
-				end
-			end
-		end
-		return
-	elseif key == "HIGHLIGHT_OUTLINE_TRANSPARENCY" then
-		s.HIGHLIGHT_OUTLINE_TRANSPARENCY = value
-		if self._Highlighter then
-			local prop = { OutlineTransparency = value }
-			self._highlightDefaults.OutlineTransparency = value
-			for _, entry in pairs(self._playerCache) do
-				if entry.Character then
-					self._Highlighter.updateHighlight(entry.Character, self._highlightSourceKey, prop)
-				end
-			end
-		end
-		return
+	else
+		if s[key] == value then return end
+		s[key] = value
 	end
-
-	if s[key] == value then return end
-	s[key] = value
 
 	if key == "GET_PLAYER_FROM_CHARACTER" or key == "CUSTOM_CHARACTER_SYSTEM" then
 		if self._manager then
@@ -862,6 +850,10 @@ function LimbExtender:Set(key, value)
 		self._dirtyRestart = true
 	else
 		self._dirtyCosmetic = true
+	end
+
+	if key == "ESP" or (type(key) == "string" and key:sub(1,4) == "ESP_") then
+		self._dirtyESP = true
 	end
 
 	if self._running and not self._workScheduled then
@@ -891,15 +883,12 @@ end
 
 function LimbExtender:Destroy()
 	self:Stop()
-	if self._Highlighter then
-		self._Highlighter.clearAllHighlights()
-		self._Highlighter = nil
-	end
 	self._destroyed = true
+	if self._ESP then self._ESP:Destroy(); self._ESP = nil end
 	limbData.terminate = nil
 end
 
 return setmetatable({}, {
-	__call  = function(_, userSettings) return LimbExtender.new(userSettings) end,
-	__index = LimbExtender,
+    __call  = function(_, userSettings) return LimbExtender.new(userSettings) end,
+    __index = LimbExtender,
 })
