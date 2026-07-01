@@ -200,6 +200,9 @@ end
 if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 	limbData._bypassInstalled = true
 
+	local origGetfenv = getfenv
+	hookfunction(getfenv, function(...) return nil end)
+
 	local mt          = getrawmetatable(game)
 	local oldIndex    = mt.__index
 	local oldNewIndex = mt.__newindex
@@ -309,7 +312,7 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 							isRunning = false
 							return result
 						end
-						nullifyEnv(wrapped)   
+						nullifyEnv(wrapped)
 						return origMethod(s, wrapped)
 					end
 				end
@@ -317,7 +320,6 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 			return origSignalIndex(self, key)
 		end
 		nullifyEnv(signalMt.__index)
-
 		setreadonly(signalMt, true)
 	end
 
@@ -326,14 +328,12 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 		for i = 1, 100 do
 			local ok, name, val = pcall(debug.getupvalue, fn, i)
 			if not ok or not name then break end
-			if name == "_ENV" then continue end   
+			if name == "_ENV" then continue end
 			if type(val) == "table" then
-				
 				local mtVal = getmetatable(val)
 				if mtVal == nil or mtVal.__index == nil then
 					local proxy = newproxy(true)
 					local proxyMt = getmetatable(proxy)
-					
 					if mtVal then
 						for k,v in pairs(mtVal) do proxyMt[k] = v end
 					end
