@@ -73,10 +73,10 @@ local function buildTab(tab, layout)
 end
 
 local LOADING_SUBTITLES = {
-    "wtf update? in this economy?",
-    "the chatgpt special",
-    "racist meme rhetoric here",
-    "we are not back ts gon update in the next 5 years",
+    "aint no part like a baszucki party",
+    "boi ts not tuff",
+    "fuh twin",
+    "gosh i hate hackers"
 }
 
 local Window = Rayfield:CreateWindow({
@@ -95,7 +95,7 @@ local Window = Rayfield:CreateWindow({
 
 local Tabs = {
     Limbs  = Window:CreateTab("Limbs",  "scale-3d"),
-    ESP    = Window:CreateTab("ESP",    "eye"),
+    -- ESP    = Window:CreateTab("ESP",    "eye")
     Target = Window:CreateTab("Target", "crosshair"),
     Themes = Window:CreateTab("Themes", "palette"),
 }
@@ -133,6 +133,8 @@ Tabs.Limbs:CreateKeybind({
     Flag           = "ToggleKeybind",
     Callback       = function() modifyLimbsToggle:Set(not ctrl._running) end,
 })
+
+--[[
 
 buildTab(Tabs.ESP, {
     { type = "section", title = "General" },
@@ -206,6 +208,8 @@ buildTab(Tabs.ESP, {
     { type = "toggle",  name = "Occlusion Checking",  flag = "ESP_OCCLUSION"                                                },
     { type = "slider",  name = "Occlusion Frequency", flag = "ESP_OCCLUSION_FREQUENCY", range = {1, 20}, increment = 1, suffix = "frames" },
 })
+
+--]]
 
 local targetLimbDropdown = Tabs.Target:CreateDropdown({
     Name            = "Target Limb",
