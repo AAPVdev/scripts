@@ -665,8 +665,8 @@ end
 
 function LimbExtender:_doRestartBatched()
 	if not self._running then return end
-	self._suppressOnLimbLost = true
 	self._manager:Stop()
+	self._suppressOnLimbLost = true
 
 	local cache = self._playerCache
 	local keys = {}
@@ -697,14 +697,15 @@ function LimbExtender:_doRestartBatched()
 	table_clear(cache)
 
 	if self._ESP then self._ESP:Stop() end
+	self._suppressOnLimbLost = false
 	if not self._running then return end
 
 	self._generation = self._generation + 1
 	self._managerGeneration = self._generation
+	
 	self._manager:Start()
 	if self._ESP then self._ESP:Start() end
 	self:_runGameScriptIfNeeded()
-	self._suppressOnLimbLost = false
 end
 
 function LimbExtender:_doCosmeticUpdateBatched()
