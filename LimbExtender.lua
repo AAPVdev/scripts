@@ -503,14 +503,20 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 end
 
 local function reapplyCosmeticToEntry(entry, settings)
-	local limb = entry.Limb
-	if entry._humanoidStateConn then entry._humanoidStateConn:Disconnect() end
+    local limb = entry.Limb
 
-	local props, newVec, isHRP = buildLimbProps(limb, entry, settings)
-	write(limb, props)
-	applyEntryTargets(entry, props, newVec, isHRP, settings)
+    if entry._watchConns then
+        for _, conn in ipairs(entry._watchConns) do
+            conn:Disconnect()
+        end
+        entry._watchConns = nil
+    end
 
-	setupLimbWatchdog(entry, limb)
+    local props, newVec, isHRP = buildLimbProps(limb, entry, settings)
+    write(limb, props)
+    applyEntryTargets(entry, props, newVec, isHRP, settings)
+
+    setupLimbWatchdog(entry, limb)
 end
 
 function LimbExtender:_applyLimbs(player, char, limb)
