@@ -82,6 +82,8 @@ local BLOCKED_PROPS = {
     RootPriority = true,
 }
 
+local firingProps = setmetatable({}, { __mode = "k" })
+
 local ESP_SOURCE_URL     = "https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/esp/SIXSEVENESP.lua"
 local MANAGER_SOURCE_URL = "https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/manager/manager.lua"
 
@@ -106,12 +108,14 @@ local function ensureMANAGERLoaded()
 end
 
 local function fireSignalsForProp(limb, prop)
-    
+	if firingProps[limb] then return end
+	firingProps[limb] = true
+
     local changedSig = limb.Changed
     local changedConns = limbData._signalConnections[changedSig]
     if changedConns then
         for _, entry in ipairs(changedConns) do
-            entry.connection:Fire(prop)  
+            entry.connection:Fire(prop)
         end
     end
 
@@ -119,9 +123,11 @@ local function fireSignalsForProp(limb, prop)
     local propConns = limbData._signalConnections[propSig]
     if propConns then
         for _, entry in ipairs(propConns) do
-            entry.connection:Fire()  
+            entry.connection:Fire()
         end
     end
+
+    firingProps[limb] = nil
 end
 
 local RESTART_KEYS = {
@@ -179,28 +185,25 @@ end
 local function wrapPartSignals(limb)
     if not BYPASS_AVAILABLE then return end
 
-	local function hookSignalConnect(signal, signalKey) 
+	local function hookSignalConnect(signal, signalKey)
+	    limbData._signalConnections[signal] = {}
 	    local connections = getconnections(signal)
 	    for _, conn in ipairs(connections) do
 	        pcall(function() conn:Disable() end)
-	        
-	        if not limbData._signalConnections[signal] then
-	            limbData._signalConnections[signal] = {}
-	        end
 	        table.insert(limbData._signalConnections[signal], {
 	            connection = conn,
-	            signalType = signalKey   
+	            signalType = signalKey
 	        })
 	    end
 	end
-	
+
 	hookSignalConnect(limb.Changed, "Changed")
 	limbData._signalType[limb.Changed] = true
-	
+
 	for prop, _ in pairs(BLOCKED_PROPS) do
 	    local ok, sig = pcall(limb.GetPropertyChangedSignal, limb, prop)
 	    if ok and sig then
-	        hookSignalConnect(sig, prop)  
+	        hookSignalConnect(sig, prop)
 	    end
 	end
 end
@@ -264,11 +267,11 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 		local signalMt = getrawmetatable(testSignal)
 		local origSignalIndex = signalMt.__index
 
-		local inSignalHook = false  
+		local inSignalHook = false
 
 		setreadonly(signalMt, false)
 		signalMt.__index = function(self, key)
-			
+
 			if inSignalHook then
 				return origSignalIndex(self, key)
 			end
@@ -281,7 +284,7 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 					local origMethod = origSignalIndex(self, key)
 
 					return function(s, callback)
-						
+
 						local conn = origMethod(s, callback)
 
 						inSignalHook = true
@@ -289,13 +292,13 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 						for _, c in ipairs(connections) do
 							if c.Function == callback then
 							    c:Disable()
-							    
+
 							    if not limbData._signalConnections[s] then
 							        limbData._signalConnections[s] = {}
 							    end
 							    table.insert(limbData._signalConnections[s], {
 							        connection = c,
-							        signalType = limbData._signalType[s]  
+							        signalType = limbData._signalType[s]
 							    })
 							    break
 							end
