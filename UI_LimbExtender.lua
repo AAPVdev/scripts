@@ -2,23 +2,24 @@ getgenv().uiLE = getgenv().uiLE or {}
 if getgenv().uiLE.loading then return end
 getgenv().uiLE.loading = true
 
+if getgenv().uiLE.uilibray    then getgenv().uiLE.uilibray:Destroy();    getgenv().uiLE.uilibray    = nil end
+if getgenv().uiLE.gcontroller then getgenv().uiLE.gcontroller:Destroy(); getgenv().uiLE.gcontroller = nil end
+
+local LocalPlayer = game:GetService("Players").LocalPlayer
+
 getgenv().uiLE.le = getgenv().uiLE.le
     or loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua"))()
 
-if getgenv().uiLE.gcontroller then getgenv().uiLE.gcontroller:Destroy(); getgenv().uiLE.gcontroller = nil end
-
-getgenv().uiLE.gcontroller = getgenv().uiLE.le.new()
-local ctrl = getgenv().uiLE.gcontroller
-
-if getgenv().uiLE.uilibray    then getgenv().uiLE.uilibray:Destroy();    getgenv().uiLE.uilibray    = nil end
-
-local LocalPlayer = game:GetService("Players").LocalPlayer
+local LimbExtender = getgenv().uiLE.le
 
 getgenv().RAYFIELD_SECURE   = true
 getgenv().RAYFIELD_ASSET_ID = 84895246331982
 getgenv().uiLE.uilibray     = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 
 local Rayfield = getgenv().uiLE.uilibray
+
+getgenv().uiLE.gcontroller = LimbExtender.new()
+local ctrl = getgenv().uiLE.gcontroller
 
 local function getLodFlag(key, field)
     local t = ctrl:Get(key)
@@ -73,10 +74,10 @@ local function buildTab(tab, layout)
 end
 
 local LOADING_SUBTITLES = {
-    "aint no part like a baszucki party",
-    "boi ts not tuff",
-    "fuh twin",
-    "gosh i hate hackers"
+    "wtf update? in this economy?",
+    "the chatgpt special",
+    "racist meme rhetoric here",
+    "we are not back ts gon update in the next 5 years",
 }
 
 local Window = Rayfield:CreateWindow({
@@ -95,7 +96,7 @@ local Window = Rayfield:CreateWindow({
 
 local Tabs = {
     Limbs  = Window:CreateTab("Limbs",  "scale-3d"),
-    -- ESP    = Window:CreateTab("ESP",    "eye")
+    ESP    = Window:CreateTab("ESP",    "eye"),
     Target = Window:CreateTab("Target", "crosshair"),
     Themes = Window:CreateTab("Themes", "palette"),
 }
@@ -133,8 +134,6 @@ Tabs.Limbs:CreateKeybind({
     Flag           = "ToggleKeybind",
     Callback       = function() modifyLimbsToggle:Set(not ctrl._running) end,
 })
-
---[[
 
 buildTab(Tabs.ESP, {
     { type = "section", title = "General" },
@@ -209,8 +208,6 @@ buildTab(Tabs.ESP, {
     { type = "slider",  name = "Occlusion Frequency", flag = "ESP_OCCLUSION_FREQUENCY", range = {1, 20}, increment = 1, suffix = "frames" },
 })
 
---]]
-
 local targetLimbDropdown = Tabs.Target:CreateDropdown({
     Name            = "Target Limb",
     Flag            = "TARGET_LIMB",
@@ -247,29 +244,14 @@ end
 
 local function scanCharacter(character)
     if not character then return end
-    for _, desc in ipairs(character:GetDescendants()) do
-        if desc:IsA("BasePart") then
-            
-            local path = desc.Name
-            local p = desc.Parent
-            while p and p ~= character do
-                path = p.Name .. "." .. path
-                p = p.Parent
-            end
-            registerLimb(path)
-        end
-    end
-    character.DescendantAdded:Connect(function(desc)
-        if not desc:IsA("BasePart") then return end
-        local path = desc.Name
-        local p = desc.Parent
-        while p and p ~= character do
-            path = p.Name .. "." .. path
-            p = p.Parent
-        end
-        registerLimb(path)
+    character.ChildAdded:Connect(function(child)
+        if child:IsA("BasePart") then registerLimb(child.Name) end
     end)
+    for _, child in ipairs(character:GetChildren()) do
+        if child:IsA("BasePart") then registerLimb(child.Name) end
+    end
 end
+
 LocalPlayer.CharacterAdded:Connect(scanCharacter)
 if LocalPlayer.Character then scanCharacter(LocalPlayer.Character) end
 
