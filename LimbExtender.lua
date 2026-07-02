@@ -48,34 +48,34 @@ end)
 
 local BYPASS_AVAILABLE = false
 do
-    local required = {
-        "getrawmetatable",
-        "setreadonly",
-        "newcclosure",
-        "hookfunction",
-        "getconnections",
-        "checkcaller",
-        "firesignal",
-    }
+	local required = {
+		"getrawmetatable",
+		"setreadonly",
+		"newcclosure",
+		"hookfunction",
+		"getconnections",
+		"checkcaller",
+		"firesignal",
+	}
 
-    local ok = true
-    for _, name in ipairs(required) do
-        if type(_G[name]) ~= "function" then
-            ok = false
-            break
-        end
-    end
+	local ok = true
+	for _, name in ipairs(required) do
+		local fn = loadstring("return " .. name)()
+		if type(fn) ~= "function" then
+			ok = false
+			break
+		end
+	end
 
-    if ok then
-        local testOk = pcall(function()
-            local mt = getrawmetatable(game)
-            if typeof(mt) ~= "table" then return false end
-            return true
-        end)
-        if testOk then
-            BYPASS_AVAILABLE = true
-        end
-    end
+	if ok then
+		local success = pcall(function()
+			local mt = getrawmetatable(game)
+			if type(mt) ~= "table" then error("expected table") end
+		end)
+		if success then
+			BYPASS_AVAILABLE = true
+		end
+	end
 end
 
 local BLOCKED_PROPS = {
