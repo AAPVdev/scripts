@@ -49,32 +49,34 @@ end)
 
 local BYPASS_AVAILABLE = false
 do
-	local required = {
-		getrawmetatable = getrawmetatable,
-		setreadonly     = setreadonly,
-		newcclosure     = newcclosure,
-		hookfunction    = hookfunction,
-		getconnections  = getconnections,
-		checkcaller     = checkcaller,
-		firesignal      = firesignal,
-	}
-	local ok = true
-	for _, fn in pairs(required) do
-		if type(fn) ~= "function" then
-			ok = false
-			break
-		end
-	end
-	if ok then
-		local testOk = pcall(function()
-			local mt = getrawmetatable(game)
-			if typeof(mt) ~= "table" then return false end
-			return true
-		end)
-		if testOk then
-			BYPASS_AVAILABLE = true
-		end
-	end
+    local required = {
+        "getrawmetatable",
+        "setreadonly",
+        "newcclosure",
+        "hookfunction",
+        "getconnections",
+        "checkcaller",
+        "firesignal",
+    }
+
+    local ok = true
+    for _, name in ipairs(required) do
+        if type(_G[name]) ~= "function" then
+            ok = false
+            break
+        end
+    end
+
+    if ok then
+        local testOk = pcall(function()
+            local mt = getrawmetatable(game)
+            if typeof(mt) ~= "table" then return false end
+            return true
+        end)
+        if testOk then
+            BYPASS_AVAILABLE = true
+        end
+    end
 end
 
 local BLOCKED_PROPS = {
@@ -509,12 +511,13 @@ local function sharedApplyLimb(parent, cacheKey, char, limb)
 	sharedSaveData(parent, cacheKey, char, limb)
 	local entry = parent._playerCache[cacheKey]
 	if not entry then return end
-	setupLimbWatchdog(entry, limb)
 	wrapPartSignals(limb)
 
 	local props, newVec, isHRP = buildLimbProps(limb, entry, parent._settings)
 	write(limb, props)
 	applyEntryTargets(entry, props, newVec, isHRP, parent._settings)
+
+	setupLimbWatchdog(entry, limb)
 end
 
 local function sharedRestoreLimb(parent, cacheKey, activeLimb)
@@ -553,11 +556,12 @@ end
 
 local function reapplyCosmeticToEntry(entry, settings)
 	local limb = entry.Limb
-	setupLimbWatchdog(entry, limb)
-	
+
 	local props, newVec, isHRP = buildLimbProps(limb, entry, settings)
 	write(limb, props)
 	applyEntryTargets(entry, props, newVec, isHRP, settings)
+
+	setupLimbWatchdog(entry, limb)
 end
 
 function LimbExtender:_applyLimbs(player, char, limb)
@@ -860,8 +864,15 @@ end
 function LimbExtender:Start()
 	if self._destroyed or self._running then return end
 	self._running = true
-	self:_doRestartBatched()
+	self._manager:Start()
+	if self._ESP then self._ESP:Start() end
+
 	self:_runGameScriptIfNeeded()
+
+	if self._dirtyRestart or self._dirtyCosmetic or self._dirtyESP then
+		self._workScheduled = true
+		task_spawn(function() self:_processDirtyWork() end)
+	end
 end
 
 function LimbExtender:Stop()
