@@ -219,16 +219,21 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
     local limbDataTable = limbData
 
     mt.__index = function(self, key)
-        if not checkcaller() then
-            local lookup = instanceLookup[self]
-            if lookup then
-                local data = lookup.data
-                if data and blockedProps[key] then
-                    return data["Original"..key]
-                end
+        if checkcaller() then return oldIndex(self, key) end
+        local lookup = instanceLookup[self]
+        if lookup then
+            local data = lookup.data
+            if data and blockedProps[key] then
+                return data["Original"..key]
             end
         end
-        return oldIndex(self, key)
+        local result = oldIndex(self, key)
+        
+        if lookup and typeof(result) == "RBXScriptSignal" then
+            signalToInstance[result] = self
+            hookedSignals[result] = true
+        end
+        return result
     end
 
     mt.__newindex = function(self, key, value)
@@ -238,16 +243,15 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
                 local data = lookup.data
                 if data and blockedProps[key] then
                     data["Original"..key] = value
-                    fireSignalsForProp(self, prop)
+                    fireSignalsForProp(self, key)
                     return
                 end
             end
             return oldNewIndex(self, key, value)
         else
-            local sup = limbDataTable._suppressSignal
-            limbDataTable._suppressSignal = sup + 1
+            limbDataTable._suppressSignal = (limbDataTable._suppressSignal or 0) + 1
             oldNewIndex(self, key, value)
-            limbDataTable._suppressSignal = sup
+            limbDataTable._suppressSignal = (limbDataTable._suppressSignal or 1) - 1
         end
     end
 
@@ -315,8 +319,7 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
                         local safeCallback = callback
                         local isRunning = false
                         local wrapped = function(...)
-                            local sup = limbDataTable._suppressSignal
-                            if sup > 0 then return end
+                            if limbDataTable._suppressSignal > 0 then return end
                             if isRunning then return end
                             isRunning = true
                             local result = safeCallback(...)
