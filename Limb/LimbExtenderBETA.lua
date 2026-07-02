@@ -509,13 +509,12 @@ local function sharedApplyLimb(parent, cacheKey, char, limb)
 	sharedSaveData(parent, cacheKey, char, limb)
 	local entry = parent._playerCache[cacheKey]
 	if not entry then return end
+	setupLimbWatchdog(entry, limb)
 	wrapPartSignals(limb)
 
 	local props, newVec, isHRP = buildLimbProps(limb, entry, parent._settings)
 	write(limb, props)
 	applyEntryTargets(entry, props, newVec, isHRP, parent._settings)
-
-	setupLimbWatchdog(entry, limb)
 end
 
 local function sharedRestoreLimb(parent, cacheKey, activeLimb)
@@ -554,12 +553,11 @@ end
 
 local function reapplyCosmeticToEntry(entry, settings)
 	local limb = entry.Limb
-
+	setupLimbWatchdog(entry, limb)
+	
 	local props, newVec, isHRP = buildLimbProps(limb, entry, settings)
 	write(limb, props)
 	applyEntryTargets(entry, props, newVec, isHRP, settings)
-
-	setupLimbWatchdog(entry, limb)
 end
 
 function LimbExtender:_applyLimbs(player, char, limb)
