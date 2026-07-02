@@ -61,19 +61,19 @@ do
 
     local ok = true
     for _, name in ipairs(required) do
-        if type(_G[name]) ~= "function" then
+        local fn = loadstring("return " .. name)()
+        if type(fn) ~= "function" then
             ok = false
             break
         end
     end
 
     if ok then
-        local testOk = pcall(function()
+        local success = pcall(function()
             local mt = getrawmetatable(game)
-            if typeof(mt) ~= "table" then return false end
-            return true
+            if type(mt) ~= "table" then error("expected table") end
         end)
-        if testOk then
+        if success then
             BYPASS_AVAILABLE = true
         end
     end
@@ -238,9 +238,7 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
                 local data = lookup.data
                 if data and blockedProps[key] then
                     data["Original"..key] = value
-                    firesignal(self.Changed, key)
-                    local sig = oldNamecall(self, key)
-                    firesignal(sig)
+                    fireSignalsForProp(self, prop)
                     return
                 end
             end
@@ -412,8 +410,8 @@ local LimbExtender = {}
 LimbExtender.__index = LimbExtender
 
 local DEFAULTS = {
-	TARGET_LIMB             = "HumanoidRootPart",
-	LIMB_SIZE               = 15,
+	TARGET_LIMB             = "Head",
+	LIMB_SIZE               = 12,
 	LIMB_TRANSPARENCY       = 0.7,
 	LIMB_CAN_COLLIDE        = false,
 	TEAM_CHECK              = true,
@@ -556,6 +554,13 @@ end
 
 local function reapplyCosmeticToEntry(entry, settings)
 	local limb = entry.Limb
+
+    if entry._watchConns then
+		for _, conn in ipairs(entry._watchConns) do
+			conn:Disconnect()
+		end
+		entry._watchConns = nil
+	end
 
 	local props, newVec, isHRP = buildLimbProps(limb, entry, settings)
 	write(limb, props)
