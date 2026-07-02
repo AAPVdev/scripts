@@ -871,6 +871,8 @@ function LimbExtender:Start()
 		self._workScheduled = true
 		task_spawn(function() self:_processDirtyWork() end)
 	end
+
+	self:_doRestartBatched()
 end
 
 function LimbExtender:Stop()
