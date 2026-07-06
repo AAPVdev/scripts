@@ -2,24 +2,25 @@ getgenv().uiLE = getgenv().uiLE or {}
 if getgenv().uiLE.loading then return end
 getgenv().uiLE.loading = true
 
-if getgenv().uiLE.uilibray    then getgenv().uiLE.uilibray:Destroy();    getgenv().uiLE.uilibray    = nil end
-if getgenv().uiLE.gcontroller then getgenv().uiLE.gcontroller:Destroy(); getgenv().uiLE.gcontroller = nil end
-
-local LocalPlayer = game:GetService("Players").LocalPlayer
-
 getgenv().uiLE.le = getgenv().uiLE.le
     or loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua"))()
 
-local LimbExtender = getgenv().uiLE.le
+if getgenv().uiLE.gcontroller then getgenv().uiLE.gcontroller:Destroy(); getgenv().uiLE.gcontroller = nil end
+
+getgenv().uiLE.gcontroller = getgenv().uiLE.le.new()
+local ctrl = getgenv().uiLE.gcontroller
+
+if getgenv().uiLE.uilibray    then getgenv().uiLE.uilibray:Destroy();    getgenv().uiLE.uilibray    = nil end
+
+local LocalPlayer = game:GetService("Players").LocalPlayer
+local UserInputService = game:GetService("UserInputService")
+local isPC = UserInputService:GetPlatform() == Enum.Platform.Windows or UserInputService:GetPlatform() == Enum.Platform.OSX
 
 getgenv().RAYFIELD_SECURE   = true
 getgenv().RAYFIELD_ASSET_ID = 84895246331982
 getgenv().uiLE.uilibray     = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 
 local Rayfield = getgenv().uiLE.uilibray
-
-getgenv().uiLE.gcontroller = LimbExtender.new()
-local ctrl = getgenv().uiLE.gcontroller
 
 local function getLodFlag(key, field)
     local t = ctrl:Get(key)
@@ -74,10 +75,10 @@ local function buildTab(tab, layout)
 end
 
 local LOADING_SUBTITLES = {
-    "wtf update? in this economy?",
-    "the chatgpt special",
-    "racist meme rhetoric here",
-    "we are not back ts gon update in the next 5 years",
+    "aint no part like a baszucki party",
+    "boi ts not tuff",
+    "fuh twin",
+    "gosh i hate hackers"
 }
 
 local Window = Rayfield:CreateWindow({
@@ -96,10 +97,13 @@ local Window = Rayfield:CreateWindow({
 
 local Tabs = {
     Limbs  = Window:CreateTab("Limbs",  "scale-3d"),
-    ESP    = Window:CreateTab("ESP",    "eye"),
     Target = Window:CreateTab("Target", "crosshair"),
     Themes = Window:CreateTab("Themes", "palette"),
 }
+
+if isPC then
+    Tabs.ESP = Window:CreateTab("ESP", "eye")
+end
 
 Tabs.Limbs:CreateSection("General")
 
@@ -135,78 +139,80 @@ Tabs.Limbs:CreateKeybind({
     Callback       = function() modifyLimbsToggle:Set(not ctrl._running) end,
 })
 
-buildTab(Tabs.ESP, {
-    { type = "section", title = "General" },
-    { type = "toggle",  name = "Enabled",             flag = "ESP"              },
-    { type = "toggle",  name = "Filter Local Player", flag = "ESP_FILTER_LOCAL" },
+if isPC then
+    buildTab(Tabs.ESP, {
+        { type = "section", title = "General" },
+        { type = "toggle",  name = "Enabled",             flag = "ESP"              },
+        { type = "toggle",  name = "Filter Local Player", flag = "ESP_FILTER_LOCAL" },
 
-    { type = "section", title = "Elements" },
-    { type = "toggle",  name = "2D Box",           flag = "ESP_BOX"             },
-    { type = "toggle",  name = "3D Box",           flag = "ESP_BOX3D"           },
-    { type = "toggle",  name = "Tracer",           flag = "ESP_TRACER"          },
-    { type = "toggle",  name = "Skeleton",         flag = "ESP_SKELETON"        },
-    { type = "toggle",  name = "Health Bar",       flag = "ESP_HEALTH"          },
-    { type = "toggle",  name = "Label",            flag = "ESP_LABEL"           },
-    { type = "toggle",  name = "Off-Screen Arrow", flag = "ESP_OFFSCREEN_POINT" },
+        { type = "section", title = "Elements" },
+        { type = "toggle",  name = "2D Box",           flag = "ESP_BOX"             },
+        { type = "toggle",  name = "3D Box",           flag = "ESP_BOX3D"           },
+        { type = "toggle",  name = "Tracer",           flag = "ESP_TRACER"          },
+        { type = "toggle",  name = "Skeleton",         flag = "ESP_SKELETON"        },
+        { type = "toggle",  name = "Health Bar",       flag = "ESP_HEALTH"          },
+        { type = "toggle",  name = "Label",            flag = "ESP_LABEL"           },
+        { type = "toggle",  name = "Off-Screen Arrow", flag = "ESP_OFFSCREEN_POINT" },
 
-    { type = "section", title = "Colors" },
-    { type = "color",   name = "Box / Tracer",   flag = "ESP_COLOR"          },
-    { type = "color",   name = "3D Box",         flag = "ESP_BOX3D_COLOR"    },
-    { type = "color",   name = "Skeleton",       flag = "ESP_SKELETON_COLOR" },
-    { type = "color",   name = "Health (Full)",  flag = "ESP_HEALTH_COLOR"   },
-    { type = "color",   name = "Health (Empty)", flag = "ESP_EMPTY_COLOR"    },
-    { type = "color",   name = "Text",           flag = "ESP_TEXT_COLOR"     },
+        { type = "section", title = "Colors" },
+        { type = "color",   name = "Box / Tracer",   flag = "ESP_COLOR"          },
+        { type = "color",   name = "3D Box",         flag = "ESP_BOX3D_COLOR"    },
+        { type = "color",   name = "Skeleton",       flag = "ESP_SKELETON_COLOR" },
+        { type = "color",   name = "Health (Full)",  flag = "ESP_HEALTH_COLOR"   },
+        { type = "color",   name = "Health (Empty)", flag = "ESP_EMPTY_COLOR"    },
+        { type = "color",   name = "Text",           flag = "ESP_TEXT_COLOR"     },
 
-    { type = "section", title = "Text" },
-    { type = "slider",  name = "Text Size", flag = "ESP_TEXT_SIZE", range = {8, 32}, increment = 1, suffix = "px" },
+        { type = "section", title = "Text" },
+        { type = "slider",  name = "Text Size", flag = "ESP_TEXT_SIZE", range = {8, 32}, increment = 1, suffix = "px" },
 
-    { type = "section", title = "Distance Thresholds" },
-    {
-        type    = "paragraph",
-        title   = "Level of Detail (LOD)",
-        content = "Targets within Near Distance use the Near feature set. "
-               .. "Between Near and Medium uses the Medium set. "
-               .. "Beyond Medium up to Max Distance uses the Far set. "
-               .. "Configure each set in the sections below.",
-    },
-    { type = "slider", name = "Near Distance",   flag = "ESP_NEAR_DISTANCE",   range = {50,  500},  increment = 10, suffix = "st" },
-    { type = "slider", name = "Medium Distance", flag = "ESP_MEDIUM_DISTANCE", range = {100, 1000}, increment = 10, suffix = "st" },
-    { type = "slider", name = "Max Distance",    flag = "ESP_MAX_DISTANCE",    range = {100, 2000}, increment = 50, suffix = "st" },
-})
+        { type = "section", title = "Distance Thresholds" },
+        {
+            type    = "paragraph",
+            title   = "Level of Detail (LOD)",
+            content = "Targets within Near Distance use the Near feature set. "
+                   .. "Between Near and Medium uses the Medium set. "
+                   .. "Beyond Medium up to Max Distance uses the Far set. "
+                   .. "Configure each set in the sections below.",
+        },
+        { type = "slider", name = "Near Distance",   flag = "ESP_NEAR_DISTANCE",   range = {50,  500},  increment = 10, suffix = "st" },
+        { type = "slider", name = "Medium Distance", flag = "ESP_MEDIUM_DISTANCE", range = {100, 1000}, increment = 10, suffix = "st" },
+        { type = "slider", name = "Max Distance",    flag = "ESP_MAX_DISTANCE",    range = {100, 2000}, increment = 50, suffix = "st" },
+    })
 
-local LOD_TIERS = {
-    { label = "Near Range Features",   key = "ESP_NEAR_FLAGS"   },
-    { label = "Medium Range Features", key = "ESP_MEDIUM_FLAGS" },
-    { label = "Far Range Features",    key = "ESP_FAR_FLAGS"    },
-}
+    local LOD_TIERS = {
+        { label = "Near Range Features",   key = "ESP_NEAR_FLAGS"   },
+        { label = "Medium Range Features", key = "ESP_MEDIUM_FLAGS" },
+        { label = "Far Range Features",    key = "ESP_FAR_FLAGS"    },
+    }
 
-local LOD_FEATURES = {
-    { name = "2D Box",     field = "Box"      },
-    { name = "3D Box",     field = "Box3D"    },
-    { name = "Tracer",     field = "Tracer"   },
-    { name = "Skeleton",   field = "Skeleton" },
-    { name = "Health Bar", field = "Health"   },
-    { name = "Label",      field = "Label"    },
-}
+    local LOD_FEATURES = {
+        { name = "2D Box",     field = "Box"      },
+        { name = "3D Box",     field = "Box3D"    },
+        { name = "Tracer",     field = "Tracer"   },
+        { name = "Skeleton",   field = "Skeleton" },
+        { name = "Health Bar", field = "Health"   },
+        { name = "Label",      field = "Label"    },
+    }
 
-for _, tier in ipairs(LOD_TIERS) do
-    Tabs.ESP:CreateSection(tier.label)
-    for _, feature in ipairs(LOD_FEATURES) do
-        local key, field = tier.key, feature.field
-        Tabs.ESP:CreateToggle({
-            Name         = feature.name,
-            Flag         = key .. "_" .. field,
-            CurrentValue = getLodFlag(key, field),
-            Callback     = function(v) setLodFlag(key, field, v) end,
-        })
+    for _, tier in ipairs(LOD_TIERS) do
+        Tabs.ESP:CreateSection(tier.label)
+        for _, feature in ipairs(LOD_FEATURES) do
+            local key, field = tier.key, feature.field
+            Tabs.ESP:CreateToggle({
+                Name         = feature.name,
+                Flag         = key .. "_" .. field,
+                CurrentValue = getLodFlag(key, field),
+                Callback     = function(v) setLodFlag(key, field, v) end,
+            })
+        end
     end
-end
 
-buildTab(Tabs.ESP, {
-    { type = "section", title = "Performance" },
-    { type = "toggle",  name = "Occlusion Checking",  flag = "ESP_OCCLUSION"                                                },
-    { type = "slider",  name = "Occlusion Frequency", flag = "ESP_OCCLUSION_FREQUENCY", range = {1, 20}, increment = 1, suffix = "frames" },
-})
+    buildTab(Tabs.ESP, {
+        { type = "section", title = "Performance" },
+        { type = "toggle",  name = "Occlusion Checking",  flag = "ESP_OCCLUSION"                                                },
+        { type = "slider",  name = "Occlusion Frequency", flag = "ESP_OCCLUSION_FREQUENCY", range = {1, 20}, increment = 1, suffix = "frames" },
+    })
+end
 
 local targetLimbDropdown = Tabs.Target:CreateDropdown({
     Name            = "Target Limb",
@@ -244,14 +250,28 @@ end
 
 local function scanCharacter(character)
     if not character then return end
-    character.ChildAdded:Connect(function(child)
-        if child:IsA("BasePart") then registerLimb(child.Name) end
-    end)
-    for _, child in ipairs(character:GetChildren()) do
-        if child:IsA("BasePart") then registerLimb(child.Name) end
+    for _, desc in ipairs(character:GetDescendants()) do
+        if desc:IsA("BasePart") then
+            local path = desc.Name
+            local p = desc.Parent
+            while p and p ~= character do
+                path = p.Name .. "." .. path
+                p = p.Parent
+            end
+            registerLimb(path)
+        end
     end
+    character.DescendantAdded:Connect(function(desc)
+        if not desc:IsA("BasePart") then return end
+        local path = desc.Name
+        local p = desc.Parent
+        while p and p ~= character do
+            path = p.Name .. "." .. path
+            p = p.Parent
+        end
+        registerLimb(path)
+    end)
 end
-
 LocalPlayer.CharacterAdded:Connect(scanCharacter)
 if LocalPlayer.Character then scanCharacter(LocalPlayer.Character) end
 
