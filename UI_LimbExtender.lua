@@ -239,39 +239,70 @@ Tabs.Themes:CreateDropdown({
 
 Rayfield:LoadConfiguration()
 
-local scannedLimbs = {}
+local limbPriority = {
+    -- Head
+    "Head",
 
-local function registerLimb(name)
-    if not name or table.find(scannedLimbs, name) then return end
-    table.insert(scannedLimbs, name)
-    table.sort(scannedLimbs)
-    targetLimbDropdown:Refresh(scannedLimbs)
-end
+    -- Root
+    "HumanoidRootPart",
 
-local function scanCharacter(character)
-    if not character then return end
-    for _, desc in ipairs(character:GetDescendants()) do
-        if desc:IsA("BasePart") then
-            local path = desc.Name
-            local p = desc.Parent
-            while p and p ~= character do
-                path = p.Name .. "." .. path
-                p = p.Parent
-            end
-            registerLimb(path)
+    -- R15 upper body
+    "UpperTorso",
+    "LowerTorso",
+
+    -- R6 body
+    "Torso",
+
+    -- Arms
+    "LeftUpperArm",
+    "LeftLowerArm",
+    "LeftHand",
+    "RightUpperArm",
+    "RightLowerArm",
+    "RightHand",
+
+    -- R6 arms
+    "Left Arm",
+    "Right Arm",
+
+    -- Legs
+    "LeftUpperLeg",
+    "LeftLowerLeg",
+    "LeftFoot",
+    "RightUpperLeg",
+    "RightLowerLeg",
+    "RightFoot",
+
+    -- R6 legs
+    "Left Leg",
+    "Right Leg",
+}
+
+local function getLimbPriority(name)
+    local lower = name:lower()
+
+    for index, limb in ipairs(limbPriority) do
+        if lower:find(limb:lower()) then
+            return index
         end
     end
-    character.DescendantAdded:Connect(function(desc)
-        if not desc:IsA("BasePart") then return end
-        local path = desc.Name
-        local p = desc.Parent
-        while p and p ~= character do
-            path = p.Name .. "." .. path
-            p = p.Parent
+
+    return math.huge
+end
+
+local function sortLimbs()
+    table.sort(scannedLimbs, function(a, b)
+        local priorityA = getLimbPriority(a)
+        local priorityB = getLimbPriority(b)
+
+        if priorityA ~= priorityB then
+            return priorityA < priorityB
         end
-        registerLimb(path)
+
+        return a < b
     end)
 end
+
 LocalPlayer.CharacterAdded:Connect(scanCharacter)
 if LocalPlayer.Character then scanCharacter(LocalPlayer.Character) end
 
