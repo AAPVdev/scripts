@@ -239,6 +239,8 @@ Tabs.Themes:CreateDropdown({
 
 Rayfield:LoadConfiguration()
 
+local scannedLimbs = {}
+
 local limbPriority = {
     -- Head
     "Head",
@@ -246,14 +248,14 @@ local limbPriority = {
     -- Root
     "HumanoidRootPart",
 
-    -- R15 upper body
+    -- R15 torso
     "UpperTorso",
     "LowerTorso",
 
-    -- R6 body
+    -- R6 torso
     "Torso",
 
-    -- Arms
+    -- R15 arms
     "LeftUpperArm",
     "LeftLowerArm",
     "LeftHand",
@@ -265,7 +267,7 @@ local limbPriority = {
     "Left Arm",
     "Right Arm",
 
-    -- Legs
+    -- R15 legs
     "LeftUpperLeg",
     "LeftLowerLeg",
     "LeftFoot",
@@ -282,7 +284,7 @@ local function getLimbPriority(name)
     local lower = name:lower()
 
     for index, limb in ipairs(limbPriority) do
-        if lower:find(limb:lower()) then
+        if lower:find(limb:lower(), 1, true) then
             return index
         end
     end
@@ -299,7 +301,49 @@ local function sortLimbs()
             return priorityA < priorityB
         end
 
-        return a < b
+        return a:lower() < b:lower()
+    end)
+end
+
+local function registerLimb(name)
+    if not name or table.find(scannedLimbs, name) then
+        return
+    end
+
+    table.insert(scannedLimbs, name)
+    sortLimbs()
+    targetLimbDropdown:Refresh(scannedLimbs)
+end
+
+local function getPartPath(part, character)
+    local path = part.Name
+    local parent = part.Parent
+
+    while parent and parent ~= character do
+        path = parent.Name .. "." .. path
+        parent = parent.Parent
+    end
+
+    return path
+end
+
+local function scanCharacter(character)
+    if not character then
+        return
+    end
+
+    table.clear(scannedLimbs)
+
+    for _, desc in ipairs(character:GetDescendants()) do
+        if desc:IsA("BasePart") then
+            registerLimb(getPartPath(desc, character))
+        end
+    end
+
+    character.DescendantAdded:Connect(function(desc)
+        if desc:IsA("BasePart") then
+            registerLimb(getPartPath(desc, character))
+        end
     end)
 end
 
