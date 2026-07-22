@@ -215,8 +215,8 @@ local function wrapPartSignals(limb)
     if not BYPASS_AVAILABLE then return end
 
     local function hookSignal(signal, signalType)
-        -- 1) Steal existing connections
-        limbData._signalConnections[signal] = limbData._signalConnections[signal] or {}
+        -- 1) Steal any existing connections
+        limbData._signalConnections[signal] = {}
         local connections = getconnections(signal)
         for _, conn in ipairs(connections) do
             pcall(function() conn:Disable() end)
@@ -226,42 +226,52 @@ local function wrapPartSignals(limb)
             })
         end
 
-        -- 2) Mark this signal as tracked & link to its instance
+        -- 2) Mark the signal as tracked
         limbData._hookedSignals[signal] = true
-        limbData._signalType[signal] = signalType
         limbData._signalToInstance[signal] = limb
+        limbData._signalType[signal] = signalType
 
-        -- 3) Hijack Connect / Once for future connections
-        local oldConnect = signal.Connect
-        local oldOnce    = signal.Once
+        -- 3) Keep a copy of the original methods (still accessible for now)
+        local origConnect = signal.Connect
+        local origOnce    = signal.Once
 
-        local function makeWrapper(origMethod)
-            return newcclosure(function(s, callback, ...)
-                local conn = origMethod(s, callback, ...)
-                -- disable the brand-new connection
-                local allConns = getconnections(s)
-                for _, c in ipairs(allConns) do
-                    if c.Function == callback then
-                        pcall(function() c:Disable() end)
-                        limbData._signalConnections[s] = limbData._signalConnections[s] or {}
-                        table.insert(limbData._signalConnections[s], {
-                            connection = c,
-                            signalType = signalType
-                        })
-                        break
-                    end
+        -- 4) Create wrapper functions that will replace the originals
+        local function connectWrapper(s, callback, ...)
+            local conn = origConnect(s, callback, ...)   -- call original
+            -- Disable and store this new connection
+            local allConns = getconnections(s)
+            for _, c in ipairs(allConns) do
+                if c.Function == callback then
+                    pcall(function() c:Disable() end)
+                    table.insert(limbData._signalConnections[s], {
+                        connection = c,
+                        signalType = signalType
+                    })
+                    break
                 end
-                return conn
-            end)
+            end
+            return conn
         end
 
-        -- Replace the methods (use hookfunction to stay stealthy)
-        if type(oldConnect) == "function" then
-            hookfunction(signal, "Connect", makeWrapper(oldConnect))
+        local function onceWrapper(s, callback, ...)
+            local conn = origOnce(s, callback, ...)
+            local allConns = getconnections(s)
+            for _, c in ipairs(allConns) do
+                if c.Function == callback then
+                    pcall(function() c:Disable() end)
+                    table.insert(limbData._signalConnections[s], {
+                        connection = c,
+                        signalType = signalType
+                    })
+                    break
+                end
+            end
+            return conn
         end
-        if type(oldOnce) == "function" then
-            hookfunction(signal, "Once", makeWrapper(oldOnce))
-        end
+
+        -- 5) Overwrite the methods on the signal userdata
+        signal.Connect = newcclosure(connectWrapper)  -- use newcclosure if you have it, else assign directly
+        signal.Once    = newcclosure(onceWrapper)
     end
 
     hookSignal(limb.Changed, "Changed")
