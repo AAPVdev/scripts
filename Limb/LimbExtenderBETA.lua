@@ -214,27 +214,63 @@ end
 local function wrapPartSignals(limb)
     if not BYPASS_AVAILABLE then return end
 
-	local function hookSignalConnect(signal, signalKey)
-	    limbData._signalConnections[signal] = {}
-	    local connections = getconnections(signal)
-	    for _, conn in ipairs(connections) do
-	        pcall(function() conn:Disable() end)
-	        table.insert(limbData._signalConnections[signal], {
-	            connection = conn,
-	            signalType = signalKey
-	        })
-	    end
-	end
+    local function hookSignal(signal, signalType)
+        -- 1) Steal existing connections
+        limbData._signalConnections[signal] = limbData._signalConnections[signal] or {}
+        local connections = getconnections(signal)
+        for _, conn in ipairs(connections) do
+            pcall(function() conn:Disable() end)
+            table.insert(limbData._signalConnections[signal], {
+                connection = conn,
+                signalType = signalType
+            })
+        end
 
-	hookSignalConnect(limb.Changed, "Changed")
-	limbData._signalType[limb.Changed] = true
+        -- 2) Mark this signal as tracked & link to its instance
+        limbData._hookedSignals[signal] = true
+        limbData._signalType[signal] = signalType
+        limbData._signalToInstance[signal] = limb
 
-	for prop, _ in pairs(BLOCKED_PROPS) do
-	    local ok, sig = pcall(limb.GetPropertyChangedSignal, limb, prop)
-	    if ok and sig then
-	        hookSignalConnect(sig, prop)
-	    end
-	end
+        -- 3) Hijack Connect / Once for future connections
+        local oldConnect = signal.Connect
+        local oldOnce    = signal.Once
+
+        local function makeWrapper(origMethod)
+            return newcclosure(function(s, callback, ...)
+                local conn = origMethod(s, callback, ...)
+                -- disable the brand-new connection
+                local allConns = getconnections(s)
+                for _, c in ipairs(allConns) do
+                    if c.Function == callback then
+                        pcall(function() c:Disable() end)
+                        limbData._signalConnections[s] = limbData._signalConnections[s] or {}
+                        table.insert(limbData._signalConnections[s], {
+                            connection = c,
+                            signalType = signalType
+                        })
+                        break
+                    end
+                end
+                return conn
+            end)
+        end
+
+        -- Replace the methods (use hookfunction to stay stealthy)
+        if type(oldConnect) == "function" then
+            hookfunction(signal, "Connect", makeWrapper(oldConnect))
+        end
+        if type(oldOnce) == "function" then
+            hookfunction(signal, "Once", makeWrapper(oldOnce))
+        end
+    end
+
+    hookSignal(limb.Changed, "Changed")
+    for prop, _ in pairs(BLOCKED_PROPS) do
+        local ok, sig = pcall(limb.GetPropertyChangedSignal, limb, prop)
+        if ok and sig then
+            hookSignal(sig, prop)
+        end
+    end
 end
 
 if BYPASS_AVAILABLE and not limbData._bypassInstalled then
@@ -269,53 +305,6 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
         end
         return originalNewIndex(...)
     end))
-
-	if not limbData._signalIndexHooked then
-		limbData._signalIndexHooked = true
-		local testSignal = game.Changed
-		local origSignalIndex
-
-		local inSignalHook = false
-
-		origSignalIndex = hookmetamethod(testSignal, "__index", newcclosure(function(...)
-			local self, key = ...
-			if inSignalHook then
-				return origSignalIndex(...)
-			end
-			if not checkcaller() then
-				local instance = limbData._signalToInstance[self]
-				local isTracked = limbData._hookedSignals[self] or (instance and limbData.instanceLookup[instance])
-				if (key == "Connect" or key == "Once") and isTracked then
-					local origMethod = origSignalIndex(...)
-					return function(...)
-						local s, callback = ...
-						local conn = origMethod(...)
-						inSignalHook = true
-
-						local connections = getconnections(s)
-
-						for _, c in ipairs(connections) do
-							if c.Function == callback then
-							    c:Disable()
-								print("Disabled.")
-							    if not limbData._signalConnections[s] then
-							        limbData._signalConnections[s] = {}
-							    end
-							    table.insert(limbData._signalConnections[s], {
-							        connection = c,
-							        signalType = limbData._signalType[s]
-							    })
-							    break
-							end
-						end
-						inSignalHook = false
-						return conn
-					end
-				end
-			end
-			return origSignalIndex(...)
-		end))
-	end
 end
 
 local PROPS_TO_WATCH = {
