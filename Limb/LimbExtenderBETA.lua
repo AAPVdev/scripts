@@ -29,11 +29,10 @@ local Vector3_new = Vector3.new
 
 limbData.playerCache    = limbData.playerCache    or {}
 limbData.instanceLookup = limbData.instanceLookup or setmetatable({}, { __mode = "k" })
+limbData._signalType = limbData._signalType or setmetatable({}, { __mode = "k" })
+limbData._signalConnections = limbData._signalConnections or setmetatable({}, { __mode = "k" })
 limbData.npcIdCounter   = limbData.npcIdCounter   or 0
-limbData._suppressSignal = limbData._suppressSignal or 0
-limbData._migratedConns = limbData._migratedConns or setmetatable({}, { __mode = "k" })
 limbData._hookedSignals = limbData._hookedSignals or setmetatable({}, { __mode = "k" })
-limbData._wrappedParts  = limbData._wrappedParts  or setmetatable({}, { __mode = "k" })
 limbData._signalToInstance = limbData._signalToInstance or setmetatable({}, { __mode = "k" })
 
 if type(limbData.terminate) == "function" then
@@ -49,53 +48,77 @@ end)
 
 local BYPASS_AVAILABLE = false
 do
-    local required = {
-        "getrawmetatable",
-        "setreadonly",
-        "newcclosure",
-        "hookfunction",
-        "getconnections",
-        "checkcaller",
-        "firesignal",
-    }
+	local required = {
+		"getrawmetatable",
+		"setreadonly",
+		"newcclosure",
+		"hookfunction",
+		"getconnections",
+		"checkcaller",
+		"firesignal",
+	}
 
-    local ok = true
-    for _, name in ipairs(required) do
-        local fn = loadstring("return " .. name)()
-        if type(fn) ~= "function" then
-            ok = false
-            break
-        end
-    end
+	local ok = true
+	for _, name in ipairs(required) do
+		local fn = loadstring("return " .. name)()
+		if type(fn) ~= "function" then
+			ok = false
+			break
+		end
+	end
 
-    if ok then
-        local success = pcall(function()
-            local mt = getrawmetatable(game)
-            if type(mt) ~= "table" then error("expected table") end
-        end)
-        if success then
-            BYPASS_AVAILABLE = true
-        end
-    end
+	if ok then
+		local success = pcall(function()
+			local mt = getrawmetatable(game)
+			if type(mt) ~= "table" then error("expected table") end
+		end)
+		if success then
+			BYPASS_AVAILABLE = true
+		end
+	end
 end
 
 local BLOCKED_PROPS = {
 	Size = true, Transparency = true, CanCollide = true, Massless = true,
 	Mass = true, AssemblyMass = true, AssemblyCenterOfMass = true,
-	RootPriority = true,
+    RootPriority = true,
 }
 
-local ESP_SOURCE_URL     = "https://raw.gitbusercontent.com/AAPVdev/scripts/refs/heads/main/esp/SIXSEVENESP.lua"
-local MANAGER_SOURCE_URL = "https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/manager/manager.lua"
+local firingProps = setmetatable({}, { __mode = "k" })
+
+local ESP_SOURCE_URLS = {
+	"https://api.rubis.app/v2/scrap/qghKmrRhRUfwDnee/raw",
+}
+
+local MANAGER_SOURCE_URLS = {
+	"https://api.rubis.app/v2/scrap/rNPKyva99IGbf6tH/raw"
+}
 
 local GAME_SCRIPT_URLS = {
-	[1054526971] = "https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/games/brm5.lua",
+	[1054526971] = {
+		"https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/games/brm5.lua",
+	},
 }
+
+local function fetchWithFallback(urlList)
+	if type(urlList) == "string" then
+		urlList = { urlList }
+	end
+	for _, url in ipairs(urlList) do
+		local ok, result = pcall(game.HttpGet, game, url)
+		if ok and result then
+			return result
+		end
+	end
+	return nil
+end
 
 local function ensureESPLoaded()
 	if limbData.ESP then return limbData.ESP end
 	if not (has_loadstring and has_httpget) then return nil end
-	local ok, res = pcall(function() return loadstring(game:HttpGet(ESP_SOURCE_URL))() end)
+	local source = fetchWithFallback(ESP_SOURCE_URLS)
+	if not source then return nil end
+	local ok, res = pcall(function() return loadstring(source)() end)
 	if ok then limbData.ESP = res end
 	return limbData.ESP
 end
@@ -103,15 +126,37 @@ end
 local function ensureMANAGERLoaded()
 	if limbData.manager then return limbData.manager end
 	if not (has_loadstring and has_httpget) then return nil end
-	local ok, res = pcall(function() return loadstring(game:HttpGet(MANAGER_SOURCE_URL))() end)
+	local source = fetchWithFallback(MANAGER_SOURCE_URLS)
+	if not source then return nil end
+	local ok, res = pcall(function() return loadstring(source)() end)
 	if ok then limbData.manager = res end
 	return limbData.manager
 end
 
 local function fireSignalsForProp(limb, prop)
+	if firingProps[limb] then return end
+	firingProps[limb] = true
+
+    local changedSig = limb.Changed
+    local changedConns = limbData._signalConnections[changedSig]
+    if changedConns then
+        for _, entry in ipairs(changedConns) do
+            entry.connection:Fire(prop)
+        end
+    end
+
+    local propSig = limb:GetPropertyChangedSignal(prop)
+    local propConns = limbData._signalConnections[propSig]
+    if propConns then
+        for _, entry in ipairs(propConns) do
+            entry.connection:Fire()
+        end
+    end
+
 	firesignal(limb.Changed, prop)
-	local sig = limb:GetPropertyChangedSignal(prop)
-	firesignal(sig)
+	firesignal(limb:GetPropertyChangedSignal(prop))
+
+    firingProps[limb] = nil
 end
 
 local RESTART_KEYS = {
@@ -159,217 +204,118 @@ local function write(limb, props)
 	end
 end
 
+function getTargetData(instance)
+	if typeof(instance) ~= "Instance" then return nil, nil end
+	local cached = limbData.instanceLookup[instance]
+	if cached then return cached.data, cached.type end
+	return nil, nil
+end
+
 local function wrapPartSignals(limb)
     if not BYPASS_AVAILABLE then return end
-    if limbData._wrappedParts[limb] then return end
 
-    local function hookSignalConnect(signal)
-        if limbData._hookedSignals[signal] then return end
-        limbData._hookedSignals[signal] = true
+	local function hookSignalConnect(signal, signalKey)
+	    limbData._signalConnections[signal] = {}
+	    local connections = getconnections(signal)
+	    for _, conn in ipairs(connections) do
+	        pcall(function() conn:Disable() end)
+	        table.insert(limbData._signalConnections[signal], {
+	            connection = conn,
+	            signalType = signalKey
+	        })
+	    end
+	end
 
-        local connections = getconnections(signal)
-		for _, conn in ipairs(connections) do
-		    if limbData._migratedConns[conn] then continue end
-		    local origCallback = conn.Function
-			local safeRef = origCallback
-		    local isRunning = false
-		
-		    local success = pcall(hookfunction, origCallback, function(...)
-		        if (limbData._suppressSignal or 0) > 0 then return end
-		        if isRunning then return end
-		        isRunning = true
-		        local result = safeRef(...)
-		        isRunning = false
-		        return result
-		    end)
-			
-		    limbData._migratedConns[conn] = true
-		end
-    end
+	hookSignalConnect(limb.Changed, "Changed")
+	limbData._signalType[limb.Changed] = true
 
-    hookSignalConnect(limb.Changed)
-    for prop, _ in pairs(BLOCKED_PROPS) do
-        local ok, sig = pcall(limb.GetPropertyChangedSignal, limb, prop)
-        if ok and sig then
-            hookSignalConnect(sig)
-        end
-        task_wait()
-    end
-
-    limbData._wrappedParts[limb] = true
+	for prop, _ in pairs(BLOCKED_PROPS) do
+	    local ok, sig = pcall(limb.GetPropertyChangedSignal, limb, prop)
+	    if ok and sig then
+	        hookSignalConnect(sig, prop)
+	    end
+	end
 end
 
 if BYPASS_AVAILABLE and not limbData._bypassInstalled then
-    limbData._bypassInstalled = true
+	limbData._bypassInstalled = true
 
-    local mt          = getrawmetatable(game)
-    local oldIndex    = mt.__index
-    local oldNewIndex = mt.__newindex
-    local oldNamecall = mt.__namecall
-    setreadonly(mt, false)
+	local originalIndex, originalNewIndex = false
 
-    local checkcaller = checkcaller
-    local typeof = typeof
-    local firesignal = firesignal
-    local getnamecallmethod = getnamecallmethod
-    local instanceLookup = limbData.instanceLookup
-    local blockedProps = BLOCKED_PROPS
-    local signalToInstance = limbData._signalToInstance
-    local hookedSignals = limbData._hookedSignals
-    local limbDataTable = limbData
-
-    mt.__index = function(self, key)
-        if checkcaller() then return oldIndex(self, key) end
-        local lookup = instanceLookup[self]
-        if lookup then
-            local data = lookup.data
-            if data and blockedProps[key] then
-                return data["Original"..key]
+  	originalIndex = hookmetamethod(game, "__index", newcclosure(function(...)
+        if not checkcaller() then
+			local self, key = ...
+            local data = getTargetData(self)
+            if data then
+                if BLOCKED_PROPS[key] then
+                    return data["Original"..key]
+                end
             end
         end
-        local result = oldIndex(self, key)
-        
-        if lookup and typeof(result) == "RBXScriptSignal" then
-            signalToInstance[result] = self
-            hookedSignals[result] = true
-        end
-        return result
-    end
+        return originalIndex(...)
+    end))
 
-    mt.__newindex = function(self, key, value)
+	originalNewIndex = hookmetamethod(game, "__newindex", newcclosure(function(...)
         if not checkcaller() then
-            local lookup = instanceLookup[self]
-            if lookup then
-                local data = lookup.data
-                if data and blockedProps[key] then
+			local self, key, value = ...
+            local data = getTargetData(self)
+            if data then
+                if BLOCKED_PROPS[key] then
                     data["Original"..key] = value
-                    fireSignalsForProp(self, key)
+					fireSignalsForProp(self, key)
                     return
                 end
             end
-            return oldNewIndex(self, key, value)
-        else
-            limbDataTable._suppressSignal = (limbDataTable._suppressSignal or 0) + 1
-            oldNewIndex(self, key, value)
-            limbDataTable._suppressSignal = (limbDataTable._suppressSignal or 1) - 1
         end
-    end
+        return originalNewIndex(...)
+    end))
 
-    mt.__namecall = function(self, ...)
-        if not checkcaller() then
-            local method = getnamecallmethod()
+	if not limbData._signalIndexHooked then
+		limbData._signalIndexHooked = true
+		local testSignal = game.Changed
+		local origSignalIndex
 
-            if method == "GetPropertyChangedSignal" then
-                local propertyName = ...
-                if typeof(propertyName) == "string" then
-                    local signal = oldNamecall(self, propertyName)
-                    local lookup = instanceLookup[self]
-                    if lookup and blockedProps[propertyName] and typeof(signal) == "RBXScriptSignal" then
-                        signalToInstance[signal] = self
-                        hookedSignals[signal] = true
-                    end
-                    return signal
-                else
-                    return nil   
-                end
-            end
+		local inSignalHook = false
 
-            if method == "IsA" then
-                local className = ...
-                if typeof(className) == "string" then
-                    return oldNamecall(self, className)
-                else
-                    return false  
-                end
-            end
-        end
-        return oldNamecall(self, ...)
-    end
+		origSignalIndex = hookmetamethod(testSignal, "__index", newcclosure(function(...)
+			local self, key = ...
+			if inSignalHook then
+				return origSignalIndex(...)
+			end
+			if not checkcaller() then
+				local instance = limbData._signalToInstance[self]
+				local isTracked = limbData._hookedSignals[self] or (instance and limbData.instanceLookup[instance])
+				if (key == "Connect" or key == "Once") and isTracked then
+					local origMethod = origSignalIndex(...)
+					return function(...)
+						local s, callback = ...
+						local conn = origMethod(...)
+						inSignalHook = true
 
-    local function nullifyEnv(fn)
-        for i = 1, 100 do
-            local ok, name = pcall(debug.getupvalue, fn, i)
-            if not ok or not name then break end
-            if name == "_ENV" then
-                debug.setupvalue(fn, i, nil)
-                break
-            end
-        end
-    end
-    nullifyEnv(mt.__index)
-    nullifyEnv(mt.__newindex)
-    nullifyEnv(mt.__namecall)
+						local connections = getconnections(s)
 
-    setreadonly(mt, true)
-
-    if not limbData._signalIndexHooked then
-        limbData._signalIndexHooked = true
-        local testSignal = game.Changed
-        local signalMt = getrawmetatable(testSignal)
-        local origSignalIndex = signalMt.__index
-        setreadonly(signalMt, false)
-
-        signalMt.__index = function(self, key)
-            if not checkcaller() then
-                local instance = signalToInstance[self]
-                local isTracked = hookedSignals[self] or (instance and instanceLookup[instance])
-                if (key == "Connect" or key == "Once") and isTracked then
-                    local origMethod = origSignalIndex(self, key)
-                    return function(s, callback)
-                        local safeCallback = callback
-                        local isRunning = false
-                        local wrapped = function(...)
-                            if limbDataTable._suppressSignal > 0 then return end
-                            if isRunning then return end
-                            isRunning = true
-                            local result = safeCallback(...)
-                            isRunning = false
-                            return result
-                        end
-                        nullifyEnv(wrapped)
-                        return origMethod(s, wrapped)
-                    end
-                end
-            end
-            return origSignalIndex(self, key)
-        end
-        nullifyEnv(signalMt.__index)
-        setreadonly(signalMt, true)
-    end
-
-    local function scrubUpvalues(fn)
-        if type(fn) ~= "function" then return end
-        for i = 1, 100 do
-            local ok, name, val = pcall(debug.getupvalue, fn, i)
-            if not ok or not name then break end
-            if name == "_ENV" then continue end
-            if type(val) == "table" then
-                local mtVal = getmetatable(val)
-                if mtVal == nil or mtVal.__index == nil then
-                    local proxy = newproxy(true)
-                    local proxyMt = getmetatable(proxy)
-                    if mtVal then
-                        for k,v in pairs(mtVal) do proxyMt[k] = v end
-                    end
-                    proxyMt.__index = val
-                    proxyMt.__newindex = function(_, k, v) val[k] = v end
-                    proxyMt.__pairs = function() return pairs(val) end
-                    debug.setupvalue(fn, i, proxy)
-                end
-            end
-        end
-    end
-
-    scrubUpvalues(mt.__index)
-    scrubUpvalues(mt.__newindex)
-    scrubUpvalues(mt.__namecall)
-
-    if limbData._signalIndexHooked then
-        local signalMt = getrawmetatable(game.Changed)
-        if signalMt and signalMt.__index then
-            scrubUpvalues(signalMt.__index)
-        end
-    end
+						for _, c in ipairs(connections) do
+							if c.Function == callback then
+							    c:Disable()
+								print("Disabled.")
+							    if not limbData._signalConnections[s] then
+							        limbData._signalConnections[s] = {}
+							    end
+							    table.insert(limbData._signalConnections[s], {
+							        connection = c,
+							        signalType = limbData._signalType[s]
+							    })
+							    break
+							end
+						end
+						inSignalHook = false
+						return conn
+					end
+				end
+			end
+			return origSignalIndex(...)
+		end))
+	end
 end
 
 local PROPS_TO_WATCH = {
@@ -381,6 +327,7 @@ local PROPS_TO_WATCH = {
 }
 
 local function setupLimbWatchdog(entry, limb)
+	if BYPASS_AVAILABLE then return end
 	if not entry or not limb then return end
 
 	if entry._watchConns then
@@ -414,7 +361,7 @@ LimbExtender.__index = LimbExtender
 
 local DEFAULTS = {
 	TARGET_LIMB             = "Head",
-	LIMB_SIZE               = 12,
+	LIMB_SIZE               = 15,
 	LIMB_TRANSPARENCY       = 0.7,
 	LIMB_CAN_COLLIDE        = false,
 	TEAM_CHECK              = true,
@@ -525,7 +472,7 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 	local cache = parent._playerCache
 	local entry = cache[cacheKey]
 	if not entry then return end
-	
+
 	if entry._watchConns then
 		for _, conn in ipairs(entry._watchConns) do
 			conn:Disconnect()
@@ -540,6 +487,7 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 	entry.TargetRootPriority             = nil
 
 	if activeLimb and activeLimb.Parent then
+		if entry._humanoidStateConn then entry._humanoidStateConn:Disconnect() end
 		pcall(write, activeLimb, {
 			Size                     = entry.OriginalSize,
 			Transparency             = entry.OriginalTransparency,
@@ -556,20 +504,20 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 end
 
 local function reapplyCosmeticToEntry(entry, settings)
-	local limb = entry.Limb
+    local limb = entry.Limb
 
     if entry._watchConns then
-		for _, conn in ipairs(entry._watchConns) do
-			conn:Disconnect()
-		end
-		entry._watchConns = nil
-	end
+        for _, conn in ipairs(entry._watchConns) do
+            conn:Disconnect()
+        end
+        entry._watchConns = nil
+    end
 
-	local props, newVec, isHRP = buildLimbProps(limb, entry, settings)
-	write(limb, props)
-	applyEntryTargets(entry, props, newVec, isHRP, settings)
+    local props, newVec, isHRP = buildLimbProps(limb, entry, settings)
+    write(limb, props)
+    applyEntryTargets(entry, props, newVec, isHRP, settings)
 
-	setupLimbWatchdog(entry, limb)
+    setupLimbWatchdog(entry, limb)
 end
 
 function LimbExtender:_applyLimbs(player, char, limb)
@@ -675,8 +623,8 @@ end
 
 function LimbExtender:_doRestartBatched()
 	if not self._running then return end
-	self._manager:Stop()
 	self._suppressOnLimbLost = true
+	self._manager:Stop()
 
 	local cache = self._playerCache
 	local keys = {}
@@ -704,15 +652,14 @@ function LimbExtender:_doRestartBatched()
 		task_wait()
 	end
 
+	self._suppressOnLimbLost = false
 	table_clear(cache)
 
 	if self._ESP then self._ESP:Stop() end
-	self._suppressOnLimbLost = false
 	if not self._running then return end
 
 	self._generation = self._generation + 1
 	self._managerGeneration = self._generation
-	
 	self._manager:Start()
 	if self._ESP then self._ESP:Start() end
 	self:_runGameScriptIfNeeded()
@@ -729,7 +676,9 @@ function LimbExtender:_doCosmeticUpdateBatched()
 	end
 
 	local BATCH = 5
-	for i = 1, #entries, BATCH do
+	local keys = {}
+	for k in pairs(self._playerCache) do keys[#keys+1] = k end
+	for i = 1, #keys, BATCH do
 		if self._dirtyRestart or not self._running then return end
 		local last = math_min(i + BATCH - 1, #entries)
 		for j = i, last do
@@ -741,8 +690,8 @@ end
 
 function LimbExtender:_runGameScriptIfNeeded()
 	local currentId = game.GameId
-	local url = GAME_SCRIPT_URLS[currentId]
-	if not url then return end
+	local urlList = GAME_SCRIPT_URLS[currentId]
+	if not urlList then return end
 
 	if self._customSetup then
 		task_spawn(function()
@@ -758,9 +707,9 @@ function LimbExtender:_runGameScriptIfNeeded()
 	self._gameScriptFetched = true
 
 	task_spawn(function()
-		local ok, source = pcall(game.HttpGet, game, url)
-		if not ok or not source then
-			warn("[LimbExtender] Failed to fetch custom script: " .. tostring(source))
+		local source = fetchWithFallback(urlList)
+		if not source then
+			warn("[LimbExtender] Failed to fetch game script from all URLs for game ID " .. currentId)
 			return
 		end
 		local fn, err = loadstring(source)
