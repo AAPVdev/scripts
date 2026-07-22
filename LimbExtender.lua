@@ -153,6 +153,9 @@ local function fireSignalsForProp(limb, prop)
         end
     end
 
+	firesignal(limb.Changed, prop)
+	firesignal(limb:GetPropertyChangedSignal(prop))
+
     firingProps[limb] = nil
 end
 
@@ -236,89 +239,63 @@ end
 
 if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 	limbData._bypassInstalled = true
-	local mt          = getrawmetatable(game)
-	local oldIndex    = mt.__index
-	local oldNewIndex = mt.__newindex
-	local oldNamecall = mt.__namecall
-	setreadonly(mt, false)
 
-	mt.__index = function(self, key)
-		if not checkcaller() then
-			local data = getTargetData(self)
-			if data then
-				if BLOCKED_PROPS[key] then
-					return data["Original"..key]
-				end
-			end
-		end
-		return oldIndex(self, key)
-	end
+	local originalIndex, originalNewIndex = false
 
-	mt.__newindex = function(self, key, value)
-		if not checkcaller() then
-			local data = getTargetData(self)
-			if data then
-				if BLOCKED_PROPS[key] then
-					data["Original"..key] = value
+  	originalIndex = hookmetamethod(game, "__index", newcclosure(function(...)
+        if not checkcaller() then
+			local self, key = ...
+            local data = getTargetData(self)
+            if data then
+                if BLOCKED_PROPS[key] then
+                    return data["Original"..key]
+                end
+            end
+        end
+        return originalIndex(...)
+    end))
+
+	originalNewIndex = hookmetamethod(game, "__newindex", newcclosure(function(...)
+        if not checkcaller() then
+			local self, key, value = ...
+            local data = getTargetData(self)
+            if data then
+                if BLOCKED_PROPS[key] then
+                    data["Original"..key] = value
 					fireSignalsForProp(self, key)
-					return
-				end
-			end
-		end
-		return oldNewIndex(self, key, value)
-	end
-
-	mt.__namecall = function(self, ...)
-		if not checkcaller() then
-			local lookup = limbData.instanceLookup[self]
-			local method = getnamecallmethod()
-			if method == "GetPropertyChangedSignal" then
-			    local propertyName = ...
-			    local signal = oldNamecall(self, ...)
-			    if lookup and BLOCKED_PROPS[propertyName] then
-			        limbData._signalToInstance[signal] = self
-			        limbData._hookedSignals[signal] = true
-			        limbData._signalType[signal] = propertyName
-			    end
-			    return signal
-			end
-		end
-		return oldNamecall(self, ...)
-	end
-	setreadonly(mt, true)
+                    return
+                end
+            end
+        end
+        return originalNewIndex(...)
+    end))
 
 	if not limbData._signalIndexHooked then
 		limbData._signalIndexHooked = true
 		local testSignal = game.Changed
-		local signalMt = getrawmetatable(testSignal)
-		local origSignalIndex = signalMt.__index
+		local origSignalIndex
 
 		local inSignalHook = false
 
-		setreadonly(signalMt, false)
-		signalMt.__index = function(self, key)
-
+		origSignalIndex = hookmetamethod(testSignal, "__index", newcclosure(function(...)
+			local self, key = ...
 			if inSignalHook then
-				return origSignalIndex(self, key)
+				return origSignalIndex(...)
 			end
-
 			if not checkcaller() then
 				local instance = limbData._signalToInstance[self]
 				local isTracked = limbData._hookedSignals[self] or (instance and limbData.instanceLookup[instance])
-
 				if (key == "Connect" or key == "Once") and isTracked then
 					local origMethod = origSignalIndex(self, key)
-
 					return function(s, callback)
-
 						local conn = origMethod(s, callback)
-
 						inSignalHook = true
+
 						local connections = getconnections(s)
+
 						for _, c in ipairs(connections) do
 							if c.Function == callback then
 							    c:Disable()
-
 							    if not limbData._signalConnections[s] then
 							        limbData._signalConnections[s] = {}
 							    end
@@ -330,15 +307,12 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 							end
 						end
 						inSignalHook = false
-
 						return conn
 					end
 				end
 			end
-
-			return origSignalIndex(self, key)
-		end
-		setreadonly(signalMt, true)
+			return origSignalIndex(...)
+		end))
 	end
 end
 
