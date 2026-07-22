@@ -218,7 +218,7 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 	limbData._bypassInstalled = true
 
 	-- InstanceBypass Made by AnthonyIsntHere
-	local ProtectedInstances = {}
+	--[[local ProtectedInstances = {}
 	
 	local _Instance = Instance.new
 	local _tostring = tostring
@@ -297,7 +297,7 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 			local Arguments = {...}
 			local String = tostringHook(...)
 	
-			if ProtectedInstances[Arguments[1]] then
+			if ProtectedInstances[ Arguments[1] ] then
 				return task.wait(2^53 - 1)
 			end
 		end
@@ -320,7 +320,7 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 	    if GetConstant(Function, "WaitForChild") then
 	        task.cancel(x)
 	    end
-	end
+	end]]
 	
 	local originalIndex, originalNewIndex, originalNamecall = false
 
