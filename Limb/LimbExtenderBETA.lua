@@ -29,11 +29,7 @@ local Vector3_new = Vector3.new
 
 limbData.playerCache    = limbData.playerCache    or {}
 limbData.instanceLookup = limbData.instanceLookup or setmetatable({}, { __mode = "k" })
-limbData._signalType = limbData._signalType or setmetatable({}, { __mode = "k" })
-limbData._signalConnections = limbData._signalConnections or setmetatable({}, { __mode = "k" })
 limbData.npcIdCounter   = limbData.npcIdCounter   or 0
-limbData._hookedSignals = limbData._hookedSignals or setmetatable({}, { __mode = "k" })
-limbData._signalToInstance = limbData._signalToInstance or setmetatable({}, { __mode = "k" })
 
 if type(limbData.terminate) == "function" then
 	limbData.terminate()
@@ -55,7 +51,6 @@ do
 		"hookfunction",
 		"getconnections",
 		"checkcaller",
-		"firesignal",
 	}
 
 	local ok = true
@@ -83,8 +78,6 @@ local BLOCKED_PROPS = {
 	Mass = true, AssemblyMass = true, AssemblyCenterOfMass = true,
     RootPriority = true,
 }
-
-local firingProps = setmetatable({}, { __mode = "k" })
 
 local ESP_SOURCE_URLS = {
 	"https://api.rubis.app/v2/scrap/qghKmrRhRUfwDnee/raw",
@@ -131,32 +124,6 @@ local function ensureMANAGERLoaded()
 	local ok, res = pcall(function() return loadstring(source)() end)
 	if ok then limbData.manager = res end
 	return limbData.manager
-end
-
-local function fireSignalsForProp(limb, prop)
-	if firingProps[limb] then return end
-	firingProps[limb] = true
-
-    local changedSig = limb.Changed
-    local changedConns = limbData._signalConnections[changedSig]
-    if changedConns then
-        for _, entry in ipairs(changedConns) do
-            entry.connection:Fire(prop)
-        end
-    end
-
-    local propSig = limb:GetPropertyChangedSignal(prop)
-    local propConns = limbData._signalConnections[propSig]
-    if propConns then
-        for _, entry in ipairs(propConns) do
-            entry.connection:Fire()
-        end
-    end
-
-	firesignal(limb.Changed, prop)
-	firesignal(limb:GetPropertyChangedSignal(prop))
-
-    firingProps[limb] = nil
 end
 
 local RESTART_KEYS = {
@@ -211,30 +178,38 @@ function getTargetData(instance)
 	return nil, nil
 end
 
-local function wrapPartSignals(limb)
-    if not BYPASS_AVAILABLE then return end
+local function createCustomSignals(limb)
+    local data = getTargetData(limb)
+    if data._customSignals then return end
 
-    local function hookSignalConnect(signal, signalKey)
-        limbData._signalConnections[signal] = {}
-        local connections = getconnections(signal)
-        for _, conn in ipairs(connections) do
-            pcall(function() conn:Disable() end)
-            table.insert(limbData._signalConnections[signal], {
-                connection = conn,
-                signalType = signalKey
-            })
-        end
+    local custom = {}
+    custom.Changed = Instance.new("BindableEvent")
+    custom.Changed.Name = "CustomChanged"
 
-        limbData._hookedSignals[signal] = true
-        limbData._signalToInstance[signal] = limb
-        limbData._signalType[signal] = signalKey
+    for prop, _ in pairs(BLOCKED_PROPS) do
+        custom[prop] = Instance.new("BindableEvent")
+        custom[prop].Name = "Custom_" .. prop
     end
 
-    hookSignalConnect(limb.Changed, "Changed")
+    data._customSignals = custom
+
+    local function migrateSignal(realSignal, customEvent)
+        local connections = getconnections(realSignal)
+        for _, conn in ipairs(connections) do
+            local func = conn.Function
+            if func then
+                customEvent.Event:Connect(func)
+            end
+            conn:Disable()
+        end
+    end
+
+    migrateSignal(limb.Changed, custom.Changed)
+
     for prop, _ in pairs(BLOCKED_PROPS) do
         local ok, sig = pcall(limb.GetPropertyChangedSignal, limb, prop)
         if ok and sig then
-            hookSignalConnect(sig, prop)
+            migrateSignal(sig, custom[prop])
         end
     end
 end
@@ -242,15 +217,123 @@ end
 if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 	limbData._bypassInstalled = true
 
-	local originalIndex, originalNewIndex = false
+	-- InstanceBypass Made by AnthonyIsntHere
+	--[[local ProtectedInstances = {}
+	
+	local _Instance = Instance.new
+	local _tostring = tostring
+	local Metatable, Metamethods
+	
+	local InstanceHook; InstanceHook = hookfunction(Instance.new, clonefunction(newcclosure(function(...)
+		if checkcaller() then
+			local NewInstance = InstanceHook(...)
+			sethiddenproperty(NewInstance, "DefinesCapabilities", true)
+			ProtectedInstances[NewInstance] =  true
+	
+	        if Metatable and Metamethods then
+	            Metatable.__namecall = Metamethods.__namecall
+	            Metatable.__index = Metamethods.__index
+	        end
+	
+	        Metatable = getrawmetatable(NewInstance)
+	        Metamethods = {
+	            __namecall = Metatable.__namecall,
+	            __index = Metatable.__index
+	        }
+	        
+	        setreadonly(Metatable, false)
+	        Metatable.__namecall = clonefunction(function(self, ...)
+	            if not checkcaller() then
+	                local Arguments = {...}
+	                local Method = getnamecallmethod()
+	
+	                if ProtectedInstances[self] then
+	                    return task.wait(2^53 - 1)
+	                end
+	
+	                if typeof(Method) == "string" and Method:lower():match("^findfirst") or Method:lower():match("^waitforchild") then
+	                    local Instance = Metamethods.__namecall(self, ...)
+	
+	                    if Instance and ProtectedInstances[Instance] then
+	                        return task.wait(2^53 - 1)
+	                    end
+	                end
+	            end
+	
+	            return Metamethods.__namecall(self, ...)
+	        end)
+	
+	        Metatable.__index = clonefunction(function(self, index)
+	            if not checkcaller() then
+	                if typeof(index) == "string" and ((ProtectedInstances[self] and index:lower():match("^is")) or index:lower():match("^findfirst")) then
+	                    local IndexFunction = Metamethods.__index(self, index)
+	
+	                    if typeof(IndexFunction) == "function" and not isfunctionhooked(IndexFunction) then
+	                        local IndexFunctionHook; IndexFunctionHook = hookfunction(IndexFunction, clonefunction(newcclosure(function(...)
+	                            local Arguments = {...}
+	                            restorefunction(IndexFunction)
+	
+	                            local Instance = IndexFunction(self, Arguments[2])
+	                            if Instance and ProtectedInstances[Instance] or ProtectedInstances[self] then
+	                                return task.wait(2^53 - 1)
+	                            end
+	                        end)))
+	                    end
+	                end
+	            end
+	
+	            if ProtectedInstances[self] and typeof(Metamethods.__index(self, index)) ~= "function" and not checkcaller() then
+	                return task.wait(2^53 - 1)
+	            end
+	            return Metamethods.__index(self, index)
+	        end)
+			return NewInstance
+		end
+		return InstanceHook(...)
+	end)))
+	
+	local tostringHook; tostringHook = hookfunction(_tostring, clonefunction(newcclosure(function(...)
+		if not checkcaller() then
+			local Arguments = {...}
+			local String = tostringHook(...)
+	
+			if ProtectedInstances[ Arguments[1] ] then
+				return task.wait(2^53 - 1)
+			end
+		end
+		return tostringHook(...)
+	end)))
+	
+	local GetConstant = function(f, v)
+	    for _, Constant in next, debug.getconstants(f) do
+	        if not rawequal(Constant, v) then continue end
+	        return true
+	    end
+	    return false
+	end
+	
+	for _, x in next, getreg() do
+	    local Function = type(x) == "thread" and coroutine.status(x) == "suspended" and debug.info(x, 1, "f")
+	    local ScriptInstance = Function and getfenv(Function) and typeof(getfenv(Function).script) == "Instance"
+	
+	    if not Function or not ScriptInstance then continue end
+	    if GetConstant(Function, "WaitForChild") then
+	        task.cancel(x)
+	    end
+	end]]
+	
+	local originalIndex, originalNewIndex, originalNamecall = false
 
-  	originalIndex = hookmetamethod(game, "__index", newcclosure(function(...)
+    originalIndex = hookmetamethod(game, "__index", newcclosure(function(...)
         if not checkcaller() then
-			local self, key = ...
+            local self, key = ...
             local data = getTargetData(self)
             if data then
                 if BLOCKED_PROPS[key] then
                     return data["Original"..key]
+                end
+                if key == "Changed" and data._customSignals then
+                    return data._customSignals.Changed.Event
                 end
             end
         end
@@ -264,7 +347,13 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
             if data then
                 if BLOCKED_PROPS[key] then
                     data["Original"..key] = value
-					fireSignalsForProp(self, key)
+                    local custom = data._customSignals
+                    if custom then
+                        if custom[key] then
+                            custom[key]:Fire(value)
+                        end
+                        custom.Changed:Fire(key, value)
+                    end
                     return
                 end
             end
@@ -272,52 +361,19 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
         return originalNewIndex(...)
     end))
 
-	if not limbData._signalIndexHooked then
-		limbData._signalIndexHooked = true
-		local testSignal = game.Changed
-		local origSignalIndex
-
-		local inSignalHook = false
-
-		origSignalIndex = hookmetamethod(testSignal, "__index", newcclosure(function(...)
-			local self, key = ...
-			if inSignalHook then
-				return origSignalIndex(...)
-			end
-			if not checkcaller() then
-				local instance = limbData._signalToInstance[self]
-				local isTracked = limbData._hookedSignals[self] or (instance and limbData.instanceLookup[instance])
-				if (key == "Connect" or key == "Once") and isTracked then
-					local origMethod = origSignalIndex(...)
-					return function(...)
-						local s, callback = ...
-						local conn = origMethod(...)
-						inSignalHook = true
-
-						local connections = getconnections(s)
-
-						for _, c in ipairs(connections) do
-							if c.Function == callback then
-							    c:Disable()
-								print("Disabled.")
-							    if not limbData._signalConnections[s] then
-							        limbData._signalConnections[s] = {}
-							    end
-							    table.insert(limbData._signalConnections[s], {
-							        connection = c,
-							        signalType = limbData._signalType[s]
-							    })
-							    break
-							end
-						end
-						inSignalHook = false
-						return conn
-					end
-				end
-			end
-			return origSignalIndex(...)
-		end))
-	end
+    originalNamecall = hookmetamethod(game, "__namecall", function(...)
+        if not checkcaller() then
+            local self, prop = ...
+            if getnamecallmethod() == "GetPropertyChangedSignal" and getTargetData(self) and BLOCKED_PROPS[prop] then
+                local data = getTargetData(self)
+                local custom = data._customSignals
+                if custom and custom[prop] then
+                    return custom[prop].Event  
+                end
+            end
+        end
+        return originalNamecall(...)
+    end)
 end
 
 local PROPS_TO_WATCH = {
@@ -334,7 +390,7 @@ local function setupLimbWatchdog(entry, limb)
 
 	if entry._watchConns then
 		for _, conn in ipairs(entry._watchConns) do
-			conn:Disconnect()
+			conn:()
 		end
 		entry._watchConns = nil
 	end
@@ -461,7 +517,9 @@ local function sharedApplyLimb(parent, cacheKey, char, limb)
 	sharedSaveData(parent, cacheKey, char, limb)
 	local entry = parent._playerCache[cacheKey]
 	if not entry then return end
-	wrapPartSignals(limb)
+    if BYPASS_AVAILABLE then
+        createCustomSignals(limb)
+    end
 
 	local props, newVec, isHRP = buildLimbProps(limb, entry, parent._settings)
 	write(limb, props)
@@ -477,7 +535,7 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 
 	if entry._watchConns then
 		for _, conn in ipairs(entry._watchConns) do
-			conn:Disconnect()
+			conn:()
 		end
 		entry._watchConns = nil
 	end
@@ -489,7 +547,7 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 	entry.TargetRootPriority             = nil
 
 	if activeLimb and activeLimb.Parent then
-		if entry._humanoidStateConn then entry._humanoidStateConn:Disconnect() end
+		if entry._humanoidStateConn then entry._humanoidStateConn:() end
 		pcall(write, activeLimb, {
 			Size                     = entry.OriginalSize,
 			Transparency             = entry.OriginalTransparency,
