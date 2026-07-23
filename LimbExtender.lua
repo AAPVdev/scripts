@@ -183,24 +183,27 @@ local function createCustomSignals(limb)
     if data._customSignals then return end
 
     local custom = {}
-    custom.Changed = Instance.new("BindableEvent")
-    custom.Changed.Name = "CustomChanged"
+    local real = {}
+
+    real.Changed = Instance.new("BindableEvent")
+    custom.Changed = real.Changed.Event
 
     for prop, _ in pairs(BLOCKED_PROPS) do
-        custom[prop] = Instance.new("BindableEvent")
-        custom[prop].Name = "Custom_" .. prop
+        real[prop] = Instance.new("BindableEvent")
+        custom[prop] = real[prop].Event
     end
 
     data._customSignals = custom
+    data._realSignals = real
 
-    local function migrateSignal(realSignal, customEvent)
+    local function migrateSignal(realSignal, newSignal)
         local connections = getconnections(realSignal)
         for _, conn in ipairs(connections) do
             local func = conn.Function
             if func then
-                customEvent.Event:Connect(func)
+                newSignal:Connect(func)
             end
-            conn:Disconnect()
+            conn:Disable()
         end
     end
 
@@ -216,113 +219,8 @@ end
 
 if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 	limbData._bypassInstalled = true
-
-	-- InstanceBypass Made by AnthonyIsntHere
-	--[[local ProtectedInstances = {}
 	
-	local _Instance = Instance.new
-	local _tostring = tostring
-	local Metatable, Metamethods
-	
-	local InstanceHook; InstanceHook = hookfunction(Instance.new, clonefunction(newcclosure(function(...)
-		if checkcaller() then
-			local NewInstance = InstanceHook(...)
-			sethiddenproperty(NewInstance, "DefinesCapabilities", true)
-			ProtectedInstances[NewInstance] =  true
-	
-	        if Metatable and Metamethods then
-	            Metatable.__namecall = Metamethods.__namecall
-	            Metatable.__index = Metamethods.__index
-	        end
-	
-	        Metatable = getrawmetatable(NewInstance)
-	        Metamethods = {
-	            __namecall = Metatable.__namecall,
-	            __index = Metatable.__index
-	        }
-	        
-	        setreadonly(Metatable, false)
-	        Metatable.__namecall = clonefunction(function(self, ...)
-	            if not checkcaller() then
-	                local Arguments = {...}
-	                local Method = getnamecallmethod()
-	
-	                if ProtectedInstances[self] then
-	                    return task.wait(2^53 - 1)
-	                end
-	
-	                if typeof(Method) == "string" and Method:lower():match("^findfirst") or Method:lower():match("^waitforchild") then
-	                    local Instance = Metamethods.__namecall(self, ...)
-	
-	                    if Instance and ProtectedInstances[Instance] then
-	                        return task.wait(2^53 - 1)
-	                    end
-	                end
-	            end
-	
-	            return Metamethods.__namecall(self, ...)
-	        end)
-	
-	        Metatable.__index = clonefunction(function(self, index)
-	            if not checkcaller() then
-	                if typeof(index) == "string" and ((ProtectedInstances[self] and index:lower():match("^is")) or index:lower():match("^findfirst")) then
-	                    local IndexFunction = Metamethods.__index(self, index)
-	
-	                    if typeof(IndexFunction) == "function" and not isfunctionhooked(IndexFunction) then
-	                        local IndexFunctionHook; IndexFunctionHook = hookfunction(IndexFunction, clonefunction(newcclosure(function(...)
-	                            local Arguments = {...}
-	                            restorefunction(IndexFunction)
-	
-	                            local Instance = IndexFunction(self, Arguments[2])
-	                            if Instance and ProtectedInstances[Instance] or ProtectedInstances[self] then
-	                                return task.wait(2^53 - 1)
-	                            end
-	                        end)))
-	                    end
-	                end
-	            end
-	
-	            if ProtectedInstances[self] and typeof(Metamethods.__index(self, index)) ~= "function" and not checkcaller() then
-	                return task.wait(2^53 - 1)
-	            end
-	            return Metamethods.__index(self, index)
-	        end)
-			return NewInstance
-		end
-		return InstanceHook(...)
-	end)))
-	
-	local tostringHook; tostringHook = hookfunction(_tostring, clonefunction(newcclosure(function(...)
-		if not checkcaller() then
-			local Arguments = {...}
-			local String = tostringHook(...)
-	
-			if ProtectedInstances[ Arguments[1] ] then
-				return task.wait(2^53 - 1)
-			end
-		end
-		return tostringHook(...)
-	end)))
-	
-	local GetConstant = function(f, v)
-	    for _, Constant in next, debug.getconstants(f) do
-	        if not rawequal(Constant, v) then continue end
-	        return true
-	    end
-	    return false
-	end
-	
-	for _, x in next, getreg() do
-	    local Function = type(x) == "thread" and coroutine.status(x) == "suspended" and debug.info(x, 1, "f")
-	    local ScriptInstance = Function and getfenv(Function) and typeof(getfenv(Function).script) == "Instance"
-	
-	    if not Function or not ScriptInstance then continue end
-	    if GetConstant(Function, "WaitForChild") then
-	        task.cancel(x)
-	    end
-	end]]
-	
-	local originalIndex, originalNewIndex, originalNamecall = false
+	local originalIndex, originalNewIndex, originalNamecall
 
     originalIndex = hookmetamethod(game, "__index", newcclosure(function(...)
         if not checkcaller() then
@@ -333,7 +231,7 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
                     return data["Original"..key]
                 end
                 if key == "Changed" and data._customSignals then
-                    return data._customSignals.Changed.Event
+                    return data._customSignals.Changed
                 end
             end
         end
@@ -347,12 +245,14 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
             if data then
                 if BLOCKED_PROPS[key] then
                     data["Original"..key] = value
-                    local custom = data._customSignals
-                    if custom then
-                        if custom[key] then
-                            custom[key]:Fire(value)
+                    local real = data._realSignals
+                    if real then
+                        if real[key] then
+                            real[key]:Fire(value)
                         end
-                        custom.Changed:Fire(key, value)
+                        if real.Changed then
+                            real.Changed:Fire(key, value)
+                        end
                     end
                     return
                 end
@@ -368,7 +268,7 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
                 local data = getTargetData(self)
                 local custom = data._customSignals
                 if custom and custom[prop] then
-                    return custom[prop].Event  
+                    return custom[prop]
                 end
             end
         end
@@ -555,6 +455,13 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 			Massless                 = entry.OriginalMassless,
 			RootPriority             = entry.OriginalRootPriority,
 		})
+	end
+
+	if entry._realSignals then
+		for _, be in pairs(entry._realSignals) do
+			be:Destroy()
+		end
+		entry._realSignals = nil
 	end
 
 	if entry.Limb then limbData.instanceLookup[entry.Limb] = nil end
