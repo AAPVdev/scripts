@@ -390,7 +390,7 @@ local function setupLimbWatchdog(entry, limb)
 
 	if entry._watchConns then
 		for _, conn in ipairs(entry._watchConns) do
-			conn:()
+			conn:Disconnect()
 		end
 		entry._watchConns = nil
 	end
@@ -535,7 +535,7 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 
 	if entry._watchConns then
 		for _, conn in ipairs(entry._watchConns) do
-			conn:()
+			conn:Disconnect()
 		end
 		entry._watchConns = nil
 	end
@@ -547,7 +547,7 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 	entry.TargetRootPriority             = nil
 
 	if activeLimb and activeLimb.Parent then
-		if entry._humanoidStateConn then entry._humanoidStateConn:() end
+		if entry._humanoidStateConn then entry._humanoidStateConn:Disconnect() end
 		pcall(write, activeLimb, {
 			Size                     = entry.OriginalSize,
 			Transparency             = entry.OriginalTransparency,
