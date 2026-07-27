@@ -363,7 +363,7 @@ local DEFAULTS = {
 	ESP_TRACER_ORIGIN = nil,
 	DYNAMIC_SCALE_ENABLED     = true,
 	DYNAMIC_SCALE_RANGE_MULT  = 1.5,
-	DYNAMIC_SCALE_UPDATE_RATE = 25,
+	DYNAMIC_SCALE_UPDATE_RATE = 15,   -- reduced from 25 for performance
 }
 
 local function mergeSettings(user)
@@ -727,7 +727,7 @@ function LimbExtender:SetDynamicScale(enabled, rangeMult)
 
 	if enabled then
 		self._nextDynamicUpdate = 0
-		local interval = 1 / (s.DYNAMIC_SCALE_UPDATE_RATE or 25)
+		local interval = 1 / (s.DYNAMIC_SCALE_UPDATE_RATE or 15)
 		self._dynamicScaleConn = game:GetService("RunService").Heartbeat:Connect(function(deltaTime)
 			self._nextDynamicUpdate = self._nextDynamicUpdate + deltaTime
 			if self._nextDynamicUpdate >= interval then
@@ -747,6 +747,7 @@ function LimbExtender:SetDynamicScale(enabled, rangeMult)
 	self:_reapplyWatchdogs()
 end
 
+-- OPTIMIZED: Dynamic scale update without unnecessary writes or pcall overhead
 function LimbExtender:_updateDynamicScales()
 	if not self._running then return end
 	local localChar = self._localChar
@@ -776,7 +777,12 @@ function LimbExtender:_updateDynamicScales()
 		if dist > maxDist + 5 then
 			if entry.TargetSize ~= entry.BaseTargetSize then
 				entry.TargetSize = entry.BaseTargetSize
-				write(limb, { Size = entry.BaseTargetSize })
+				-- Suppress watchdog to avoid cascading events
+				if entry._watchingRevert == nil then entry._watchingRevert = false end
+				local wasWatching = entry._watchingRevert
+				entry._watchingRevert = true
+				limb.Size = entry.BaseTargetSize
+				entry._watchingRevert = wasWatching
 			end
 			continue
 		end
@@ -784,8 +790,15 @@ function LimbExtender:_updateDynamicScales()
 		local factor = math.clamp((dist - minDist) / range, 0, 1)
 		local dynamicSize = entry.OriginalSize:Lerp(entry.BaseTargetSize, factor)
 
-		entry.TargetSize = dynamicSize
-		write(limb, { Size = dynamicSize })
+		-- Only assign if size actually changed (biggest win)
+		if limb.Size ~= dynamicSize then
+			entry.TargetSize = dynamicSize
+			if entry._watchingRevert == nil then entry._watchingRevert = false end
+			local wasWatching = entry._watchingRevert
+			entry._watchingRevert = true
+			limb.Size = dynamicSize
+			entry._watchingRevert = wasWatching
+		end
 	end
 end
 
