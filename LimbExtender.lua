@@ -284,7 +284,8 @@ local PROPS_TO_WATCH = {
 	{ "RootPriority",             "TargetRootPriority" },
 }
 
-local function setupLimbWatchdog(entry, limb)
+local function setupLimbWatchdog(entry, limb, settings)
+	if BYPASS_AVAILABLE then return end
 	if not entry or not limb then return end
 
 	if entry._watchConns then
@@ -297,6 +298,9 @@ local function setupLimbWatchdog(entry, limb)
 
 	for _, pair in ipairs(PROPS_TO_WATCH) do
 		local propName, targetField = pair[1], pair[2]
+		if propName == "Size" and settings.DYNAMIC_SCALE_ENABLED then
+			continue
+		end
 		local target = entry[targetField]
 		if target ~= nil then
 			local conn = limb:GetPropertyChangedSignal(propName):Connect(function()
@@ -330,7 +334,7 @@ local DEFAULTS = {
 	NPC_DIRECTORIES         = {},
 	CUSTOM_CHARACTER_SYSTEM   = false,
 	GET_PLAYER_FROM_CHARACTER = nil,
-	ESP                     = false,
+	ESP                     = true,
 	ESP_COLOR               = Color3.fromRGB(255, 50, 50),
 	ESP_BOX3D_COLOR         = Color3.fromRGB(255, 50, 50),
 	ESP_HEALTH_COLOR        = Color3.fromRGB(9, 255, 0),
@@ -357,6 +361,9 @@ local DEFAULTS = {
 	ESP_TEXT_RESOLVER = nil,
 	ESP_CAN_DRAW      = nil,
 	ESP_TRACER_ORIGIN = nil,
+	DYNAMIC_SCALE_ENABLED     = true,
+	DYNAMIC_SCALE_RANGE_MULT  = 1.5,
+	DYNAMIC_SCALE_UPDATE_RATE = 25,
 }
 
 local function mergeSettings(user)
@@ -401,15 +408,18 @@ local function sharedSaveData(parent, cacheKey, char, limb)
 end
 
 local function applyEntryTargets(entry, props, newVec, isHRP, settings)
+	entry.BaseTargetSize    = newVec
 	entry.TargetSize         = newVec
 	entry.TargetTransparency = settings.LIMB_TRANSPARENCY
 	entry.TargetCanCollide   = settings.LIMB_CAN_COLLIDE
 	entry.TargetMassless     = not isHRP
 	if isHRP then
-		entry.TargetRootPriority             = nil
+		entry.TargetRootPriority = nil
 	else
-		entry.TargetRootPriority             = -127
+		entry.TargetRootPriority = -127
 	end
+	local size = newVec
+	entry.LimbRadius = math.max(size.X, size.Y, size.Z) / 2
 end
 
 local function sharedApplyLimb(parent, cacheKey, char, limb)
@@ -424,7 +434,7 @@ local function sharedApplyLimb(parent, cacheKey, char, limb)
 	write(limb, props)
 	applyEntryTargets(entry, props, newVec, isHRP, parent._settings)
 
-	setupLimbWatchdog(entry, limb)
+	setupLimbWatchdog(entry, limb, parent._settings)
 end
 
 local function sharedRestoreLimb(parent, cacheKey, activeLimb)
@@ -440,10 +450,12 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 	end
 
 	entry.TargetSize                     = nil
+	entry.BaseTargetSize                 = nil
 	entry.TargetTransparency             = nil
 	entry.TargetCanCollide               = nil
 	entry.TargetMassless                 = nil
 	entry.TargetRootPriority             = nil
+	entry.LimbRadius                     = nil
 
 	if activeLimb and activeLimb.Parent then
 		if entry._humanoidStateConn then entry._humanoidStateConn:Disconnect() end
@@ -483,7 +495,7 @@ local function reapplyCosmeticToEntry(entry, settings)
     write(limb, props)
     applyEntryTargets(entry, props, newVec, isHRP, settings)
 
-    setupLimbWatchdog(entry, limb)
+    setupLimbWatchdog(entry, limb, settings)
 end
 
 function LimbExtender:_applyLimbs(player, char, limb)
@@ -642,9 +654,7 @@ function LimbExtender:_doCosmeticUpdateBatched()
 	end
 
 	local BATCH = 5
-	local keys = {}
-	for k in pairs(self._playerCache) do keys[#keys+1] = k end
-	for i = 1, #keys, BATCH do
+	for i = 1, #entries, BATCH do
 		if self._dirtyRestart or not self._running then return end
 		local last = math_min(i + BATCH - 1, #entries)
 		for j = i, last do
@@ -694,6 +704,101 @@ function LimbExtender:_runGameScriptIfNeeded()
 	end)
 end
 
+function LimbExtender:_reapplyWatchdogs()
+	local s = self._settings
+	for _, entry in pairs(self._playerCache) do
+		if entry.Limb then
+			setupLimbWatchdog(entry, entry.Limb, s)
+		end
+	end
+end
+
+function LimbExtender:SetDynamicScale(enabled, rangeMult)
+	local s = self._settings
+	s.DYNAMIC_SCALE_ENABLED = enabled
+	if rangeMult ~= nil then
+		s.DYNAMIC_SCALE_RANGE_MULT = rangeMult
+	end
+
+	if self._dynamicScaleConn then
+		self._dynamicScaleConn:Disconnect()
+		self._dynamicScaleConn = nil
+	end
+
+	if enabled then
+		self._nextDynamicUpdate = 0
+		local interval = 1 / (s.DYNAMIC_SCALE_UPDATE_RATE or 25)
+		self._dynamicScaleConn = game:GetService("RunService").Heartbeat:Connect(function(deltaTime)
+			self._nextDynamicUpdate = self._nextDynamicUpdate + deltaTime
+			if self._nextDynamicUpdate >= interval then
+				self._nextDynamicUpdate = self._nextDynamicUpdate - interval
+				self:_updateDynamicScales()
+			end
+		end)
+	else
+		for _, entry in pairs(self._playerCache) do
+			if entry.Limb and entry.BaseTargetSize then
+				entry.TargetSize = entry.BaseTargetSize
+				write(entry.Limb, { Size = entry.BaseTargetSize })
+			end
+		end
+	end
+
+	self:_reapplyWatchdogs()
+end
+
+function LimbExtender:_updateDynamicScales()
+	if not self._running then return end
+	local localChar = self._localChar
+	if not localChar then return end
+	local localHRP = self._localHRP
+	if not localHRP then
+		self:_updateLocalCharacter()
+		return
+	end
+
+	local localPos = localHRP.Position
+	local rangeMult = self._settings.DYNAMIC_SCALE_RANGE_MULT or 1.0
+
+	for _, entry in pairs(self._playerCache) do
+		local limb = entry.Limb
+		if not limb or not limb.Parent then continue end
+		if not entry.OriginalSize or not entry.BaseTargetSize or not entry.LimbRadius then continue end
+
+		local radius = entry.LimbRadius
+		local minDist = radius * 0.1
+		local maxDist = radius * rangeMult
+		local range = maxDist - minDist
+		if range <= 0 then continue end
+
+		local dist = (limb.Position - localPos).Magnitude
+
+		if dist > maxDist + 5 then
+			if entry.TargetSize ~= entry.BaseTargetSize then
+				entry.TargetSize = entry.BaseTargetSize
+				write(limb, { Size = entry.BaseTargetSize })
+			end
+			continue
+		end
+
+		local factor = math.clamp((dist - minDist) / range, 0, 1)
+		local dynamicSize = entry.OriginalSize:Lerp(entry.BaseTargetSize, factor)
+
+		entry.TargetSize = dynamicSize
+		write(limb, { Size = dynamicSize })
+	end
+end
+
+function LimbExtender:_updateLocalCharacter()
+	local char = localPlayer.Character
+	self._localChar = char
+	if char then
+		self._localHRP = char:FindFirstChild("HumanoidRootPart")
+	else
+		self._localHRP = nil
+	end
+end
+
 function LimbExtender.new(userSettings)
 	local self = setmetatable({
 		_settings            = mergeSettings(userSettings),
@@ -716,6 +821,10 @@ function LimbExtender.new(userSettings)
 		_managerGeneration 	 = 0,
 		_gameScriptFetched   = false,
 		_customSetup         = nil,
+		_dynamicScaleConn    = nil,
+		_nextDynamicUpdate   = 0,
+		_localChar           = nil,
+		_localHRP            = nil,
 	}, LimbExtender)
 
 	limbData.targetLimbName = self._settings.TARGET_LIMB
@@ -748,6 +857,15 @@ function LimbExtender.new(userSettings)
 		else
 			self._settings.ESP = false
 		end
+	end
+
+	self:_updateLocalCharacter()
+	localPlayer:GetPropertyChangedSignal("Character"):Connect(function()
+		self:_updateLocalCharacter()
+	end)
+
+	if self._settings.DYNAMIC_SCALE_ENABLED then
+		self:SetDynamicScale(true)
 	end
 
 	limbData.terminate = function() self:Destroy() end
@@ -790,6 +908,10 @@ function LimbExtender:Start()
 	self._manager:Start()
 	if self._ESP then self._ESP:Start() end
 
+	if self._settings.DYNAMIC_SCALE_ENABLED and not self._dynamicScaleConn then
+		self:SetDynamicScale(true)
+	end
+
 	self:_runGameScriptIfNeeded()
 
 	if self._dirtyRestart or self._dirtyCosmetic or self._dirtyESP then
@@ -803,6 +925,12 @@ function LimbExtender:Stop()
 	self._running             = false
 	self._needsRestart        = false
 	self._needsCosmeticUpdate = false
+
+	if self._dynamicScaleConn then
+		self._dynamicScaleConn:Disconnect()
+		self._dynamicScaleConn = nil
+	end
+
 	self._manager:Stop()
 	for cacheKey, entry in pairs(self._playerCache) do
 		sharedRestoreLimb(self, cacheKey, entry.Limb)
@@ -843,6 +971,20 @@ function LimbExtender:Set(key, value)
 	if key == "GET_PLAYER_FROM_CHARACTER" or key == "CUSTOM_CHARACTER_SYSTEM" then
 		if self._manager then
 			self._manager:Set(key, value)
+		end
+		return
+	end
+
+	if key == "DYNAMIC_SCALE_ENABLED" then
+		self:SetDynamicScale(value)
+		return
+	elseif key == "DYNAMIC_SCALE_RANGE_MULT" then
+		s.DYNAMIC_SCALE_RANGE_MULT = value
+		return
+	elseif key == "DYNAMIC_SCALE_UPDATE_RATE" then
+		s.DYNAMIC_SCALE_UPDATE_RATE = value
+		if s.DYNAMIC_SCALE_ENABLED then
+			self:SetDynamicScale(true)
 		end
 		return
 	end
