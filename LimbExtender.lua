@@ -747,59 +747,51 @@ function LimbExtender:SetDynamicScale(enabled, rangeMult)
 	self:_reapplyWatchdogs()
 end
 
--- OPTIMIZED: Dynamic scale update without unnecessary writes or pcall overhead
 function LimbExtender:_updateDynamicScales()
-	if not self._running then return end
-	local localChar = self._localChar
-	if not localChar then return end
-	local localHRP = self._localHRP
-	if not localHRP then
-		self:_updateLocalCharacter()
-		return
-	end
+    if not self._running then return end
+    local localHRP = self._localHRP
+    if not localHRP then self:_updateLocalCharacter(); return end
 
-	local localPos = localHRP.Position
-	local rangeMult = self._settings.DYNAMIC_SCALE_RANGE_MULT or 1.0
+    local localPos = localHRP.Position
+    local rangeMult = self._settings.DYNAMIC_SCALE_RANGE_MULT or 1.0
 
-	for _, entry in pairs(self._playerCache) do
-		local limb = entry.Limb
-		if not limb or not limb.Parent then continue end
-		if not entry.OriginalSize or not entry.BaseTargetSize or not entry.LimbRadius then continue end
+    for _, entry in pairs(self._playerCache) do
+        local limb = entry.Limb
+        if not limb or not limb.Parent then continue end
+        if not entry.OriginalSize or not entry.BaseTargetSize or not entry.LimbRadius then continue end
 
-		local radius = entry.LimbRadius
-		local minDist = radius * 0.1
-		local maxDist = radius * rangeMult
-		local range = maxDist - minDist
-		if range <= 0 then continue end
+        local radius = entry.LimbRadius
+        local maxDist = radius * rangeMult
+        local minDist = radius * 0.1
+        local range = maxDist - minDist
+        if range <= 0 then continue end
 
-		local dist = (limb.Position - localPos).Magnitude
+        local limbPos = limb.Position
+        local diff = limbPos - localPos
+        local sqDist = diff:Dot(diff)
+        local sqThreshold = (maxDist + 5) * (maxDist + 5)
 
-		if dist > maxDist + 5 then
-			if entry.TargetSize ~= entry.BaseTargetSize then
-				entry.TargetSize = entry.BaseTargetSize
-				-- Suppress watchdog to avoid cascading events
-				if entry._watchingRevert == nil then entry._watchingRevert = false end
-				local wasWatching = entry._watchingRevert
-				entry._watchingRevert = true
-				limb.Size = entry.BaseTargetSize
-				entry._watchingRevert = wasWatching
-			end
-			continue
-		end
+        if sqDist > sqThreshold then
+            if entry.TargetSize ~= entry.BaseTargetSize then
+                entry.TargetSize = entry.BaseTargetSize
+                entry._watchingRevert = true
+                limb.Size = entry.BaseTargetSize
+                entry._watchingRevert = false
+            end
+            continue
+        end
 
-		local factor = math.clamp((dist - minDist) / range, 0, 1)
-		local dynamicSize = entry.OriginalSize:Lerp(entry.BaseTargetSize, factor)
+        local dist = math.sqrt(sqDist)
+        local factor = math.clamp((dist - minDist) / range, 0, 1)
+        local dynamicSize = entry.OriginalSize:Lerp(entry.BaseTargetSize, factor)
 
-		-- Only assign if size actually changed (biggest win)
-		if limb.Size ~= dynamicSize then
-			entry.TargetSize = dynamicSize
-			if entry._watchingRevert == nil then entry._watchingRevert = false end
-			local wasWatching = entry._watchingRevert
-			entry._watchingRevert = true
-			limb.Size = dynamicSize
-			entry._watchingRevert = wasWatching
-		end
-	end
+        if (limb.Size - dynamicSize).Magnitude > 0.05 then
+            entry.TargetSize = dynamicSize
+            entry._watchingRevert = true
+            limb.Size = dynamicSize
+            entry._watchingRevert = false
+        end
+    end
 end
 
 function LimbExtender:_updateLocalCharacter()
