@@ -261,7 +261,7 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
         return originalNewIndex(...)
     end))
 
-    originalNamecall = hookmetamethod(game, "__namecall", function(...)
+    originalNamecall = hookmetamethod(game, "__namecall", newcclosure(function(...)
         if not checkcaller() then
             local self, prop = ...
             if getnamecallmethod() == "GetPropertyChangedSignal" and getTargetData(self) and BLOCKED_PROPS[prop] then
@@ -273,7 +273,7 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
             end
         end
         return originalNamecall(...)
-    end)
+    end))
 end
 
 local PROPS_TO_WATCH = {
