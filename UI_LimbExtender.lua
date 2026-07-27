@@ -128,6 +128,11 @@ buildTab(Tabs.Limbs, {
     { type = "slider",  name = "Limb Transparency", flag = "LIMB_TRANSPARENCY", range = {0,  1},  increment = 0.1      },
     { type = "slider",  name = "Limb Size",         flag = "LIMB_SIZE",         range = {5, 50},  increment = 0.5      },
 
+    { type = "section", title = "Proximity Shrink" },
+    { type = "toggle",  name = "Shrink Enabled",    flag = "DYNAMIC_SCALE_ENABLED"                                     },
+    { type = "slider",  name = "Shrink Range",      flag = "DYNAMIC_SCALE_RANGE_MULT",  range = {0.2, 5},  increment = 0.1, suffix = "x"   },
+    { type = "slider",  name = "Update Rate",       flag = "DYNAMIC_SCALE_UPDATE_RATE", range = {5,   60}, increment = 1,   suffix = "Hz"  },
+
     { type = "section", title = "Keybind" },
 })
 
@@ -242,53 +247,36 @@ Rayfield:LoadConfiguration()
 local scannedLimbs = {}
 
 local limbPriority = {
-    -- Head
     "Head",
-
-    -- Root
     "HumanoidRootPart",
-
-    -- R15 torso
     "UpperTorso",
     "LowerTorso",
-
-    -- R6 torso
     "Torso",
-
-    -- R15 arms
     "LeftUpperArm",
     "LeftLowerArm",
     "LeftHand",
     "RightUpperArm",
     "RightLowerArm",
     "RightHand",
-
-    -- R6 arms
     "Left Arm",
     "Right Arm",
-
-    -- R15 legs
     "LeftUpperLeg",
     "LeftLowerLeg",
     "LeftFoot",
     "RightUpperLeg",
     "RightLowerLeg",
     "RightFoot",
-
-    -- R6 legs
     "Left Leg",
     "Right Leg",
 }
 
 local function getLimbPriority(name)
     local lower = name:lower()
-
     for index, limb in ipairs(limbPriority) do
         if lower:find(limb:lower(), 1, true) then
             return index
         end
     end
-
     return math.huge
 end
 
@@ -296,11 +284,9 @@ local function sortLimbs()
     table.sort(scannedLimbs, function(a, b)
         local priorityA = getLimbPriority(a)
         local priorityB = getLimbPriority(b)
-
         if priorityA ~= priorityB then
             return priorityA < priorityB
         end
-
         return a:lower() < b:lower()
     end)
 end
@@ -309,7 +295,6 @@ local function registerLimb(name)
     if not name or table.find(scannedLimbs, name) then
         return
     end
-
     table.insert(scannedLimbs, name)
     sortLimbs()
     targetLimbDropdown:Refresh(scannedLimbs)
@@ -318,28 +303,21 @@ end
 local function getPartPath(part, character)
     local path = part.Name
     local parent = part.Parent
-
     while parent and parent ~= character do
         path = parent.Name .. "." .. path
         parent = parent.Parent
     end
-
     return path
 end
 
 local function scanCharacter(character)
-    if not character then
-        return
-    end
-
+    if not character then return end
     table.clear(scannedLimbs)
-
     for _, desc in ipairs(character:GetDescendants()) do
         if desc:IsA("BasePart") then
             registerLimb(getPartPath(desc, character))
         end
     end
-
     character.DescendantAdded:Connect(function(desc)
         if desc:IsA("BasePart") then
             registerLimb(getPartPath(desc, character))
