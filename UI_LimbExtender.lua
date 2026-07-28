@@ -319,8 +319,6 @@ local Window = Rayfield:CreateWindow({
 
 getgenv().uiLE.uilibray.Window = Window
 
-print(Window.Unload)
-
 local Tabs = {
     General    = Window:CreateTab({ name = "General" }),
     Targeting  = Window:CreateTab({ name = "Targeting" }),
@@ -543,6 +541,11 @@ getgenv().ChangelogHelper = getgenv().ChangelogHelper or (function()
         tabHandle = nil
     end
 
+	M.reset = function()
+		table.clear(changelogs)
+		tabHandle = nil
+	end
+
     M.register = function(window, opts)
         createTab(window)
         opts = opts or {}
@@ -624,6 +627,7 @@ local function loadRemoteChangelogs()
     return false
 end
 
+getgenv().ChangelogHelper.reset()
 loadRemoteChangelogs()
 getgenv().ChangelogHelper.register(Window, { showPopupOnUpdate = true })
 
