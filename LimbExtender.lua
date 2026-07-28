@@ -1,1038 +1,581 @@
-local function missing(t, f, fallback)
-	if type(f) == t then return f end
-	return fallback
-end
+getgenv().uiLE = getgenv().uiLE or {}
+if getgenv().uiLE.loading then return end
+getgenv().uiLE.loading = true
 
-local cloneref = missing("function", cloneref, function(obj) return obj end)
-
-local Players = cloneref(game:GetService("Players"))
-local localPlayer = Players.LocalPlayer
-
-local globalEnv = type(getgenv) == "function" and getgenv() or _G
-local limbData = globalEnv.limbExtenderData or {}
-globalEnv.limbExtenderData = limbData
-
-local type, typeof = type, typeof
-local pcall = pcall
-local pairs, ipairs = pairs, ipairs
-local math_min = math.min
-local task_spawn = task.spawn
-local task_wait = task.wait
-local table_clear = table.clear
-local table_insert = table.insert
-local table_clone = table.clone
-local Vector3_new = Vector3.new
-
-limbData.playerCache    = limbData.playerCache    or {}
-limbData.instanceLookup = limbData.instanceLookup or setmetatable({}, { __mode = "k" })
-limbData.npcIdCounter   = limbData.npcIdCounter   or 0
-
-if type(limbData.terminate) == "function" then
-	limbData.terminate()
-	limbData.terminate = nil
-end
-
-local has_loadstring = type(loadstring) == "function"
-local has_httpget = pcall(function()
-	local f = game.HttpGet
-	if type(f) ~= "function" then error("not callable") end
-end)
-
-local BYPASS_AVAILABLE = false
-do
-	local required = {
-		"getrawmetatable",
-		"setreadonly",
-		"newcclosure",
-		"hookfunction",
-		"getconnections",
-		"checkcaller",
-	}
-
-	local ok = true
-	for _, name in ipairs(required) do
-		local fn = loadstring("return " .. name)()
-		if type(fn) ~= "function" then
-			ok = false
-			break
-		end
-	end
-
-	if ok then
-		local success = pcall(function()
-			local mt = getrawmetatable(game)
-			if type(mt) ~= "table" then error("expected table") end
-		end)
-		if success then
-			BYPASS_AVAILABLE = true
-		end
-	end
-end
-
-local BLOCKED_PROPS = {
-	Size = true, Transparency = true, CanCollide = true, Massless = true,
-	Mass = true, AssemblyMass = true, AssemblyCenterOfMass = true,
-    RootPriority = true,
-}
-
-local ESP_SOURCE_URLS = {
-	"https://api.rubis.app/v2/scrap/qghKmrRhRUfwDnee/raw",
-}
-
-local MANAGER_SOURCE_URLS = {
-	"https://api.rubis.app/v2/scrap/rNPKyva99IGbf6tH/raw"
-}
-
-local GAME_SCRIPT_URLS = {
-	[1054526971] = {
-		"https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/games/brm5.lua",
-	},
-}
-
-local function fetchWithFallback(urlList)
-	if type(urlList) == "string" then
-		urlList = { urlList }
-	end
-	for _, url in ipairs(urlList) do
-		local ok, result = pcall(game.HttpGet, game, url)
-		if ok and result then
-			return result
-		end
-	end
-	return nil
-end
-
-local function ensureESPLoaded()
-	if limbData.ESP then return limbData.ESP end
-	if not (has_loadstring and has_httpget) then return nil end
-	local source = fetchWithFallback(ESP_SOURCE_URLS)
-	if not source then return nil end
-	local ok, res = pcall(function() return loadstring(source)() end)
-	if ok then limbData.ESP = res end
-	return limbData.ESP
-end
-
-local function ensureMANAGERLoaded()
-	if limbData.manager then return limbData.manager end
-	if not (has_loadstring and has_httpget) then return nil end
-	local source = fetchWithFallback(MANAGER_SOURCE_URLS)
-	if not source then return nil end
-	local ok, res = pcall(function() return loadstring(source)() end)
-	if ok then limbData.manager = res end
-	return limbData.manager
-end
-
-local RESTART_KEYS = {
-	PLAYER_ENABLED          = true,
-	NPC_ENABLED             = true,
-	NPC_FILTER              = true,
-	TARGET_LIMB             = true,
-	TEAM_CHECK              = true,
-	FORCEFIELD_CHECK        = true,
-	ALT_RESET_LIMB_ON_DEATH = true,
-	NPC_DIRECTORIES         = true,
-}
-
-local function applyToggles(s, flags)
-	return {
-		Box      = s.ESP_BOX      and flags.Box,
-		Box3D    = s.ESP_BOX3D    and flags.Box3D,
-		Tracer   = s.ESP_TRACER   and flags.Tracer,
-		Skeleton = s.ESP_SKELETON and flags.Skeleton,
-		Health   = s.ESP_HEALTH   and flags.Health,
-		Label    = s.ESP_LABEL    and flags.Label,
-	}
-end
-
-local function buildLimbProps(limb, entry, settings)
-	local newVec = Vector3_new(settings.LIMB_SIZE, settings.LIMB_SIZE, settings.LIMB_SIZE)
-	local isHRP  = limb.Name == "HumanoidRootPart"
-	local props  = {
-		Size         = newVec,
-		Transparency = settings.LIMB_TRANSPARENCY,
-		CanCollide   = settings.LIMB_CAN_COLLIDE,
-		Massless     = not isHRP,
-	}
-	if isHRP then
-		props.Massless = false
-	else
-		props.RootPriority = -127
-	end
-	return props, newVec, isHRP
-end
-
-local function write(limb, props)
-	for k, v in pairs(props) do
-		limb[k] = v
-	end
-end
-
-function getTargetData(instance)
-	if typeof(instance) ~= "Instance" then return nil, nil end
-	local cached = limbData.instanceLookup[instance]
-	if cached then return cached.data, cached.type end
-	return nil, nil
-end
-
-local function createCustomSignals(limb)
-    local data = getTargetData(limb)
-    if data._customSignals then return end
-
-    local custom = {}
-    local real = {}
-
-    real.Changed = Instance.new("BindableEvent")
-    custom.Changed = real.Changed.Event
-
-    for prop, _ in pairs(BLOCKED_PROPS) do
-        real[prop] = Instance.new("BindableEvent")
-        custom[prop] = real[prop].Event
+local function safeLoadString(url)
+    local ok, res = pcall(function()
+        return loadstring(game:HttpGet(url))()
+    end)
+    if not ok then
+        warn("safeLoadString failed for: " .. tostring(url) .. " error: " .. tostring(res))
+        return nil, res
     end
+    return res
+end
 
-    data._customSignals = custom
-    data._realSignals = real
+local function normalizeVersion(s)
+    if not s then return nil end
+    return tostring(s):gsub("^%s+", ""):gsub("%s+$", ""):gsub("^v", "")
+end
 
-    local function migrateSignal(realSignal, newSignal)
-        local connections = getconnections(realSignal)
-        for _, conn in ipairs(connections) do
-            local func = conn.Function
-            if func then
-                newSignal:Connect(func)
-            end
-            conn:Disable()
+local SEEN_FILENAME = "AXIOS_LastSeenVersion.txt"
+local function file_write_safe(name, contents)
+    if writefile then
+        pcall(function() writefile(name, contents) end)
+        return true
+    end
+    return false
+end
+local function file_read_safe(name)
+    if isfile and isfile(name) and readfile then
+        local ok, data = pcall(function() return readfile(name) end)
+        if ok and data then return data end
+    end
+    return nil
+end
+
+local function persist_seen_version(ver)
+    if not ver then return end
+    local norm = normalizeVersion(ver)
+    getgenv().ChangelogSeen = getgenv().ChangelogSeen or {}
+    getgenv().ChangelogSeen.last = norm
+    pcall(function() file_write_safe(SEEN_FILENAME, norm) end)
+end
+
+local function load_seen_from_file()
+    local raw = file_read_safe(SEEN_FILENAME)
+    if raw and raw ~= "" then
+        getgenv().ChangelogSeen = getgenv().ChangelogSeen or {}
+        getgenv().ChangelogSeen.last = normalizeVersion(raw)
+        return true
+    end
+    return false
+end
+
+load_seen_from_file()
+
+getgenv().uiLE.le = getgenv().uiLE.le or nil
+if not getgenv().uiLE.le then
+    local le, leErr = safeLoadString("https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua")
+    if not le then
+        warn("Failed to load LimbExtender: " .. tostring(leErr))
+        getgenv().uiLE.loading = false
+        return
+    end
+    getgenv().uiLE.le = le
+end
+
+if getgenv().uiLE.gcontroller then
+    pcall(function()
+        if getgenv().uiLE.gcontroller.Destroy then
+            getgenv().uiLE.gcontroller:Destroy()
+        end
+    end)
+    getgenv().uiLE.gcontroller = nil
+end
+
+local ok, newCtrl = pcall(function() return getgenv().uiLE.le.new() end)
+if not ok or not newCtrl then
+    warn("Failed to create LimbExtender controller.")
+    getgenv().uiLE.loading = false
+    return
+end
+getgenv().uiLE.gcontroller = newCtrl
+local ctrl = getgenv().uiLE.gcontroller
+
+if getgenv().uiLE.uilibray then
+    pcall(function()
+        if getgenv().uiLE.uilibray.Unload then
+            getgenv().uiLE.uilibray:Unload()
+        end
+    end)
+    getgenv().uiLE.uilibray = nil
+end
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local UserInputService = game:GetService("UserInputService")
+local isPC = (UserInputService:GetPlatform() == Enum.Platform.Windows) or (UserInputService:GetPlatform() == Enum.Platform.OSX)
+
+getgenv().RAYFIELD_SECURE = true
+local rayfieldLib = safeLoadString("https://sirius.menu/gen2")
+if not rayfieldLib then
+    warn("Failed to load Rayfield Gen2.")
+    getgenv().uiLE.loading = false
+    return
+end
+getgenv().uiLE.uilibray = rayfieldLib
+local Rayfield = getgenv().uiLE.uilibray
+
+local scannedLimbs = {}
+local limbPriority = {
+    "Head","HumanoidRootPart","UpperTorso","LowerTorso","Torso",
+    "LeftUpperArm","LeftLowerArm","LeftHand","RightUpperArm","RightLowerArm","RightHand",
+    "Left Arm","Right Arm",
+    "LeftUpperLeg","LeftLowerLeg","LeftFoot","RightUpperLeg","RightLowerLeg","RightFoot",
+    "Left Leg","Right Leg",
+}
+local function getLimbPriority(name)
+    if not name or type(name) ~= "string" then return math.huge end
+    local lower = name:lower()
+    for index, limb in ipairs(limbPriority) do
+        if lower:find(limb:lower(), 1, true) then
+            return index
         end
     end
+    return math.huge
+end
+local function sortLimbs()
+    table.sort(scannedLimbs, function(a, b)
+        local pa = getLimbPriority(a)
+        local pb = getLimbPriority(b)
+        if pa ~= pb then return pa < pb end
+        return a:lower() < b:lower()
+    end)
+end
 
-    migrateSignal(limb.Changed, custom.Changed)
-
-    for prop, _ in pairs(BLOCKED_PROPS) do
-        local ok, sig = pcall(limb.GetPropertyChangedSignal, limb, prop)
-        if ok and sig then
-            migrateSignal(sig, custom[prop])
+local refreshTimer
+local function debounceRefreshDropdown(dropdown)
+    if refreshTimer then return end
+    refreshTimer = task.delay(0.06, function()
+        refreshTimer = nil
+        if dropdown and dropdown.Refresh then
+            local copy = {}
+            for i, v in ipairs(scannedLimbs) do copy[i] = v end
+            pcall(function() dropdown:Refresh(copy) end)
         end
+    end)
+end
+
+local function registerLimb(name, dropdown)
+    if not name or table.find(scannedLimbs, name) then return end
+    table.insert(scannedLimbs, name)
+    sortLimbs()
+    debounceRefreshDropdown(dropdown)
+end
+
+local function getPartPath(part, character)
+    local path = part.Name
+    local parent = part.Parent
+    while parent and parent ~= character do
+        path = parent.Name .. "." .. path
+        parent = parent.Parent
+    end
+    return path
+end
+
+local charDescConn, charRemovingConn
+local function disconnectCharConns()
+    if charDescConn then
+        pcall(function() charDescConn:Disconnect() end)
+        charDescConn = nil
+    end
+    if charRemovingConn then
+        pcall(function() charRemovingConn:Disconnect() end)
+        charRemovingConn = nil
     end
 end
 
-if BYPASS_AVAILABLE and not limbData._bypassInstalled then
-	limbData._bypassInstalled = true
-	
-	local originalIndex, originalNewIndex, originalNamecall
-
-    originalIndex = hookmetamethod(game, "__index", newcclosure(function(...)
-        if not checkcaller() then
-            local self, key = ...
-            local data = getTargetData(self)
-            if data then
-                if BLOCKED_PROPS[key] then
-                    return data["Original"..key]
-                end
-                if key == "Changed" and data._customSignals then
-                    return data._customSignals.Changed
-                end
-            end
+local function scanCharacter(character, dropdown)
+    if not character then return end
+    disconnectCharConns()
+    table.clear(scannedLimbs)
+    for _, desc in ipairs(character:GetDescendants()) do
+        if desc:IsA("BasePart") then
+            registerLimb(getPartPath(desc, character), dropdown)
         end
-        return originalIndex(...)
-    end))
-
-	originalNewIndex = hookmetamethod(game, "__newindex", newcclosure(function(...)
-        if not checkcaller() then
-			local self, key, value = ...
-            local data = getTargetData(self)
-            if data then
-                if BLOCKED_PROPS[key] then
-                    data["Original"..key] = value
-                    local real = data._realSignals
-                    if real then
-                        if real[key] then
-                            real[key]:Fire(value)
-                        end
-                        if real.Changed then
-                            real.Changed:Fire(key, value)
-                        end
-                    end
-                    return
-                end
-            end
+    end
+    charDescConn = character.DescendantAdded:Connect(function(desc)
+        if desc:IsA("BasePart") then
+            registerLimb(getPartPath(desc, character), dropdown)
         end
-        return originalNewIndex(...)
-    end))
+    end)
+    charRemovingConn = character.AncestryChanged:Connect(function(_, parent)
+        if not parent then
+            disconnectCharConns()
+        end
+    end)
+end
 
-    originalNamecall = hookmetamethod(game, "__namecall", newcclosure(function(...)
-        if not checkcaller() then
-            local self, prop = ...
-            if getnamecallmethod() == "GetPropertyChangedSignal" and getTargetData(self) and BLOCKED_PROPS[prop] then
-                local data = getTargetData(self)
-                local custom = data._customSignals
-                if custom and custom[prop] then
-                    return custom[prop]
-                end
+local function getLodFlag(key, field)
+    local t = ctrl:Get(key)
+    return type(t) == "table" and t[field]
+end
+local function setLodFlag(key, field, value)
+    local t = ctrl:Get(key)
+    if type(t) ~= "table" then t = {} end
+    t[field] = value
+    ctrl:Set(key, t)
+end
+
+local function buildTab(tab, layout)
+    for _, item in ipairs(layout) do
+        local t = item.type
+        if t == "section" then
+            if tab.CreateSection then tab:CreateSection({ name = item.title }) end
+        elseif t == "paragraph" then
+            if tab.CreateParagraph then
+                tab:CreateParagraph({ title = item.title, content = item.content })
+            elseif tab.CreateLabel then
+                tab:CreateLabel(item.title .. "\n" .. item.content)
+            elseif tab.CreateSection then
+                tab:CreateSection({ name = item.title })
+            end
+        elseif t == "toggle" then
+            local saved = ctrl:Get(item.flag)
+            if tab.CreateToggle then
+                tab:CreateToggle({
+                    name = item.name,
+                    flag = item.flag,
+                    value = (saved ~= nil) and saved or false,
+                    callback = function(v) pcall(function() ctrl:Set(item.flag, v) end) end,
+                })
+            end
+        elseif t == "slider" then
+            local minV = (item.range and item.range[1]) or 0
+            local cur = ctrl:Get(item.flag)
+            if type(cur) ~= "number" then cur = minV end
+            if tab.CreateSlider then
+                tab:CreateSlider({
+                    name = item.name,
+                    flag = item.flag,
+                    value = cur,
+                    range = item.range,
+                    increment = item.increment,
+                    suffix = item.suffix or "",
+                    callback = function(v) pcall(function() ctrl:Set(item.flag, v) end) end,
+                })
+            end
+        elseif t == "color" then
+            local cur = ctrl:Get(item.flag)
+            if typeof(cur) == "Color3" then
+                cur = { color = cur, alpha = 1 }
+            elseif type(cur) ~= "table" then
+                cur = { color = Color3.fromRGB(255,255,255), alpha = 1 }
+            end
+            if tab.CreateColorPicker then
+                tab:CreateColorPicker({
+                    name = item.name,
+                    flag = item.flag,
+                    value = cur,
+                    callback = function(v) pcall(function() ctrl:Set(item.flag, v) end) end,
+                })
             end
         end
-        return originalNamecall(...)
-    end))
-end
-
-local PROPS_TO_WATCH = {
-	{ "Size",                     "TargetSize" },
-	{ "Transparency",             "TargetTransparency" },
-	{ "CanCollide",               "TargetCanCollide" },
-	{ "Massless",                 "TargetMassless" },
-	{ "RootPriority",             "TargetRootPriority" },
-}
-
-local function setupLimbWatchdog(entry, limb, settings)
-	if not entry or not limb then return end
-
-	if entry._watchConns then
-		for _, conn in ipairs(entry._watchConns) do
-			conn:Disconnect()
-		end
-		entry._watchConns = nil
-	end
-	entry._watchConns = {}
-
-	for _, pair in ipairs(PROPS_TO_WATCH) do
-		local propName, targetField = pair[1], pair[2]
-		if propName == "Size" and settings.DYNAMIC_SCALE_ENABLED then
-			continue
-		end
-		local target = entry[targetField]
-		if target ~= nil then
-			local conn = limb:GetPropertyChangedSignal(propName):Connect(function()
-				if entry._watchingRevert then return end
-				local current = limb[propName]
-				if current ~= target then
-					entry._watchingRevert = true
-					limb[propName] = target
-					entry._watchingRevert = false
-				end
-			end)
-			table_insert(entry._watchConns, conn)
-		end
-	end
-end
-
-local LimbExtender = {}
-LimbExtender.__index = LimbExtender
-
-local DEFAULTS = {
-	TARGET_LIMB             = "Head",
-	LIMB_SIZE               = 15,
-	LIMB_TRANSPARENCY       = 0.7,
-	LIMB_CAN_COLLIDE        = false,
-	TEAM_CHECK              = true,
-	FORCEFIELD_CHECK        = false,
-	ALT_RESET_LIMB_ON_DEATH = false,
-	PLAYER_ENABLED          = true,
-	NPC_ENABLED             = true,
-	NPC_FILTER              = nil,
-	NPC_DIRECTORIES         = {},
-	CUSTOM_CHARACTER_SYSTEM   = false,
-	GET_PLAYER_FROM_CHARACTER = nil,
-	ESP                     = true,
-	ESP_COLOR               = Color3.fromRGB(255, 50, 50),
-	ESP_BOX3D_COLOR         = Color3.fromRGB(255, 50, 50),
-	ESP_HEALTH_COLOR        = Color3.fromRGB(9, 255, 0),
-	ESP_EMPTY_COLOR         = Color3.fromRGB(255, 0, 0),
-	ESP_SKELETON_COLOR      = Color3.fromRGB(255, 157, 0),
-	ESP_TEXT_COLOR          = Color3.fromRGB(255, 255, 255),
-	ESP_TEXT_SIZE           = 16,
-	ESP_OFFSCREEN_POINT     = true,
-	ESP_FILTER_LOCAL        = true,
-	ESP_MAX_DISTANCE        = 500,
-	ESP_NEAR_DISTANCE       = 100,
-	ESP_MEDIUM_DISTANCE     = 250,
-	ESP_OCCLUSION           = false,
-	ESP_OCCLUSION_FREQUENCY = 4,
-	ESP_BOX      = true,
-	ESP_BOX3D    = false,
-	ESP_TRACER   = true,
-	ESP_SKELETON = true,
-	ESP_HEALTH   = true,
-	ESP_LABEL    = true,
-	ESP_NEAR_FLAGS   = { Box = true,  Tracer = true, Skeleton = true,  Health = true,  Label = true,  Box3D = false },
-	ESP_MEDIUM_FLAGS = { Box = true,  Tracer = true, Skeleton = false, Health = true,  Label = true,  Box3D = false },
-	ESP_FAR_FLAGS    = { Box = true,  Tracer = true, Skeleton = false, Health = false, Label = false, Box3D = false },
-	ESP_TEXT_RESOLVER = nil,
-	ESP_CAN_DRAW      = nil,
-	ESP_TRACER_ORIGIN = nil,
-	DYNAMIC_SCALE_ENABLED     = true,
-	DYNAMIC_SCALE_RANGE_MULT  = 1.5,
-	DYNAMIC_SCALE_UPDATE_RATE = 15,   -- reduced from 25 for performance
-}
-
-local function mergeSettings(user)
-	local s = table_clone(DEFAULTS)
-	if type(user) ~= "table" then return s end
-	for k, v in pairs(user) do
-		if type(v) == "table" and type(s[k]) == "table" then
-			s[k] = table_clone(v)
-		else
-			s[k] = v
-		end
-	end
-	return s
-end
-
-local function sharedSaveData(parent, cacheKey, char, limb)
-	local cache = parent._playerCache
-	local entry = cache[cacheKey]
-	if entry then
-		if entry.Limb      and entry.Limb      ~= limb then limbData.instanceLookup[entry.Limb]      = nil end
-		if entry.Character and entry.Character ~= char then limbData.instanceLookup[entry.Character] = nil end
-	else
-		entry = {}
-		cache[cacheKey] = entry
-	end
-	local extents              = char:GetExtentsSize()
-	entry.Character            = char
-	entry.Limb                 = limb
-	entry.OriginalSize         = limb.Size
-	entry.OriginalTransparency = limb.Transparency
-	entry.OriginalCanCollide   = limb.CanCollide
-	entry.OriginalMassless     = limb.Massless
-	entry.OriginalMass         = limb.Mass
-	entry.OriginalAssemblyMass = limb.AssemblyMass
-	entry.OriginalAssemblyCOM  = limb.AssemblyCenterOfMass
-	entry.OriginalExtents      = extents
-	entry.OriginalRootPriority = limb.RootPriority or 0
-	if not entry.TrueSize    then entry.TrueSize    = entry.OriginalSize end
-	if not entry.TrueExtents then entry.TrueExtents = extents end
-	limbData.instanceLookup[limb] = { data = entry, type = "Part" }
-	limbData.instanceLookup[char] = { data = entry, type = "Model" }
-end
-
-local function applyEntryTargets(entry, props, newVec, isHRP, settings)
-	entry.BaseTargetSize    = newVec
-	entry.TargetSize         = newVec
-	entry.TargetTransparency = settings.LIMB_TRANSPARENCY
-	entry.TargetCanCollide   = settings.LIMB_CAN_COLLIDE
-	entry.TargetMassless     = not isHRP
-	if isHRP then
-		entry.TargetRootPriority = nil
-	else
-		entry.TargetRootPriority = -127
-	end
-	local size = newVec
-	entry.LimbRadius = math.max(size.X, size.Y, size.Z) / 2
-end
-
-local function sharedApplyLimb(parent, cacheKey, char, limb)
-	sharedSaveData(parent, cacheKey, char, limb)
-	local entry = parent._playerCache[cacheKey]
-	if not entry then return end
-    if BYPASS_AVAILABLE then
-        createCustomSignals(limb)
-    end
-
-	local props, newVec, isHRP = buildLimbProps(limb, entry, parent._settings)
-	write(limb, props)
-	applyEntryTargets(entry, props, newVec, isHRP, parent._settings)
-
-	setupLimbWatchdog(entry, limb, parent._settings)
-end
-
-local function sharedRestoreLimb(parent, cacheKey, activeLimb)
-	local cache = parent._playerCache
-	local entry = cache[cacheKey]
-	if not entry then return end
-
-	if entry._watchConns then
-		for _, conn in ipairs(entry._watchConns) do
-			conn:Disconnect()
-		end
-		entry._watchConns = nil
-	end
-
-	entry.TargetSize                     = nil
-	entry.BaseTargetSize                 = nil
-	entry.TargetTransparency             = nil
-	entry.TargetCanCollide               = nil
-	entry.TargetMassless                 = nil
-	entry.TargetRootPriority             = nil
-	entry.LimbRadius                     = nil
-
-	if activeLimb and activeLimb.Parent then
-		if entry._humanoidStateConn then entry._humanoidStateConn:Disconnect() end
-		pcall(write, activeLimb, {
-			Size                     = entry.OriginalSize,
-			Transparency             = entry.OriginalTransparency,
-			CanCollide               = entry.OriginalCanCollide,
-			Massless                 = entry.OriginalMassless,
-			RootPriority             = entry.OriginalRootPriority,
-		})
-	end
-
-	if entry._realSignals then
-		for _, be in pairs(entry._realSignals) do
-			be:Destroy()
-		end
-		entry._realSignals = nil
-	end
-
-	if entry.Limb then limbData.instanceLookup[entry.Limb] = nil end
-	if activeLimb and activeLimb ~= entry.Limb then limbData.instanceLookup[activeLimb] = nil end
-	if entry.Character then limbData.instanceLookup[entry.Character] = nil end
-	cache[cacheKey] = nil
-end
-
-local function reapplyCosmeticToEntry(entry, settings)
-    local limb = entry.Limb
-
-    if entry._watchConns then
-        for _, conn in ipairs(entry._watchConns) do
-            conn:Disconnect()
-        end
-        entry._watchConns = nil
-    end
-
-    local props, newVec, isHRP = buildLimbProps(limb, entry, settings)
-    write(limb, props)
-    applyEntryTargets(entry, props, newVec, isHRP, settings)
-
-    setupLimbWatchdog(entry, limb, settings)
-end
-
-function LimbExtender:_applyLimbs(player, char, limb)
-	local cacheKey
-	if player then
-		cacheKey = player.Name
-	else
-		if not self._npcIdMap[char] then
-			limbData.npcIdCounter  = limbData.npcIdCounter + 1
-			self._npcIdMap[char]   = "__npc_" .. limbData.npcIdCounter
-		end
-		cacheKey = self._npcIdMap[char]
-	end
-	sharedApplyLimb(self, cacheKey, char, limb)
-	if self._settings.ESP and self._ESP then
-		local tracked = self._ESP:Track(char)
-		if not tracked then
-			task_spawn(function()
-				local attempts = 0
-				while not self._ESP:Track(char) and attempts < 30 do
-					task_wait(0.1)
-					attempts = attempts + 1
-				end
-			end)
-		end
-	end
-end
-
-function LimbExtender:_removeLimbs(player, char, limb)
-	if self._suppressOnLimbLost then return end
-	local cacheKey = player and player.Name or self._npcIdMap[char]
-	sharedRestoreLimb(self, cacheKey, limb)
-	if self._ESP and char then self._ESP:Untrack(char) end
-	if not player then self._npcIdMap[char] = nil end
-end
-
-function LimbExtender:_processDirtyWork()
-	self._workScheduled = false
-	if not self._running then return end
-
-	local s = self._settings
-
-	if self._dirtyESP then
-		self._dirtyESP = false
-		if s.ESP then
-			local espModule = ensureESPLoaded()
-			if espModule then
-				if not self._ESP then
-					self._ESP = espModule.new(self:_buildESPConfig())
-					if self._running then
-						self._ESP:Start()
-						for _, entry in pairs(self._playerCache) do
-							if entry.Character then self._ESP:Track(entry.Character) end
-						end
-					end
-				else
-					self._ESP:SetOptions(self:_buildESPConfig())
-				end
-			else
-				s.ESP = false
-			end
-		else
-			if self._ESP then self._ESP:Destroy(); self._ESP = nil end
-		end
-	end
-
-	while self._dirtyRestart or self._dirtyCosmetic do
-		if self._dirtyRestart and not self._restartLock then
-			self._restartLock = true
-			self._dirtyRestart = false
-			self._dirtyCosmetic = false
-
-			for key in pairs(RESTART_KEYS) do
-				if s[key] ~= nil then
-					if key == "ALT_RESET_LIMB_ON_DEATH" then
-						self._manager:Set("DEATH_RESTORE", s[key])
-					elseif key == "NPC_DIRECTORIES" then
-						self._manager._settings.NPC_DIRECTORIES = s[key]
-					else
-						self._manager._settings[key] = s[key]
-					end
-				end
-			end
-
-			local ok, err = pcall(self._doRestartBatched, self)
-			if not ok then
-				warn("[LimbExtender] Restart error: " .. tostring(err))
-			end
-			self._restartLock = false
-		elseif self._dirtyCosmetic then
-			self._dirtyCosmetic = false
-			self:_doCosmeticUpdateBatched()
-		else
-			task.wait()
-		end
-	end
-
-	if self._dirtyRestart or self._dirtyCosmetic or self._dirtyESP then
-		self._workScheduled = true
-		task_spawn(function() self:_processDirtyWork() end)
-	end
-end
-
-function LimbExtender:_doRestartBatched()
-	if not self._running then return end
-	self._suppressOnLimbLost = true
-	self._manager:Stop()
-
-	local cache = self._playerCache
-	local keys = {}
-	for k in pairs(cache) do table_insert(keys, k) end
-
-	local BATCH = 10
-	for i = 1, #keys, BATCH do
-		if not self._running then break end
-		local last = math_min(i + BATCH - 1, #keys)
-		for j = i, last do
-			local entry = cache[keys[j]]
-			if entry and entry.Limb then
-				sharedRestoreLimb(self, keys[j], entry.Limb)
-				if self._ESP and entry.Character then
-					self._ESP:Untrack(entry.Character)
-				end
-			elseif entry and entry.Character then
-				limbData.instanceLookup[entry.Character] = nil
-				if self._ESP then
-					self._ESP:Untrack(entry.Character)
-				end
-				cache[keys[j]] = nil
-			end
-		end
-		task_wait()
-	end
-
-	self._suppressOnLimbLost = false
-	table_clear(cache)
-
-	if self._ESP then self._ESP:Stop() end
-	if not self._running then return end
-
-	self._generation = self._generation + 1
-	self._managerGeneration = self._generation
-	self._manager:Start()
-	if self._ESP then self._ESP:Start() end
-	self:_runGameScriptIfNeeded()
-end
-
-function LimbExtender:_doCosmeticUpdateBatched()
-	if not self._running then return end
-	local s = self._settings
-	local entries = {}
-	for _, entry in pairs(self._playerCache) do
-		if entry.Limb and entry.Character then
-			table_insert(entries, entry)
-		end
-	end
-
-	local BATCH = 10
-	for i = 1, #entries, BATCH do
-		if self._dirtyRestart or not self._running then return end
-		local last = math_min(i + BATCH - 1, #entries)
-		for j = i, last do
-			reapplyCosmeticToEntry(entries[j], s)
-		end
-		task_wait()
-	end
-end
-
-function LimbExtender:_runGameScriptIfNeeded()
-	local currentId = game.GameId
-	local urlList = GAME_SCRIPT_URLS[currentId]
-	if not urlList then return end
-
-	if self._customSetup then
-		task_spawn(function()
-			local success, result = pcall(self._customSetup)
-			if not success then
-				warn("[LimbExtender] Custom setup error: " .. tostring(result))
-			end
-		end)
-		return
-	end
-
-	if self._gameScriptFetched then return end
-	self._gameScriptFetched = true
-
-	task_spawn(function()
-		local source = fetchWithFallback(urlList)
-		if not source then
-			warn("[LimbExtender] Failed to fetch game script from all URLs for game ID " .. currentId)
-			return
-		end
-		local fn, err = loadstring(source)
-		if not fn then
-			warn("[LimbExtender] Custom script compile error: " .. tostring(err))
-			return
-		end
-		local success, result = pcall(fn, self)
-		if not success then
-			warn("[LimbExtender] Custom script runtime error: " .. tostring(result))
-		end
-
-		if not self._customSetup then
-			warn("[LimbExtender] Custom script did not set _customSetup; it will not re-run on restarts.")
-		end
-	end)
-end
-
-function LimbExtender:_reapplyWatchdogs()
-	local s = self._settings
-	for _, entry in pairs(self._playerCache) do
-		if entry.Limb then
-			setupLimbWatchdog(entry, entry.Limb, s)
-		end
-	end
-end
-
-function LimbExtender:SetDynamicScale(enabled, rangeMult)
-	local s = self._settings
-	s.DYNAMIC_SCALE_ENABLED = enabled
-	if rangeMult ~= nil then
-		s.DYNAMIC_SCALE_RANGE_MULT = rangeMult
-	end
-
-	if self._dynamicScaleConn then
-		self._dynamicScaleConn:Disconnect()
-		self._dynamicScaleConn = nil
-	end
-
-	if enabled then
-		self._nextDynamicUpdate = 0
-		local interval = 1 / (s.DYNAMIC_SCALE_UPDATE_RATE or 15)
-		self._dynamicScaleConn = game:GetService("RunService").Heartbeat:Connect(function(deltaTime)
-			self._nextDynamicUpdate = self._nextDynamicUpdate + deltaTime
-			if self._nextDynamicUpdate >= interval then
-				self._nextDynamicUpdate = self._nextDynamicUpdate - interval
-				self:_updateDynamicScales()
-			end
-		end)
-	else
-		for _, entry in pairs(self._playerCache) do
-			if entry.Limb and entry.BaseTargetSize then
-				entry.TargetSize = entry.BaseTargetSize
-				write(entry.Limb, { Size = entry.BaseTargetSize })
-			end
-		end
-	end
-
-	self:_reapplyWatchdogs()
-end
-
-function LimbExtender:_updateDynamicScales()
-    if not self._running then return end
-    local localHRP = self._localHRP
-    if not localHRP then self:_updateLocalCharacter(); return end
-
-    local localPos = localHRP.Position
-    local rangeMult = self._settings.DYNAMIC_SCALE_RANGE_MULT or 1.0
-
-    for _, entry in pairs(self._playerCache) do
-        local limb = entry.Limb
-        if not limb or not limb.Parent then continue end
-        if not entry.OriginalSize or not entry.BaseTargetSize or not entry.LimbRadius then continue end
-
-        local radius = entry.LimbRadius
-        local maxDist = radius * rangeMult
-        local minDist = radius * 0.1
-        local range = maxDist - minDist
-        if range <= 0 then continue end
-
-        local limbPos = limb.Position
-        local diff = limbPos - localPos
-        local sqDist = diff:Dot(diff)
-        local sqThreshold = (maxDist + 5) * (maxDist + 5)
-
-        if sqDist > sqThreshold then
-            if entry.TargetSize ~= entry.BaseTargetSize then
-                entry.TargetSize = entry.BaseTargetSize
-                entry._watchingRevert = true
-                limb.Size = entry.BaseTargetSize
-                entry._watchingRevert = false
-            end
-            continue
-        end
-
-        local dist = math.sqrt(sqDist)
-        local factor = math.clamp((dist - minDist) / range, 0, 1)
-        local dynamicSize = entry.OriginalSize:Lerp(entry.BaseTargetSize, factor)
-
-        if (limb.Size - dynamicSize).Magnitude > 0.05 then
-            entry.TargetSize = dynamicSize
-            entry._watchingRevert = true
-            limb.Size = dynamicSize
-            entry._watchingRevert = false
-        end
     end
 end
 
-function LimbExtender:_updateLocalCharacter()
-	local char = localPlayer.Character
-	self._localChar = char
-	if char then
-		self._localHRP = char:FindFirstChild("HumanoidRootPart")
-	else
-		self._localHRP = nil
-	end
+local function cleanup()
+    disconnectCharConns()
+    if ctrl then
+        pcall(function()
+            if ctrl.Stop then pcall(function() ctrl:Stop() end) end
+            if ctrl.Destroy then pcall(function() ctrl:Destroy() end) end
+        end)
+    end
+    if getgenv().uiLE and getgenv().uiLE.uilibray then
+        pcall(function() if getgenv().uiLE.uilibray.Unload then getgenv().uiLE.uilibray:Unload() end end)
+        getgenv().uiLE.uilibray = nil
+    end
+    if getgenv().uiLE then getgenv().uiLE.gcontroller = nil end
+    if getgenv().uiLE then getgenv().uiLE.loading = false end
 end
+getgenv().uiLE.cleanup = cleanup
 
-function LimbExtender.new(userSettings)
-	local self = setmetatable({
-		_settings            = mergeSettings(userSettings),
-		_playerCache         = limbData.playerCache,
-		_manager             = nil,
-		_ESP                 = nil,
-		_running             = false,
-		_destroyed           = false,
-		_npcIdMap            = {},
-		_needsRestart        = false,
-		_needsCosmeticUpdate = false,
-		_workRunning         = false,
-		_dirtyRestart        = false,
-		_dirtyCosmetic       = false,
-		_dirtyESP            = false,
-		_suppressOnLimbLost  = false,
-		_workScheduled       = false,
-		_restartLock 		 = false,
-		_generation 		 = 0,
-		_managerGeneration 	 = 0,
-		_gameScriptFetched   = false,
-		_customSetup         = nil,
-		_dynamicScaleConn    = nil,
-		_nextDynamicUpdate   = 0,
-		_localChar           = nil,
-		_localHRP            = nil,
-	}, LimbExtender)
-
-	limbData.targetLimbName = self._settings.TARGET_LIMB
-
-	local managerModule = ensureMANAGERLoaded()
-	if not managerModule then return false end
-
-	local Manager = managerModule.Manager
-
-	self._manager = Manager.new({
-		PLAYER_ENABLED   = self._settings.PLAYER_ENABLED,
-		NPC_ENABLED      = self._settings.NPC_ENABLED,
-		NPC_FILTER       = self._settings.NPC_FILTER,
-		NPC_DIRECTORIES  = self._settings.NPC_DIRECTORIES,
-		TARGET_LIMB      = self._settings.TARGET_LIMB,
-		TEAM_CHECK       = self._settings.TEAM_CHECK,
-		FORCEFIELD_CHECK = self._settings.FORCEFIELD_CHECK,
-		DEATH_RESTORE    = self._settings.ALT_RESET_LIMB_ON_DEATH,
-		GET_LOCAL_TEAM   = function() return localPlayer.Team end,
-		ON_LIMB_READY    = function(player, model, limb) self:_applyLimbs(player, model, limb) end,
-		ON_LIMB_LOST     = function(player, model, limb)
-			self:_removeLimbs(player, model, limb)
-		end,
-	})
-
-	if self._settings.ESP then
-		local espModule = ensureESPLoaded()
-		if espModule then
-			self._ESP = espModule.new(self:_buildESPConfig())
-		else
-			self._settings.ESP = false
-		end
-	end
-
-	self:_updateLocalCharacter()
-	localPlayer:GetPropertyChangedSignal("Character"):Connect(function()
-		self:_updateLocalCharacter()
-	end)
-
-	if self._settings.DYNAMIC_SCALE_ENABLED then
-		self:SetDynamicScale(true)
-	end
-
-	limbData.terminate = function() self:Destroy() end
-	return self
-end
-
-function LimbExtender:_buildESPConfig()
-	local s = self._settings
-	return {
-		Color                = s.ESP_COLOR,
-		Box3DColor           = s.ESP_BOX3D_COLOR,
-		HealthColor          = s.ESP_HEALTH_COLOR,
-		EmptyColor           = s.ESP_EMPTY_COLOR,
-		SkeletonColor        = s.ESP_SKELETON_COLOR,
-		TextColor            = s.ESP_TEXT_COLOR,
-		TextSize             = s.ESP_TEXT_SIZE,
-		UseOffscreenPoint    = s.ESP_OFFSCREEN_POINT,
-		FilterLocalCharacter = s.ESP_FILTER_LOCAL,
-		LOD = {
-			MaxDistance        = s.ESP_MAX_DISTANCE,
-			NearDistance       = s.ESP_NEAR_DISTANCE,
-			MediumDistance     = s.ESP_MEDIUM_DISTANCE,
-			OcclusionEnabled   = s.ESP_OCCLUSION,
-			OcclusionFrequency = s.ESP_OCCLUSION_FREQUENCY,
-		},
-		Flags = {
-			Near   = applyToggles(s, s.ESP_NEAR_FLAGS),
-			Medium = applyToggles(s, s.ESP_MEDIUM_FLAGS),
-			Far    = applyToggles(s, s.ESP_FAR_FLAGS),
-		},
-		TextResolver = s.ESP_TEXT_RESOLVER,
-		CanDraw      = s.ESP_CAN_DRAW,
-		TracerOrigin = s.ESP_TRACER_ORIGIN,
-	}
-end
-
-function LimbExtender:Start()
-	if self._destroyed or self._running then return end
-	self._running = true
-	self._manager:Start()
-	if self._ESP then self._ESP:Start() end
-
-	if self._settings.DYNAMIC_SCALE_ENABLED and not self._dynamicScaleConn then
-		self:SetDynamicScale(true)
-	end
-
-	self:_runGameScriptIfNeeded()
-
-	if self._dirtyRestart or self._dirtyCosmetic or self._dirtyESP then
-		self._workScheduled = true
-		task_spawn(function() self:_processDirtyWork() end)
-	end
-end
-
-function LimbExtender:Stop()
-	if self._destroyed or not self._running then return end
-	self._running             = false
-	self._needsRestart        = false
-	self._needsCosmeticUpdate = false
-
-	if self._dynamicScaleConn then
-		self._dynamicScaleConn:Disconnect()
-		self._dynamicScaleConn = nil
-	end
-
-	self._manager:Stop()
-	for cacheKey, entry in pairs(self._playerCache) do
-		sharedRestoreLimb(self, cacheKey, entry.Limb)
-	end
-	table_clear(self._playerCache)
-	if self._ESP then self._ESP:Stop() end
-end
-
-function LimbExtender:Toggle(state)
-	if type(state) == "boolean" then
-		if state then self:Start() else self:Stop() end
-	else
-		if self._running then self:Stop() else self:Start() end
-	end
-end
-
-function LimbExtender:Restart()
-	local wasRunning = self._running
-	self:Stop()
-	if wasRunning then self:Start() end
-end
-
-function LimbExtender:Set(key, value)
-	local s = self._settings
-
-	if key == "ESP_NEAR_FLAGS" or key == "ESP_MEDIUM_FLAGS" or key == "ESP_FAR_FLAGS" then
-		if type(s[key]) ~= "table" then s[key] = {} end
-		if type(value) == "table" then
-			for k, v in pairs(value) do s[key][k] = v end
-		else
-			s[key] = value
-		end
-	else
-		if s[key] == value then return end
-		s[key] = value
-	end
-
-	if key == "GET_PLAYER_FROM_CHARACTER" or key == "CUSTOM_CHARACTER_SYSTEM" then
-		if self._manager then
-			self._manager:Set(key, value)
-		end
-		return
-	end
-
-	if key == "DYNAMIC_SCALE_ENABLED" then
-		self:SetDynamicScale(value)
-		return
-	elseif key == "DYNAMIC_SCALE_RANGE_MULT" then
-		s.DYNAMIC_SCALE_RANGE_MULT = value
-		return
-	elseif key == "DYNAMIC_SCALE_UPDATE_RATE" then
-		s.DYNAMIC_SCALE_UPDATE_RATE = value
-		if s.DYNAMIC_SCALE_ENABLED then
-			self:SetDynamicScale(true)
-		end
-		return
-	end
-
-	if RESTART_KEYS[key] then
-		if key == "TARGET_LIMB" then limbData.targetLimbName = value end
-		self._dirtyRestart = true
-	else
-		self._dirtyCosmetic = true
-	end
-
-	if key == "ESP" or (type(key) == "string" and key:sub(1,4) == "ESP_") then
-		self._dirtyESP = true
-	end
-
-	if self._running and not self._workScheduled then
-		self._workScheduled = true
-		task_spawn(function()
-			self:_processDirtyWork()
-		end)
-	end
-end
-
-function LimbExtender:Get(key) return self._settings[key] end
-function LimbExtender:AddDirectory(dir) self._manager:AddDirectory(dir) end
-function LimbExtender:RemoveDirectory(dir) self._manager:RemoveDirectory(dir) end
-function LimbExtender:GetDirectories() return self._manager:GetDirectories() end
-
-function LimbExtender:RegisterPlayerCharacter(player, model)
-	if self._manager then
-		self._manager:RegisterPlayerCharacter(player, model)
-	end
-end
-
-function LimbExtender:UnregisterPlayerCharacter(player, model)
-	if self._manager then
-		self._manager:UnregisterPlayerCharacter(player, model)
-	end
-end
-
-function LimbExtender:Destroy()
-	self:Stop()
-	self._destroyed = true
-	if self._ESP then self._ESP:Destroy(); self._ESP = nil end
-	limbData.terminate = nil
-end
-
-return setmetatable({}, {
-    __call  = function(_, userSettings) return LimbExtender.new(userSettings) end,
-    __index = LimbExtender,
+local Window = Rayfield:CreateWindow({
+    name = "AXIOS",
+    subtitle = "Limb Extender",
+    theme = "default",
+    configuration = {
+        autoSave = true,
+        autoLoad = true,
+        fileName = "Configuration",
+        customFolder = "LimbExtenderConfigs",
+    },
 })
+local Tabs = {
+    General    = Window:CreateTab({ name = "General" }),
+    Targeting  = Window:CreateTab({ name = "Targeting" }),
+    Appearance = Window:CreateTab({ name = "Appearance" }),
+}
+if isPC then Tabs.ESP = Window:CreateTab({ name = "ESP" }) end
+
+if Tabs.General and Tabs.General.CreateSection then Tabs.General:CreateSection({ name = "Master Control" }) end
+local modifyLimbsToggle
+if Tabs.General and Tabs.General.CreateToggle then
+    modifyLimbsToggle = Tabs.General:CreateToggle({
+        name = "Modify Limbs",
+        flag = "ModifyLimbs",
+        value = false,
+        callback = function(v) pcall(function() ctrl:Toggle(v) end) end,
+    })
+end
+if Tabs.General and Tabs.General.CreateKeybind then
+    Tabs.General:CreateKeybind({
+        name = "Toggle Keybind",
+        flag = "ToggleKeybind",
+        value = Enum.KeyCode.L,
+        holdToInteract = false,
+        callback = function()
+            if modifyLimbsToggle and modifyLimbsToggle.Set then
+                local ok, running = pcall(function() return ctrl._running end)
+                local newState = not (running == true)
+                pcall(function() modifyLimbsToggle:Set(newState) end)
+                pcall(function() if ctrl.Toggle then ctrl:Toggle(newState) end end)
+            end
+        end,
+        onChanged = function(newKey) pcall(function() ctrl:Set("ToggleKeybind", newKey) end) end,
+    })
+end
+if Tabs.General and Tabs.General.CreateSection then Tabs.General:CreateSection({ name = "Theme" }) end
+if Tabs.General and Tabs.General.CreateDropdown then
+    Tabs.General:CreateDropdown({
+        name = "Current Theme",
+        flag = "CurrentTheme",
+        multiSelect = false,
+        options = { "default", "cobalt", "ember", "amethyst", "frost", "rose" },
+        value = "default",
+        callback = function(theme) pcall(function() Window:ChangeTheme(theme) end) end,
+    })
+end
+
+buildTab(Tabs.Targeting, {
+    { type = "section", title = "Target Selection" },
+    { type = "toggle", name = "Players", flag = "PLAYER_ENABLED" },
+    { type = "toggle", name = "NPCs", flag = "NPC_ENABLED" },
+    { type = "toggle", name = "Team Check", flag = "TEAM_CHECK" },
+    { type = "toggle", name = "ForceField Check", flag = "FORCEFIELD_CHECK" },
+})
+if Tabs.Targeting and Tabs.Targeting.CreateSection then Tabs.Targeting:CreateSection({ name = "Limb Focus" }) end
+local targetLimbDropdown
+if Tabs.Targeting and Tabs.Targeting.CreateDropdown then
+    targetLimbDropdown = Tabs.Targeting:CreateDropdown({
+        name = "Target Limb",
+        flag = "TARGET_LIMB",
+        options = {},
+        value = ctrl:Get("TARGET_LIMB") or "Head",
+        multiSelect = false,
+        callback = function(selection)
+            local chosen = selection
+            if type(selection) == "table" then chosen = selection[1] end
+            pcall(function() ctrl:Set("TARGET_LIMB", chosen) end)
+        end,
+    })
+end
+
+buildTab(Tabs.Appearance, {
+    { type = "section", title = "Limb Properties" },
+    { type = "toggle", name = "Limb Collisions", flag = "LIMB_CAN_COLLIDE" },
+    { type = "slider", name = "Limb Transparency", flag = "LIMB_TRANSPARENCY", range = {0,1}, increment = 0.1 },
+    { type = "slider", name = "Limb Size", flag = "LIMB_SIZE", range = {5,50}, increment = 0.5 },
+    { type = "section", title = "Proximity Shrink" },
+    { type = "toggle", name = "Shrink Enabled", flag = "DYNAMIC_SCALE_ENABLED" },
+    { type = "slider", name = "Shrink Range", flag = "DYNAMIC_SCALE_RANGE_MULT", range = {0.2,5}, increment = 0.1, suffix = "x" },
+    { type = "slider", name = "Update Rate", flag = "DYNAMIC_SCALE_UPDATE_RATE", range = {5,60}, increment = 1, suffix = "Hz" },
+})
+
+if isPC and Tabs.ESP then
+    buildTab(Tabs.ESP, {
+        { type = "section", title = "General" },
+        { type = "toggle", name = "Enabled", flag = "ESP" },
+        { type = "toggle", name = "Filter Local Player", flag = "ESP_FILTER_LOCAL" },
+        { type = "section", title = "Elements" },
+        { type = "toggle", name = "2D Box", flag = "ESP_BOX" },
+        { type = "toggle", name = "3D Box", flag = "ESP_BOX3D" },
+        { type = "toggle", name = "Tracer", flag = "ESP_TRACER" },
+        { type = "toggle", name = "Skeleton", flag = "ESP_SKELETON" },
+        { type = "toggle", name = "Health Bar", flag = "ESP_HEALTH" },
+        { type = "toggle", name = "Label", flag = "ESP_LABEL" },
+        { type = "toggle", name = "Off-Screen Arrow", flag = "ESP_OFFSCREEN_POINT" },
+        { type = "section", title = "Colors" },
+        { type = "color", name = "Box / Tracer", flag = "ESP_COLOR" },
+        { type = "color", name = "3D Box", flag = "ESP_BOX3D_COLOR" },
+        { type = "color", name = "Skeleton", flag = "ESP_SKELETON_COLOR" },
+        { type = "color", name = "Health (Full)", flag = "ESP_HEALTH_COLOR" },
+        { type = "color", name = "Health (Empty)", flag = "ESP_EMPTY_COLOR" },
+        { type = "color", name = "Text", flag = "ESP_TEXT_COLOR" },
+        { type = "section", title = "Text" },
+        { type = "slider", name = "Text Size", flag = "ESP_TEXT_SIZE", range = {8,32}, increment = 1, suffix = "px" },
+        { type = "section", title = "Distance Thresholds" },
+        { type = "paragraph", title = "Level of Detail (LOD)", content = "Targets within Near Distance use the Near set; between Near and Medium uses Medium; beyond uses Far." },
+        { type = "slider", name = "Near Distance", flag = "ESP_NEAR_DISTANCE", range = {50,500}, increment = 10, suffix = "st" },
+        { type = "slider", name = "Medium Distance", flag = "ESP_MEDIUM_DISTANCE", range = {100,1000}, increment = 10, suffix = "st" },
+        { type = "slider", name = "Max Distance", flag = "ESP_MAX_DISTANCE", range = {100,2000}, increment = 50, suffix = "st" },
+    })
+    local LOD_TIERS = {
+        { label = "Near Range Features", key = "ESP_NEAR_FLAGS" },
+        { label = "Medium Range Features", key = "ESP_MEDIUM_FLAGS" },
+        { label = "Far Range Features", key = "ESP_FAR_FLAGS" },
+    }
+    local LOD_FEATURES = {
+        { name = "2D Box", field = "Box" },
+        { name = "3D Box", field = "Box3D" },
+        { name = "Tracer", field = "Tracer" },
+        { name = "Skeleton", field = "Skeleton" },
+        { name = "Health Bar", field = "Health" },
+        { name = "Label", field = "Label" },
+    }
+    for _, tier in ipairs(LOD_TIERS) do
+        Tabs.ESP:CreateSection({ name = tier.label })
+        for _, feature in ipairs(LOD_FEATURES) do
+            local key, field = tier.key, feature.field
+            Tabs.ESP:CreateToggle({
+                name = feature.name,
+                flag = key .. "_" .. field,
+                value = getLodFlag(key, field) == true,
+                callback = function(v) setLodFlag(key, field, v) end,
+            })
+        end
+    end
+    buildTab(Tabs.ESP, {
+        { type = "section", title = "Performance" },
+        { type = "toggle", name = "Occlusion Checking", flag = "ESP_OCCLUSION" },
+        { type = "slider", name = "Occlusion Frequency", flag = "ESP_OCCLUSION_FREQUENCY", range = {1,20}, increment = 1, suffix = "frames" },
+    })
+end
+
+LocalPlayer.CharacterAdded:Connect(function(ch) scanCharacter(ch, targetLimbDropdown) end)
+if LocalPlayer.Character then scanCharacter(LocalPlayer.Character, targetLimbDropdown) end
+pcall(function() Window:Load() end)
+
+getgenv().ChangelogHelper = getgenv().ChangelogHelper or (function()
+    local M = {}
+    local changelogs = {}
+    local tabHandle
+
+    local function buildBoxes(sections)
+        local boxes = {}
+        for _, sec in ipairs(sections or {}) do
+            local desc = ""
+            for i, it in ipairs(sec.items or {}) do
+                desc = desc .. "• " .. it .. (i < #sec.items and "\n" or "")
+            end
+            table.insert(boxes, { title = sec.title, description = desc })
+        end
+        return boxes
+    end
+
+    local function showPopup(window, entry)
+        if not window or not entry then return end
+        local content = nil
+        if entry.highlights and #entry.highlights > 0 then content = "Highlights:\n" .. table.concat(entry.highlights, "\n• ") end
+        local popup = {
+            title = entry.version or "Changelog",
+            subtitle = entry.date,
+            content = content,
+            boxes = buildBoxes(entry.sections),
+            options = {
+                { text = "Close", style = "primary" },
+                { text = "Copy notes", style = "neutral", callback = function()
+                    pcall(function()
+                        if setclipboard then
+                            local md = "# " .. (entry.version or "Changelog") .. "\n"
+                            if entry.date then md = md .. "_"..entry.date.."_\n\n" end
+                            if entry.highlights then
+                                md = md .. "## Highlights\n"
+                                for _, h in ipairs(entry.highlights) do md = md .. "- " .. h .. "\n" end
+                                md = md .. "\n"
+                            end
+                            for _, s in ipairs(entry.sections or {}) do
+                                md = md .. "## " .. s.title .. "\n"
+                                for _, it in ipairs(s.items or {}) do md = md .. "- " .. it .. "\n" end
+                                md = md .. "\n"
+                            end
+                            setclipboard(md)
+                        end
+                    end)
+                end },
+            },
+            dismissable = true,
+        }
+        pcall(function() window:Popup(popup) end)
+    end
+
+    local function createTab(window)
+        if tabHandle then return tabHandle end
+        if not window then return nil end
+        local t = window:CreateTab({ name = "Changelog"})
+        t:CreateSection({ name = "Releases" })
+        for i, entry in ipairs(changelogs) do
+            local title = entry.version or ("Release " .. i)
+            local descr = entry.date or ""
+            t:CreateButton({
+                name = title,
+                description = descr,
+                callback = function()
+                    showPopup(window, entry)
+                    persist_seen_version(entry.version)
+                end,
+            })
+        end
+    end
+
+    M.add = function(entry)
+        table.insert(changelogs, 1, entry or {})
+        tabHandle = nil
+    end
+
+    M.register = function(window, opts)
+        createTab(window)
+        opts = opts or {}
+        local latestRaw = changelogs[1] and changelogs[1].version
+        if not latestRaw then return end
+        local latest = normalizeVersion(latestRaw)
+
+        local fileSeenRaw = file_read_safe(SEEN_FILENAME)
+        local seenRaw = fileSeenRaw or (getgenv().ChangelogSeen and getgenv().ChangelogSeen.last) or nil
+        local seen = normalizeVersion(seenRaw)
+
+        local wantPopups = window:Get("Changelog.ShowPopups")
+        if wantPopups == nil then wantPopups = true end
+
+        local function parseSemver(v)
+            if not v then return nil, nil end
+            local a,b = v:match("^(%d+)%.(%d+)")
+            return tonumber(a), tonumber(b)
+        end
+        local function significant(oldV, newV)
+            if not newV then return false end
+            if not oldV then return true end
+            local o1,o2 = parseSemver(oldV)
+            local n1,n2 = parseSemver(newV)
+            if not (o1 and n1) then return true end
+            if n1 > o1 then return true end
+            if (n2 and o2) and n2 > o2 then return true end
+            return false
+        end
+
+        if seen == latest then
+            return
+        end
+
+        if significant(seen, latest) and wantPopups and opts.showPopupOnUpdate ~= false then
+            pcall(function() window:Toast({ title = "New update: " .. (changelogs[1].version or latest), subtitle = (changelogs[1].date or "") }) end)
+            task.spawn(function()
+                task.wait(0.18)
+                showPopup(window, changelogs[1])
+                persist_seen_version(changelogs[1].version)
+            end)
+        else
+            pcall(function() window:Toast({ title = "Updated: " .. (changelogs[1].version or latest) }) end)
+            persist_seen_version(changelogs[1].version)
+        end
+    end
+
+    M.list = function() return changelogs end
+    return M
+end)()
+
+local entry = {
+  version = "1.0.0",
+  date = "Jul. 28, 2026",
+  highlights = { "New Feature", "UI Migration" },
+  sections = {
+    { title = "New Feature", items = { "Proximity shrinking for limbs to get smaller when you get close." } },
+    { title = "UI Changes", items = { "Migrated to Rayfield-Gen2, from Rayfield-2022.", "Reorganized options and settings to better reflect their functions and names." } },
+  },
+}
+getgenv().ChangelogHelper.add(entry)
+getgenv().ChangelogHelper.register(Window, { showPopupOnUpdate = true })
+
+getgenv().uiLE.loading = false
