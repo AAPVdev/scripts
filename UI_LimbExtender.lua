@@ -34,9 +34,7 @@ local function safeLoadString(urls)
         if result then
             return result
         end
-        warn("Failed URL " .. url .. ": " .. err)
     end
-    warn("All URLs failed for loadstring.")
     return nil
 end
 
@@ -83,7 +81,6 @@ getgenv().uiLE.le = getgenv().uiLE.le or nil
 if not getgenv().uiLE.le then
     local le, leErr = safeLoadString(limbExtenderURLs)
     if not le then
-        warn("Failed to load LimbExtender: " .. tostring(leErr))
         getgenv().uiLE.loading = false
         return
     end
@@ -101,7 +98,6 @@ end
 
 local ok, newCtrl = pcall(function() return getgenv().uiLE.le.new() end)
 if not ok or not newCtrl then
-    warn("Failed to create LimbExtender controller.")
     getgenv().uiLE.loading = false
     return
 end
@@ -123,7 +119,6 @@ local rayfieldURLs = {
 getgenv().RAYFIELD_SECURE = true
 local rayfieldLib = safeLoadString(rayfieldURLs)
 if not rayfieldLib then
-    warn("Failed to load Rayfield Gen2.")
     getgenv().uiLE.loading = false
     return
 end
@@ -614,9 +609,7 @@ local changelogURLs = {
 local function loadRemoteChangelogs()
     for _, url in ipairs(changelogURLs) do
         local content, _ = fetchUrlList({url})
-        if not content then
-            warn("Fetch failed for: " .. url)
-        else
+        if content then
             local success, data = pcall(function()
                 return game:GetService("HttpService"):JSONDecode(content)
             end)
@@ -626,10 +619,8 @@ local function loadRemoteChangelogs()
                 end
                 return true
             end
-            warn("JSON parse failed for: " .. url)
         end
     end
-    warn("All changelog URLs failed.")
     return false
 end
 
