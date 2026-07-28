@@ -281,7 +281,6 @@ local PROPS_TO_WATCH = {
 }
 
 local function setupLimbWatchdog(entry, limb, settings)
-	if BYPASS_AVAILABLE then return end
 	if not entry or not limb then return end
 
 	if entry._watchConns then
