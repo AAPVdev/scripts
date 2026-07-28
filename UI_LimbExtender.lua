@@ -2,12 +2,30 @@ getgenv().uiLE = getgenv().uiLE or {}
 if getgenv().uiLE.loading then return end
 getgenv().uiLE.loading = true
 
-local function safeLoadString(url)
-    local ok, res = pcall(function()
-        return loadstring(game:HttpGet(url))()
-    end)
+local function fetchUrlList(urls)
+    for _, url in ipairs(urls) do
+        local ok, result = pcall(function() return game:HttpGet(url) end)
+        if ok and result and result ~= "" then
+            return result
+        end
+    end
+    return nil, "All URLs failed"
+end
+
+local function safeLoadString(urls)
+    local content, err = fetchUrlList(urls)
+    if not content then
+        warn("safeLoadString failed: " .. tostring(err))
+        return nil, err
+    end
+    local func, loadErr = loadstring(content)
+    if not func then
+        warn("loadstring failed: " .. tostring(loadErr))
+        return nil, loadErr
+    end
+    local ok, res = pcall(func)
     if not ok then
-        warn("safeLoadString failed for: " .. tostring(url) .. " error: " .. tostring(res))
+        warn("Execution failed: " .. tostring(res))
         return nil, res
     end
     return res
@@ -54,9 +72,13 @@ end
 
 load_seen_from_file()
 
+local limbExtenderURLs = {
+    "https://raw.githubusercontent.com/AAPVdev/scripts/main/LimbExtender.lua",
+	"https://api.rubis.app/v2/scrap/BASPm347G6urjvnO/raw"
+}
 getgenv().uiLE.le = getgenv().uiLE.le or nil
 if not getgenv().uiLE.le then
-    local le, leErr = safeLoadString("https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua")
+    local le, leErr = safeLoadString(limbExtenderURLs)
     if not le then
         warn("Failed to load LimbExtender: " .. tostring(leErr))
         getgenv().uiLE.loading = false
@@ -92,13 +114,11 @@ if getgenv().uiLE.uilibray then
     getgenv().uiLE.uilibray = nil
 end
 
-local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
-local UserInputService = game:GetService("UserInputService")
-local isPC = (UserInputService:GetPlatform() == Enum.Platform.Windows) or (UserInputService:GetPlatform() == Enum.Platform.OSX)
-
+local rayfieldURLs = {
+    "https://sirius.menu/gen2",
+}
 getgenv().RAYFIELD_SECURE = true
-local rayfieldLib = safeLoadString("https://sirius.menu/gen2")
+local rayfieldLib = safeLoadString(rayfieldURLs)
 if not rayfieldLib then
     warn("Failed to load Rayfield Gen2.")
     getgenv().uiLE.loading = false
@@ -106,6 +126,11 @@ if not rayfieldLib then
 end
 getgenv().uiLE.uilibray = rayfieldLib
 local Rayfield = getgenv().uiLE.uilibray
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local UserInputService = game:GetService("UserInputService")
+local isPC = (UserInputService:GetPlatform() == Enum.Platform.Windows) or (UserInputService:GetPlatform() == Enum.Platform.OSX)
 
 local scannedLimbs = {}
 local limbPriority = {
@@ -566,16 +591,27 @@ getgenv().ChangelogHelper = getgenv().ChangelogHelper or (function()
     return M
 end)()
 
-local entry = {
-  version = "1.0.0",
-  date = "Jul. 28, 2026",
-  highlights = { "New Feature", "UI Migration" },
-  sections = {
-    { title = "New Feature", items = { "Proximity shrinking for limbs to get smaller when you get close." } },
-    { title = "UI Changes", items = { "Migrated to Rayfield-Gen2, from Rayfield-2022.", "Reorganized options and settings to better reflect their functions and names." } },
-  },
+local changelogURLs = {
+    "https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/changelog.json",
+    "https://api.rubis.app/v2/scrap/btATRjMxQttd1sy8/raw"
 }
-getgenv().ChangelogHelper.add(entry)
+local function loadRemoteChangelogs()
+    local json, _ = fetchUrlList(changelogURLs)
+    if json then
+        local success, data = pcall(function()
+            return game:GetService("HttpService"):JSONDecode(json)
+        end)
+        if success and type(data) == "table" then
+            for _, entry in ipairs(data) do
+                getgenv().ChangelogHelper.add(entry)
+            end
+            return true
+        end
+    end
+    return false
+end
+
+loadRemoteChangelogs()
 getgenv().ChangelogHelper.register(Window, { showPopupOnUpdate = true })
 
 getgenv().uiLE.loading = false
