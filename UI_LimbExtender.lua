@@ -5,21 +5,25 @@ getgenv().uiLE.loading = true
 getgenv().uiLE.le = getgenv().uiLE.le
     or loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua"))()
 
-if getgenv().uiLE.gcontroller then getgenv().uiLE.gcontroller:Destroy(); getgenv().uiLE.gcontroller = nil end
+if getgenv().uiLE.gcontroller then
+    pcall(function() getgenv().uiLE.gcontroller:Destroy() end)
+    getgenv().uiLE.gcontroller = nil
+end
 
 getgenv().uiLE.gcontroller = getgenv().uiLE.le.new()
 local ctrl = getgenv().uiLE.gcontroller
 
-if getgenv().uiLE.uilibray    then getgenv().uiLE.uilibray:Destroy();    getgenv().uiLE.uilibray    = nil end
+if getgenv().uiLE.uilibray then
+    pcall(function() getgenv().uiLE.uilibray:Unload() end)
+    getgenv().uiLE.uilibray = nil
+end
 
 local LocalPlayer = game:GetService("Players").LocalPlayer
 local UserInputService = game:GetService("UserInputService")
 local isPC = UserInputService:GetPlatform() == Enum.Platform.Windows or UserInputService:GetPlatform() == Enum.Platform.OSX
 
-getgenv().RAYFIELD_SECURE   = true
-getgenv().RAYFIELD_ASSET_ID = 84895246331982
-getgenv().uiLE.uilibray     = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
-
+getgenv().RAYFIELD_SECURE = true
+getgenv().uiLE.uilibray = loadstring(game:HttpGet("https://sirius.menu/gen2"))()
 local Rayfield = getgenv().uiLE.uilibray
 
 local function getLodFlag(key, field)
@@ -29,7 +33,7 @@ end
 
 local function setLodFlag(key, field, value)
     local t = ctrl:Get(key)
-    if type(t) ~= "table" then return end
+    if type(t) ~= "table" then t = {} end
     t[field] = value
     ctrl:Set(key, t)
 end
@@ -39,235 +43,207 @@ local function buildTab(tab, layout)
         local t = item.type
 
         if t == "section" then
-            tab:CreateSection(item.title)
-
-        elseif t == "paragraph" then
-            tab:CreateParagraph({ Title = item.title, Content = item.content })
+            tab:CreateSection({ name = item.title })
 
         elseif t == "toggle" then
             tab:CreateToggle({
-                Name         = item.name,
-                Flag         = item.flag,
-                CurrentValue = ctrl:Get(item.flag),
-                Callback     = function(v) ctrl:Set(item.flag, v) end,
+                name = item.name,
+                flag = item.flag,
+                currentValue = ctrl:Get(item.flag) == true,
+                callback = function(v) ctrl:Set(item.flag, v) end,
             })
 
         elseif t == "slider" then
+            local minV = item.range[1]
+            local cur = ctrl:Get(item.flag)
+            if type(cur) ~= "number" then cur = minV end
+
             tab:CreateSlider({
-                Name         = item.name,
-                Flag         = item.flag,
-                CurrentValue = ctrl:Get(item.flag),
-                Range        = item.range,
-                Increment    = item.increment,
-                Suffix       = item.suffix or "",
-                Callback     = function(v) ctrl:Set(item.flag, v) end,
+                name = item.name,
+                flag = item.flag,
+                currentValue = cur,
+                range = item.range,
+                increment = item.increment,
+                suffix = item.suffix or "",
+                callback = function(v) ctrl:Set(item.flag, v) end,
             })
 
         elseif t == "color" then
+            local cur = ctrl:Get(item.flag)
+            if typeof(cur) ~= "Color3" then
+                cur = Color3.fromRGB(255, 255, 255)
+            end
+
             tab:CreateColorPicker({
-                Name     = item.name,
-                Flag     = "ESPColor_" .. item.flag,
-                Color    = ctrl:Get(item.flag),
-                Callback = function(v) ctrl:Set(item.flag, v) end,
+                name = item.name,
+                flag = item.flag,
+                color = cur,
+                callback = function(v) ctrl:Set(item.flag, v) end,
             })
         end
     end
 end
 
-local LOADING_SUBTITLES = {
-    "aint no part like a baszucki party",
-    "boi ts not tuff",
-    "fuh twin",
-    "gosh i hate hackers"
-}
-
 local Window = Rayfield:CreateWindow({
-    Name                   = "AXIOS",
-    Icon                   = 107904589783906,
-    LoadingTitle           = "AXIOS",
-    LoadingSubtitle        = LOADING_SUBTITLES[math.random(#LOADING_SUBTITLES)],
-    Theme                  = "Default",
-    DisableRayfieldPrompts = true,
-    ConfigurationSaving    = {
-        Enabled    = true,
-        FolderName = "LimbExtenderConfigs",
-        FileName   = "Configuration",
+    name = "AXIOS",
+    ScriptID = "sid_k2rgzy25rkgy",
+    subtitle = "Limb Extender",
+    theme = "default",
+    configuration = {
+        autoSave = true,
+        autoLoad = true,
+        fileName = "Configuration",
+        customFolder = "LimbExtenderConfigs",
     },
 })
 
 local Tabs = {
-    Limbs  = Window:CreateTab("Limbs",  "scale-3d"),
-    Target = Window:CreateTab("Target", "crosshair"),
-    Themes = Window:CreateTab("Themes", "palette"),
+    Limbs  = Window:CreateTab({ name = "Limbs" }),
+    Target = Window:CreateTab({ name = "Target" }),
+    Themes = Window:CreateTab({ name = "Themes" }),
 }
-
 if isPC then
-    Tabs.ESP = Window:CreateTab("ESP", "eye")
+    Tabs.ESP = Window:CreateTab({ name = "ESP" })
 end
 
-Tabs.Limbs:CreateSection("General")
-
+Tabs.Limbs:CreateSection({ name = "General" })
 local modifyLimbsToggle = Tabs.Limbs:CreateToggle({
-    Name         = "Modify Limbs",
-    Flag         = "ModifyLimbs",
-    CurrentValue = false,
-    Callback     = function(v) ctrl:Toggle(v) end,
+    name = "Modify Limbs",
+    flag = "ModifyLimbs",
+    currentValue = false,
+    callback = function(v) ctrl:Toggle(v) end,
 })
 
 buildTab(Tabs.Limbs, {
     { type = "section", title = "Targets" },
     { type = "toggle",  name = "Players", flag = "PLAYER_ENABLED" },
-    { type = "toggle",  name = "NPCs",    flag = "NPC_ENABLED"    },
+    { type = "toggle",  name = "NPCs",    flag = "NPC_ENABLED" },
 
     { type = "section", title = "Filters" },
-    { type = "toggle",  name = "Team Check",       flag = "TEAM_CHECK"       },
+    { type = "toggle",  name = "Team Check",       flag = "TEAM_CHECK" },
     { type = "toggle",  name = "ForceField Check", flag = "FORCEFIELD_CHECK" },
 
     { type = "section", title = "Appearance" },
-    { type = "toggle",  name = "Limb Collisions",   flag = "LIMB_CAN_COLLIDE"                                          },
-    { type = "slider",  name = "Limb Transparency", flag = "LIMB_TRANSPARENCY", range = {0,  1},  increment = 0.1      },
-    { type = "slider",  name = "Limb Size",         flag = "LIMB_SIZE",         range = {5, 50},  increment = 0.5      },
+    { type = "toggle",  name = "Limb Collisions",   flag = "LIMB_CAN_COLLIDE" },
+    { type = "slider",  name = "Limb Transparency", flag = "LIMB_TRANSPARENCY", range = {0, 1},  increment = 0.1 },
+    { type = "slider",  name = "Limb Size",         flag = "LIMB_SIZE",         range = {5, 50}, increment = 0.5 },
 
     { type = "section", title = "Proximity Shrink" },
-    { type = "toggle",  name = "Shrink Enabled",    flag = "DYNAMIC_SCALE_ENABLED"                                     },
-    { type = "slider",  name = "Shrink Range",      flag = "DYNAMIC_SCALE_RANGE_MULT",  range = {0.2, 5},  increment = 0.1, suffix = "x"   },
-    { type = "slider",  name = "Update Rate",       flag = "DYNAMIC_SCALE_UPDATE_RATE", range = {5,   60}, increment = 1,   suffix = "Hz"  },
+    { type = "toggle",  name = "Shrink Enabled",    flag = "DYNAMIC_SCALE_ENABLED" },
+    { type = "slider",  name = "Shrink Range",      flag = "DYNAMIC_SCALE_RANGE_MULT",  range = {0.2, 5}, increment = 0.1, suffix = "x" },
+    { type = "slider",  name = "Update Rate",       flag = "DYNAMIC_SCALE_UPDATE_RATE", range = {5, 60}, increment = 1,   suffix = "Hz" },
 
     { type = "section", title = "Keybind" },
 })
 
 Tabs.Limbs:CreateKeybind({
-    Name           = "Toggle Keybind",
-    CurrentKeybind = "L",
-    HoldToInteract = false,
-    Flag           = "ToggleKeybind",
-    Callback       = function() modifyLimbsToggle:Set(not ctrl._running) end,
+    name = "Toggle Keybind",
+    currentKeybind = "L",
+    holdToInteract = false,
+    flag = "ToggleKeybind",
+    callback = function()
+        modifyLimbsToggle:Set(not ctrl._running)
+    end,
 })
 
 if isPC then
     buildTab(Tabs.ESP, {
         { type = "section", title = "General" },
-        { type = "toggle",  name = "Enabled",             flag = "ESP"              },
+        { type = "toggle",  name = "Enabled",             flag = "ESP" },
         { type = "toggle",  name = "Filter Local Player", flag = "ESP_FILTER_LOCAL" },
 
         { type = "section", title = "Elements" },
-        { type = "toggle",  name = "2D Box",           flag = "ESP_BOX"             },
-        { type = "toggle",  name = "3D Box",           flag = "ESP_BOX3D"           },
-        { type = "toggle",  name = "Tracer",           flag = "ESP_TRACER"          },
-        { type = "toggle",  name = "Skeleton",         flag = "ESP_SKELETON"        },
-        { type = "toggle",  name = "Health Bar",       flag = "ESP_HEALTH"          },
-        { type = "toggle",  name = "Label",            flag = "ESP_LABEL"           },
+        { type = "toggle",  name = "2D Box",           flag = "ESP_BOX" },
+        { type = "toggle",  name = "3D Box",           flag = "ESP_BOX3D" },
+        { type = "toggle",  name = "Tracer",           flag = "ESP_TRACER" },
+        { type = "toggle",  name = "Skeleton",         flag = "ESP_SKELETON" },
+        { type = "toggle",  name = "Health Bar",       flag = "ESP_HEALTH" },
+        { type = "toggle",  name = "Label",            flag = "ESP_LABEL" },
         { type = "toggle",  name = "Off-Screen Arrow", flag = "ESP_OFFSCREEN_POINT" },
 
         { type = "section", title = "Colors" },
-        { type = "color",   name = "Box / Tracer",   flag = "ESP_COLOR"          },
-        { type = "color",   name = "3D Box",         flag = "ESP_BOX3D_COLOR"    },
+        { type = "color",   name = "Box / Tracer",   flag = "ESP_COLOR" },
+        { type = "color",   name = "3D Box",         flag = "ESP_BOX3D_COLOR" },
         { type = "color",   name = "Skeleton",       flag = "ESP_SKELETON_COLOR" },
-        { type = "color",   name = "Health (Full)",  flag = "ESP_HEALTH_COLOR"   },
-        { type = "color",   name = "Health (Empty)", flag = "ESP_EMPTY_COLOR"    },
-        { type = "color",   name = "Text",           flag = "ESP_TEXT_COLOR"     },
+        { type = "color",   name = "Health (Full)",  flag = "ESP_HEALTH_COLOR" },
+        { type = "color",   name = "Health (Empty)", flag = "ESP_EMPTY_COLOR" },
+        { type = "color",   name = "Text",           flag = "ESP_TEXT_COLOR" },
 
         { type = "section", title = "Text" },
         { type = "slider",  name = "Text Size", flag = "ESP_TEXT_SIZE", range = {8, 32}, increment = 1, suffix = "px" },
 
         { type = "section", title = "Distance Thresholds" },
-        {
-            type    = "paragraph",
-            title   = "Level of Detail (LOD)",
-            content = "Targets within Near Distance use the Near feature set. "
-                   .. "Between Near and Medium uses the Medium set. "
-                   .. "Beyond Medium up to Max Distance uses the Far set. "
-                   .. "Configure each set in the sections below.",
-        },
-        { type = "slider", name = "Near Distance",   flag = "ESP_NEAR_DISTANCE",   range = {50,  500},  increment = 10, suffix = "st" },
+        { type = "paragraph", title = "Level of Detail (LOD)", content = "Targets within Near Distance use the Near feature set. Between Near and Medium uses the Medium set. Beyond Medium up to Max Distance uses the Far set. Configure each set in the sections below." },
+        { type = "slider", name = "Near Distance",   flag = "ESP_NEAR_DISTANCE",   range = {50, 500},  increment = 10, suffix = "st" },
         { type = "slider", name = "Medium Distance", flag = "ESP_MEDIUM_DISTANCE", range = {100, 1000}, increment = 10, suffix = "st" },
         { type = "slider", name = "Max Distance",    flag = "ESP_MAX_DISTANCE",    range = {100, 2000}, increment = 50, suffix = "st" },
     })
 
     local LOD_TIERS = {
-        { label = "Near Range Features",   key = "ESP_NEAR_FLAGS"   },
+        { label = "Near Range Features",   key = "ESP_NEAR_FLAGS" },
         { label = "Medium Range Features", key = "ESP_MEDIUM_FLAGS" },
-        { label = "Far Range Features",    key = "ESP_FAR_FLAGS"    },
+        { label = "Far Range Features",    key = "ESP_FAR_FLAGS" },
     }
-
     local LOD_FEATURES = {
-        { name = "2D Box",     field = "Box"      },
-        { name = "3D Box",     field = "Box3D"    },
-        { name = "Tracer",     field = "Tracer"   },
+        { name = "2D Box",     field = "Box" },
+        { name = "3D Box",     field = "Box3D" },
+        { name = "Tracer",     field = "Tracer" },
         { name = "Skeleton",   field = "Skeleton" },
-        { name = "Health Bar", field = "Health"   },
-        { name = "Label",      field = "Label"    },
+        { name = "Health Bar", field = "Health" },
+        { name = "Label",      field = "Label" },
     }
 
     for _, tier in ipairs(LOD_TIERS) do
-        Tabs.ESP:CreateSection(tier.label)
+        Tabs.ESP:CreateSection({ name = tier.label })
         for _, feature in ipairs(LOD_FEATURES) do
             local key, field = tier.key, feature.field
             Tabs.ESP:CreateToggle({
-                Name         = feature.name,
-                Flag         = key .. "_" .. field,
-                CurrentValue = getLodFlag(key, field),
-                Callback     = function(v) setLodFlag(key, field, v) end,
+                name = feature.name,
+                flag = key .. "_" .. field,
+                currentValue = getLodFlag(key, field) == true,
+                callback = function(v) setLodFlag(key, field, v) end,
             })
         end
     end
 
     buildTab(Tabs.ESP, {
         { type = "section", title = "Performance" },
-        { type = "toggle",  name = "Occlusion Checking",  flag = "ESP_OCCLUSION"                                                },
+        { type = "toggle",  name = "Occlusion Checking",  flag = "ESP_OCCLUSION" },
         { type = "slider",  name = "Occlusion Frequency", flag = "ESP_OCCLUSION_FREQUENCY", range = {1, 20}, increment = 1, suffix = "frames" },
     })
 end
 
 local targetLimbDropdown = Tabs.Target:CreateDropdown({
-    Name            = "Target Limb",
-    Flag            = "TARGET_LIMB",
-    Options         = {},
-    CurrentOption   = { ctrl:Get("TARGET_LIMB") },
-    MultipleOptions = false,
-    Callback        = function(opts) ctrl:Set("TARGET_LIMB", opts[1]) end,
+    name = "Target Limb",
+    flag = "TARGET_LIMB",
+    options = {},
+    currentOption = ctrl:Get("TARGET_LIMB") or "Head",
+    multipleOptions = false,
+    callback = function(value)
+        ctrl:Set("TARGET_LIMB", value)
+    end,
 })
-
-local THEMES = {
-    "Default", "AmberGlow", "Amethyst", "Bloom",
-    "DarkBlue", "Green", "Light", "Ocean", "Serenity",
-}
 
 Tabs.Themes:CreateDropdown({
-    Name            = "Current Theme",
-    Flag            = "CurrentTheme",
-    MultipleOptions = false,
-    Options         = THEMES,
-    CurrentOption   = { "Default" },
-    Callback        = function(opts) Window.ModifyTheme(opts[1]) end,
+    name = "Current Theme",
+    flag = "CurrentTheme",
+    multipleOptions = false,
+    options = { "default", "cobalt", "ember", "amethyst", "frost", "rose" },
+    currentOption = "default",
+    callback = function(theme)
+        Window:ChangeTheme(theme)
+    end,
 })
 
-Rayfield:LoadConfiguration()
+Window:Load()
 
 local scannedLimbs = {}
-
 local limbPriority = {
-    "Head",
-    "HumanoidRootPart",
-    "UpperTorso",
-    "LowerTorso",
-    "Torso",
-    "LeftUpperArm",
-    "LeftLowerArm",
-    "LeftHand",
-    "RightUpperArm",
-    "RightLowerArm",
-    "RightHand",
-    "Left Arm",
-    "Right Arm",
-    "LeftUpperLeg",
-    "LeftLowerLeg",
-    "LeftFoot",
-    "RightUpperLeg",
-    "RightLowerLeg",
-    "RightFoot",
-    "Left Leg",
-    "Right Leg",
+    "Head", "HumanoidRootPart", "UpperTorso", "LowerTorso", "Torso",
+    "LeftUpperArm", "LeftLowerArm", "LeftHand", "RightUpperArm", "RightLowerArm", "RightHand",
+    "Left Arm", "Right Arm",
+    "LeftUpperLeg", "LeftLowerLeg", "LeftFoot", "RightUpperLeg", "RightLowerLeg", "RightFoot",
+    "Left Leg", "Right Leg",
 }
 
 local function getLimbPriority(name)
@@ -282,19 +258,15 @@ end
 
 local function sortLimbs()
     table.sort(scannedLimbs, function(a, b)
-        local priorityA = getLimbPriority(a)
-        local priorityB = getLimbPriority(b)
-        if priorityA ~= priorityB then
-            return priorityA < priorityB
-        end
+        local prioA = getLimbPriority(a)
+        local prioB = getLimbPriority(b)
+        if prioA ~= prioB then return prioA < prioB end
         return a:lower() < b:lower()
     end)
 end
 
 local function registerLimb(name)
-    if not name or table.find(scannedLimbs, name) then
-        return
-    end
+    if not name or table.find(scannedLimbs, name) then return end
     table.insert(scannedLimbs, name)
     sortLimbs()
     targetLimbDropdown:Refresh(scannedLimbs)
