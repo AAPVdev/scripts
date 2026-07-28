@@ -592,7 +592,7 @@ getgenv().ChangelogHelper = getgenv().ChangelogHelper or (function()
 end)()
 
 local changelogURLs = {
-    "https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/changelog.json",
+    "https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/changelogs.json",
     "https://api.rubis.app/v2/scrap/btATRjMxQttd1sy8/raw"
 }
 local function loadRemoteChangelogs()
