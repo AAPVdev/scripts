@@ -64,22 +64,16 @@ end
 local function persist_seen_version(ver)
     if not ver then return end
     local norm = normalizeVersion(ver)
-    getgenv().ChangelogSeen = getgenv().ChangelogSeen or {}
-    getgenv().ChangelogSeen.last = norm
     pcall(function() file_write_safe(SEEN_FILENAME, norm) end)
 end
 
 local function load_seen_from_file()
     local raw = file_read_safe(SEEN_FILENAME)
     if raw and raw ~= "" then
-        getgenv().ChangelogSeen = getgenv().ChangelogSeen or {}
-        getgenv().ChangelogSeen.last = normalizeVersion(raw)
-        return true
+        return normalizeVersion(raw)
     end
-    return false
+    return nil
 end
-
-load_seen_from_file()
 
 local limbExtenderURLs = {
     "https://raw.githubusercontent.com/AAPVdev/scripts/main/LimbExtender.lua",
@@ -116,8 +110,8 @@ local ctrl = getgenv().uiLE.gcontroller
 
 if getgenv().uiLE.uilibray then
     pcall(function()
-        if getgenv().uiLE.uilibray.Unload then
-            getgenv().uiLE.uilibray:Unload()
+        if getgenv().uiLE.uilibray.Window then
+            getgenv().uiLE.uilibray.Window:Unload()
         end
     end)
     getgenv().uiLE.uilibray = nil
@@ -308,7 +302,7 @@ local function cleanup()
         end)
     end
     if getgenv().uiLE and getgenv().uiLE.uilibray then
-        pcall(function() if getgenv().uiLE.uilibray.Unload then getgenv().uiLE.uilibray:Unload() end end)
+        pcall(function() if getgenv().uiLE.uilibray.Window then getgenv().uiLE.Window:Unload() end end)
         getgenv().uiLE.uilibray = nil
     end
     if getgenv().uiLE then getgenv().uiLE.gcontroller = nil end
@@ -327,6 +321,11 @@ local Window = Rayfield:CreateWindow({
         customFolder = "LimbExtenderConfigs",
     },
 })
+
+getgenv().uiLE.uilibray.Window = Window
+
+print(Window.Unload)
+
 local Tabs = {
     General    = Window:CreateTab({ name = "General" }),
     Targeting  = Window:CreateTab({ name = "Targeting" }),
@@ -556,9 +555,7 @@ getgenv().ChangelogHelper = getgenv().ChangelogHelper or (function()
         if not latestRaw then return end
         local latest = normalizeVersion(latestRaw)
 
-        local fileSeenRaw = file_read_safe(SEEN_FILENAME)
-        local seenRaw = fileSeenRaw or (getgenv().ChangelogSeen and getgenv().ChangelogSeen.last) or nil
-        local seen = normalizeVersion(seenRaw)
+        local seen = load_seen_from_file()
 
         local wantPopups = window:Get("Changelog.ShowPopups")
         if wantPopups == nil then wantPopups = true end
@@ -584,12 +581,22 @@ getgenv().ChangelogHelper = getgenv().ChangelogHelper or (function()
         end
 
         if significant(seen, latest) and wantPopups and opts.showPopupOnUpdate ~= false then
-            pcall(function() window:Toast({ title = "New update: " .. (changelogs[1].version or latest), subtitle = (changelogs[1].date or "") }) end)
-            task.spawn(function()
-                task.wait(0.18)
-                showPopup(window, changelogs[1])
-                persist_seen_version(changelogs[1].version)
-            end)
+            local latestEntry = changelogs[1]
+            local shouldNotify = true
+            if latestEntry.notify ~= nil then
+                shouldNotify = latestEntry.notify
+            end
+
+            if shouldNotify then
+                pcall(function() window:Toast({ title = "New update: " .. (latestEntry.version or latest), subtitle = (latestEntry.date or "") }) end)
+                task.spawn(function()
+                    task.wait(0.18)
+                    showPopup(window, latestEntry)
+                end)
+            else
+                pcall(function() window:Toast({ title = "Updated to " .. (latestEntry.version or latest) }) end)
+            end
+            persist_seen_version(latestEntry.version)
         else
             pcall(function() window:Toast({ title = "Updated: " .. (changelogs[1].version or latest) }) end)
             persist_seen_version(changelogs[1].version)
