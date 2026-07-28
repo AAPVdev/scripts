@@ -1,0 +1,20 @@
+[
+  {
+    "version": "1.0.0",
+    "date": "Jul. 28, 2026",
+    "highlights": ["New Feature", "UI Migration"],
+    "sections": [
+      {
+        "title": "New Feature",
+        "items": ["Proximity shrinking for limbs to get smaller when you get close."]
+      },
+      {
+        "title": "UI Changes",
+        "items": [
+          "Migrated to Rayfield-Gen2, from Rayfield-2022.",
+          "Reorganized options and settings to better reflect their functions and names."
+        ]
+      }
+    ]
+  }
+]
