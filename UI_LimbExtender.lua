@@ -2,36 +2,157 @@ getgenv().uiLE = getgenv().uiLE or {}
 if getgenv().uiLE.loading then return end
 getgenv().uiLE.loading = true
 
--- Load the limb extender engine (original)
-getgenv().uiLE.le = getgenv().uiLE.le
-    or loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua"))()
+local function safeLoadString(url)
+    local ok, res = pcall(function()
+        return loadstring(game:HttpGet(url))()
+    end)
+    if not ok then
+        warn("safeLoadString failed for: " .. tostring(url) .. "  error:", tostring(res))
+        return nil, res
+    end
+    return res
+end
 
--- Clean up old controller
+getgenv().uiLE.le = getgenv().uiLE.le or nil
+if not getgenv().uiLE.le then
+    local le, leErr = safeLoadString("https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua")
+    if not le then
+        warn("Failed to load LimbExtender:", tostring(leErr))
+        getgenv().uiLE.loading = false
+        return
+    end
+    getgenv().uiLE.le = le
+end
+
 if getgenv().uiLE.gcontroller then
-    pcall(function() getgenv().uiLE.gcontroller:Destroy() end)
+    pcall(function() if getgenv().uiLE.gcontroller.Destroy then getgenv().uiLE.gcontroller:Destroy() end end)
     getgenv().uiLE.gcontroller = nil
 end
 
--- Create new controller
-getgenv().uiLE.gcontroller = getgenv().uiLE.le.new()
+local ok, newCtrl = pcall(function() return getgenv().uiLE.le.new() end)
+if not ok or not newCtrl then
+    warn("Failed to create LimbExtender controller.")
+    getgenv().uiLE.loading = false
+    return
+end
+getgenv().uiLE.gcontroller = newCtrl
 local ctrl = getgenv().uiLE.gcontroller
 
--- Clean up old UI
 if getgenv().uiLE.uilibray then
-    pcall(function() getgenv().uiLE.uilibray:Unload() end)
+    pcall(function() if getgenv().uiLE.uilibray.Unload then getgenv().uiLE.uilibray:Unload() end end)
     getgenv().uiLE.uilibray = nil
 end
 
-local LocalPlayer = game:GetService("Players").LocalPlayer
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
 local UserInputService = game:GetService("UserInputService")
-local isPC = UserInputService:GetPlatform() == Enum.Platform.Windows or UserInputService:GetPlatform() == Enum.Platform.OSX
+local isPC = (UserInputService:GetPlatform() == Enum.Platform.Windows) or (UserInputService:GetPlatform() == Enum.Platform.OSX)
 
--- Load Gen2 Rayfield
 getgenv().RAYFIELD_SECURE = true
-getgenv().uiLE.uilibray = loadstring(game:HttpGet("https://sirius.menu/gen2"))()
+local rayfieldLib = safeLoadString("https://sirius.menu/gen2")
+if not rayfieldLib then
+    warn("Failed to load Rayfield Gen2.")
+    getgenv().uiLE.loading = false
+    return
+end
+getgenv().uiLE.uilibray = rayfieldLib
 local Rayfield = getgenv().uiLE.uilibray
 
--- LOD helper functions
+local scannedLimbs = {}
+local limbPriority = {
+    "Head", "HumanoidRootPart", "UpperTorso", "LowerTorso", "Torso",
+    "LeftUpperArm", "LeftLowerArm", "LeftHand", "RightUpperArm", "RightLowerArm", "RightHand",
+    "Left Arm", "Right Arm",
+    "LeftUpperLeg", "LeftLowerLeg", "LeftFoot", "RightUpperLeg", "RightLowerLeg", "RightFoot",
+    "Left Leg", "Right Leg",
+}
+
+local function getLimbPriority(name)
+    local lower = name:lower()
+    for index, limb in ipairs(limbPriority) do
+        if lower:find(limb:lower(), 1, true) then
+            return index
+        end
+    end
+    return math.huge
+end
+
+local function sortLimbs()
+    table.sort(scannedLimbs, function(a, b)
+        local prioA = getLimbPriority(a)
+        local prioB = getLimbPriority(b)
+        if prioA ~= prioB then return prioA < prioB end
+        return a:lower() < b:lower()
+    end)
+end
+
+local refreshTimer = nil
+local function debounceRefreshDropdown(dropdown)
+    if refreshTimer then return end
+    refreshTimer = task.delay(0.06, function()
+        refreshTimer = nil
+        if dropdown and dropdown.Refresh then
+            
+            local copy = {}
+            for i,v in ipairs(scannedLimbs) do copy[i] = v end
+            pcall(function() dropdown:Refresh(copy) end)
+        end
+    end)
+end
+
+local function registerLimb(name, dropdown)
+    if not name or table.find(scannedLimbs, name) then return end
+    table.insert(scannedLimbs, name)
+    sortLimbs()
+    debounceRefreshDropdown(dropdown)
+end
+
+local function getPartPath(part, character)
+    local path = part.Name
+    local parent = part.Parent
+    while parent and parent ~= character do
+        path = parent.Name .. "." .. path
+        parent = parent.Parent
+    end
+    return path
+end
+
+local charDescConn, charRemovingConn
+local function disconnectCharConns()
+    if charDescConn then
+        pcall(function() charDescConn:Disconnect() end)
+        charDescConn = nil
+    end
+    if charRemovingConn then
+        pcall(function() charRemovingConn:Disconnect() end)
+        charRemovingConn = nil
+    end
+end
+
+local function scanCharacter(character, dropdown)
+    if not character then return end
+    disconnectCharConns()
+
+    table.clear(scannedLimbs)
+    for _, desc in ipairs(character:GetDescendants()) do
+        if desc:IsA("BasePart") then
+            registerLimb(getPartPath(desc, character), dropdown)
+        end
+    end
+
+    charDescConn = character.DescendantAdded:Connect(function(desc)
+        if desc:IsA("BasePart") then
+            registerLimb(getPartPath(desc, character), dropdown)
+        end
+    end)
+
+    charRemovingConn = character.AncestryChanged:Connect(function(_, parent)
+        if not parent then
+            disconnectCharConns()
+        end
+    end)
+end
+
 local function getLodFlag(key, field)
     local t = ctrl:Get(key)
     return type(t) == "table" and t[field]
@@ -44,16 +165,15 @@ local function setLodFlag(key, field, value)
     ctrl:Set(key, t)
 end
 
--- Safe element builder (no crashes for missing methods)
 local function buildTab(tab, layout)
     for _, item in ipairs(layout) do
         local t = item.type
 
         if t == "section" then
-            tab:CreateSection({ name = item.title })
+            if tab.CreateSection then tab:CreateSection({ name = item.title }) end
 
         elseif t == "paragraph" then
-            -- Fallback: Gen2 lacks paragraph; show as section if possible
+            
             if tab.CreateParagraph then
                 tab:CreateParagraph({ title = item.title, content = item.content })
             elseif tab.CreateLabel then
@@ -64,41 +184,74 @@ local function buildTab(tab, layout)
 
         elseif t == "toggle" then
             local saved = ctrl:Get(item.flag)
-            tab:CreateToggle({
-                name = item.name,
-                flag = item.flag,
-                currentValue = (saved ~= nil) and saved or false,
-                callback = function(v) ctrl:Set(item.flag, v) end,
-            })
+            if tab.CreateToggle then
+                tab:CreateToggle({
+                    name = item.name,
+                    flag = item.flag,
+                    value = (saved ~= nil) and saved or false, 
+                    callback = function(v) pcall(function() ctrl:Set(item.flag, v) end) end,
+                })
+            end
 
         elseif t == "slider" then
-            local minV = item.range[1]
+            local minV = (item.range and item.range[1]) or 0
             local cur = ctrl:Get(item.flag)
             if type(cur) ~= "number" then cur = minV end
-            tab:CreateSlider({
-                name = item.name,
-                flag = item.flag,
-                currentValue = cur,
-                range = item.range,
-                increment = item.increment,
-                suffix = item.suffix or "",
-                callback = function(v) ctrl:Set(item.flag, v) end,
-            })
+            if tab.CreateSlider then
+                tab:CreateSlider({
+                    name = item.name,
+                    flag = item.flag,
+                    value = cur,
+                    range = item.range,
+                    increment = item.increment,
+                    suffix = item.suffix or "",
+                    callback = function(v) pcall(function() ctrl:Set(item.flag, v) end) end,
+                })
+            end
 
         elseif t == "color" then
             local cur = ctrl:Get(item.flag)
-            if typeof(cur) ~= "Color3" then cur = Color3.fromRGB(255, 255, 255) end
-            tab:CreateColorPicker({
-                name = item.name,
-                flag = item.flag,
-                color = cur,
-                callback = function(v) ctrl:Set(item.flag, v) end,
-            })
+            
+            if typeof(cur) == "Color3" then
+                cur = { color = cur, alpha = 1 }
+            elseif type(cur) ~= "table" then
+                cur = { color = Color3.fromRGB(255, 255, 255), alpha = 1 }
+            end
+            if tab.CreateColorPicker then
+                tab:CreateColorPicker({
+                    name = item.name,
+                    flag = item.flag,
+                    value = cur,
+                    callback = function(v) pcall(function() ctrl:Set(item.flag, v) end) end,
+                })
+            end
         end
     end
 end
 
--- Window
+local function cleanup()
+    
+    disconnectCharConns()
+
+    if ctrl then
+        pcall(function()
+            if ctrl.Stop then pcall(function() ctrl:Stop() end) end
+            if ctrl.Destroy then pcall(function() ctrl:Destroy() end) end
+        end)
+    end
+
+    if getgenv().uiLE and getgenv().uiLE.uilibray then
+        pcall(function() if getgenv().uiLE.uilibray.Unload then getgenv().uiLE.uilibray:Unload() end end)
+        getgenv().uiLE.uilibray = nil
+    end
+
+    if getgenv().uiLE then getgenv().uiLE.gcontroller = nil end
+    
+    if getgenv().uiLE then getgenv().uiLE.loading = false end
+end
+
+getgenv().uiLE.cleanup = cleanup
+
 local Window = Rayfield:CreateWindow({
     name = "AXIOS",
     subtitle = "Limb Extender",
@@ -111,7 +264,6 @@ local Window = Rayfield:CreateWindow({
     },
 })
 
--- Tabs (option 2)
 local Tabs = {
     General    = Window:CreateTab({ name = "General" }),
     Targeting  = Window:CreateTab({ name = "Targeting" }),
@@ -121,35 +273,59 @@ if isPC then
     Tabs.ESP = Window:CreateTab({ name = "ESP" })
 end
 
--- ==================== GENERAL TAB ====================
-Tabs.General:CreateSection({ name = "Master Control" })
-local modifyLimbsToggle = Tabs.General:CreateToggle({
-    name = "Modify Limbs",
-    flag = "ModifyLimbs",
-    currentValue = false,
-    callback = function(v) ctrl:Toggle(v) end,
-})
-Tabs.General:CreateKeybind({
-    name = "Toggle Keybind",
-    currentKeybind = "L",
-    holdToInteract = false,
-    flag = "ToggleKeybind",
-    callback = function()
-        modifyLimbsToggle:Set(not ctrl._running)
-    end,
-})
+if Tabs.General and Tabs.General.CreateSection then
+    Tabs.General:CreateSection({ name = "Master Control" })
+end
 
-Tabs.General:CreateSection({ name = "Theme" })
-Tabs.General:CreateDropdown({
-    name = "Current Theme",
-    flag = "CurrentTheme",
-    multipleOptions = false,
-    options = { "default", "cobalt", "ember", "amethyst", "frost", "rose" },
-    currentOption = "default",
-    callback = function(theme) Window:ChangeTheme(theme) end,
-})
+local modifyLimbsToggle
+if Tabs.General and Tabs.General.CreateToggle then
+    modifyLimbsToggle = Tabs.General:CreateToggle({
+        name = "Modify Limbs",
+        flag = "ModifyLimbs",
+        value = false,
+        callback = function(v) pcall(function() ctrl:Toggle(v) end) end,
+    })
+end
 
--- ==================== TARGETING TAB ====================
+if Tabs.General and Tabs.General.CreateKeybind then
+    Tabs.General:CreateKeybind({
+        name = "Toggle Keybind",
+        flag = "ToggleKeybind",
+        value = Enum.KeyCode.L,
+        holdToInteract = false,
+        callback = function() 
+            if modifyLimbsToggle and modifyLimbsToggle.Set then
+                
+                local ok, running = pcall(function() return ctrl._running end)
+                local newState = not (running == true)
+                pcall(function() modifyLimbsToggle:Set(newState) end)
+                pcall(function() if ctrl.Toggle then ctrl:Toggle(newState) end end)
+            end
+        end,
+        onChanged = function(newKey) 
+            
+            pcall(function() ctrl:Set("ToggleKeybind", newKey) end)
+        end,
+    })
+end
+
+if Tabs.General and Tabs.General.CreateSection then
+    Tabs.General:CreateSection({ name = "Theme" })
+end
+
+if Tabs.General and Tabs.General.CreateDropdown then
+    Tabs.General:CreateDropdown({
+        name = "Current Theme",
+        flag = "CurrentTheme",
+        multiSelect = false,
+        options = { "default", "cobalt", "ember", "amethyst", "frost", "rose" },
+        value = "default",
+        callback = function(theme)
+            pcall(function() Window:ChangeTheme(theme) end)
+        end,
+    })
+end
+
 buildTab(Tabs.Targeting, {
     { type = "section", title = "Target Selection" },
     { type = "toggle",  name = "Players",         flag = "PLAYER_ENABLED" },
@@ -158,17 +334,29 @@ buildTab(Tabs.Targeting, {
     { type = "toggle",  name = "ForceField Check",flag = "FORCEFIELD_CHECK" },
 })
 
-Tabs.Targeting:CreateSection({ name = "Limb Focus" })
-local targetLimbDropdown = Tabs.Targeting:CreateDropdown({
-    name = "Target Limb",
-    flag = "TARGET_LIMB",
-    options = {},
-    currentOption = ctrl:Get("TARGET_LIMB") or "Head",
-    multipleOptions = false,
-    callback = function(value) ctrl:Set("TARGET_LIMB", value) end,
-})
+if Tabs.Targeting and Tabs.Targeting.CreateSection then
+    Tabs.Targeting:CreateSection({ name = "Limb Focus" })
+end
 
--- ==================== APPEARANCE TAB ====================
+local targetLimbDropdown
+if Tabs.Targeting and Tabs.Targeting.CreateDropdown then
+    targetLimbDropdown = Tabs.Targeting:CreateDropdown({
+        name = "Target Limb",
+        flag = "TARGET_LIMB",
+        options = {}, 
+        value = ctrl:Get("TARGET_LIMB") or "Head", 
+        multiSelect = false,
+        callback = function(selection)
+            
+            local chosen = selection
+            if type(selection) == "table" then
+                chosen = selection[1]
+            end
+            pcall(function() ctrl:Set("TARGET_LIMB", chosen) end)
+        end,
+    })
+end
+
 buildTab(Tabs.Appearance, {
     { type = "section", title = "Limb Properties" },
     { type = "toggle",  name = "Limb Collisions",   flag = "LIMB_CAN_COLLIDE" },
@@ -181,8 +369,7 @@ buildTab(Tabs.Appearance, {
     { type = "slider",  name = "Update Rate",       flag = "DYNAMIC_SCALE_UPDATE_RATE", range = {5, 60}, increment = 1, suffix = "Hz" },
 })
 
--- ==================== ESP TAB (PC only) ====================
-if isPC then
+if isPC and Tabs.ESP then
     buildTab(Tabs.ESP, {
         { type = "section", title = "General" },
         { type = "toggle",  name = "Enabled",             flag = "ESP" },
@@ -236,7 +423,7 @@ if isPC then
             Tabs.ESP:CreateToggle({
                 name = feature.name,
                 flag = key .. "_" .. field,
-                currentValue = getLodFlag(key, field) == true,
+                value = getLodFlag(key, field) == true,
                 callback = function(v) setLodFlag(key, field, v) end,
             })
         end
@@ -249,71 +436,14 @@ if isPC then
     })
 end
 
--- Load configuration (after UI creation to show saved values)
-Window:Load()
-
--- ==================== LIMB SCANNING ====================
-local scannedLimbs = {}
-local limbPriority = {
-    "Head", "HumanoidRootPart", "UpperTorso", "LowerTorso", "Torso",
-    "LeftUpperArm", "LeftLowerArm", "LeftHand", "RightUpperArm", "RightLowerArm", "RightHand",
-    "Left Arm", "Right Arm",
-    "LeftUpperLeg", "LeftLowerLeg", "LeftFoot", "RightUpperLeg", "RightLowerLeg", "RightFoot",
-    "Left Leg", "Right Leg",
-}
-
-local function getLimbPriority(name)
-    local lower = name:lower()
-    for index, limb in ipairs(limbPriority) do
-        if lower:find(limb:lower(), 1, true) then
-            return index
-        end
-    end
-    return math.huge
+LocalPlayer.CharacterAdded:Connect(function(ch)
+    
+    scanCharacter(ch, targetLimbDropdown)
+end)
+if LocalPlayer.Character then
+    scanCharacter(LocalPlayer.Character, targetLimbDropdown)
 end
 
-local function sortLimbs()
-    table.sort(scannedLimbs, function(a, b)
-        local prioA = getLimbPriority(a)
-        local prioB = getLimbPriority(b)
-        if prioA ~= prioB then return prioA < prioB end
-        return a:lower() < b:lower()
-    end)
-end
-
-local function registerLimb(name)
-    if not name or table.find(scannedLimbs, name) then return end
-    table.insert(scannedLimbs, name)
-    sortLimbs()
-    targetLimbDropdown:Refresh(scannedLimbs)
-end
-
-local function getPartPath(part, character)
-    local path = part.Name
-    local parent = part.Parent
-    while parent and parent ~= character do
-        path = parent.Name .. "." .. path
-        parent = parent.Parent
-    end
-    return path
-end
-
-local function scanCharacter(character)
-    if not character then return end
-    table.clear(scannedLimbs)
-    for _, desc in ipairs(character:GetDescendants()) do
-        if desc:IsA("BasePart") then
-            registerLimb(getPartPath(desc, character))
-        end
-    end
-    character.DescendantAdded:Connect(function(desc)
-        if desc:IsA("BasePart") then
-            registerLimb(getPartPath(desc, character))
-        end
-    end)
-end
-
-LocalPlayer.CharacterAdded:Connect(scanCharacter)
-if LocalPlayer.Character then scanCharacter(LocalPlayer.Character) end
+pcall(function() Window:Load() end)
 
 getgenv().uiLE.loading = false
