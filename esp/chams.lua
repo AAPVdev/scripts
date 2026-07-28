@@ -211,7 +211,11 @@ function module.allSources()
 end
 
 function module.clearAllHighlights()
+    local characters = {}
     for character in pairs(activeHighlights) do
+        table.insert(characters, character)
+    end
+    for _, character in ipairs(characters) do
         module.removeAllHighlights(character)
     end
 end
