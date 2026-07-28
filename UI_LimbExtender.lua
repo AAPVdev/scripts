@@ -127,9 +127,9 @@ end
 getgenv().uiLE.uilibray = rayfieldLib
 local Rayfield = getgenv().uiLE.uilibray
 
-local Players = game:GetService("Players")
+local Players = cloneref(game:GetService("Players"))
 local LocalPlayer = Players.LocalPlayer
-local UserInputService = game:GetService("UserInputService")
+local UserInputService = cloneref(game:GetService("UserInputService"))
 local isPC = (UserInputService:GetPlatform() == Enum.Platform.Windows) or (UserInputService:GetPlatform() == Enum.Platform.OSX)
 
 local scannedLimbs = {}
