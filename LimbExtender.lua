@@ -601,9 +601,6 @@ function LimbExtender:_processDirtyWork()
 			end
 
 			local ok, err = pcall(self._doRestartBatched, self)
-			if not ok then
-				warn("[LimbExtender] Restart error: " .. tostring(err))
-			end
 			self._restartLock = false
 		elseif self._dirtyCosmetic then
 			self._dirtyCosmetic = false
@@ -692,9 +689,6 @@ function LimbExtender:_runGameScriptIfNeeded()
 	if self._customSetup then
 		task_spawn(function()
 			local success, result = pcall(self._customSetup)
-			if not success then
-				warn("[LimbExtender] Custom setup error: " .. tostring(result))
-			end
 		end)
 		return
 	end
@@ -704,9 +698,6 @@ function LimbExtender:_runGameScriptIfNeeded()
 
 	task_spawn(function()
 		tryLoadCustomScriptFromURLs(urlList, self)
-		if not self._customSetup then
-			warn("[LimbExtender] Custom script did not set _customSetup; it will not re-run on restarts.")
-		end
 	end)
 end
 
