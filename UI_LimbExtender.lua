@@ -12,23 +12,32 @@ local function fetchUrlList(urls)
     return nil, "All URLs failed"
 end
 
-local function safeLoadString(urls)
-    local content, err = fetchUrlList(urls)
+local function tryLoadFromURL(url)
+    local content, _ = fetchUrlList({url})
     if not content then
-        warn("safeLoadString failed: " .. tostring(err))
-        return nil, err
+        return nil, "fetch failed"
     end
     local func, loadErr = loadstring(content)
     if not func then
-        warn("loadstring failed: " .. tostring(loadErr))
-        return nil, loadErr
+        return nil, "compile failed: " .. tostring(loadErr)
     end
-    local ok, res = pcall(func)
+    local ok, result = pcall(func)
     if not ok then
-        warn("Execution failed: " .. tostring(res))
-        return nil, res
+        return nil, "execution failed: " .. tostring(result)
     end
-    return res
+    return result
+end
+
+local function safeLoadString(urls)
+    for _, url in ipairs(urls) do
+        local result, err = tryLoadFromURL(url)
+        if result then
+            return result
+        end
+        warn("Failed URL " .. url .. ": " .. err)
+    end
+    warn("All URLs failed for loadstring.")
+    return nil
 end
 
 local function normalizeVersion(s)
@@ -74,7 +83,7 @@ load_seen_from_file()
 
 local limbExtenderURLs = {
     "https://raw.githubusercontent.com/AAPVdev/scripts/main/LimbExtender.lua",
-	"https://api.rubis.app/v2/scrap/BASPm347G6urjvnO/raw"
+    "https://api.rubis.app/v2/scrap/BASPm347G6urjvnO/raw"
 }
 getgenv().uiLE.le = getgenv().uiLE.le or nil
 if not getgenv().uiLE.le then
@@ -596,18 +605,24 @@ local changelogURLs = {
     "https://api.rubis.app/v2/scrap/btATRjMxQttd1sy8/raw"
 }
 local function loadRemoteChangelogs()
-    local json, _ = fetchUrlList(changelogURLs)
-    if json then
-        local success, data = pcall(function()
-            return game:GetService("HttpService"):JSONDecode(json)
-        end)
-        if success and type(data) == "table" then
-            for _, entry in ipairs(data) do
-                getgenv().ChangelogHelper.add(entry)
+    for _, url in ipairs(changelogURLs) do
+        local content, _ = fetchUrlList({url})
+        if not content then
+            warn("Fetch failed for: " .. url)
+        else
+            local success, data = pcall(function()
+                return game:GetService("HttpService"):JSONDecode(content)
+            end)
+            if success and type(data) == "table" then
+                for _, entry in ipairs(data) do
+                    getgenv().ChangelogHelper.add(entry)
+                end
+                return true
             end
-            return true
+            warn("JSON parse failed for: " .. url)
         end
     end
+    warn("All changelog URLs failed.")
     return false
 end
 
