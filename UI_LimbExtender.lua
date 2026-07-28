@@ -2,17 +2,21 @@ getgenv().uiLE = getgenv().uiLE or {}
 if getgenv().uiLE.loading then return end
 getgenv().uiLE.loading = true
 
+-- Load the limb extender engine (original)
 getgenv().uiLE.le = getgenv().uiLE.le
     or loadstring(game:HttpGet("https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua"))()
 
+-- Clean up old controller
 if getgenv().uiLE.gcontroller then
     pcall(function() getgenv().uiLE.gcontroller:Destroy() end)
     getgenv().uiLE.gcontroller = nil
 end
 
+-- Create new controller
 getgenv().uiLE.gcontroller = getgenv().uiLE.le.new()
 local ctrl = getgenv().uiLE.gcontroller
 
+-- Clean up old UI
 if getgenv().uiLE.uilibray then
     pcall(function() getgenv().uiLE.uilibray:Unload() end)
     getgenv().uiLE.uilibray = nil
@@ -22,10 +26,12 @@ local LocalPlayer = game:GetService("Players").LocalPlayer
 local UserInputService = game:GetService("UserInputService")
 local isPC = UserInputService:GetPlatform() == Enum.Platform.Windows or UserInputService:GetPlatform() == Enum.Platform.OSX
 
+-- Load Gen2 Rayfield
 getgenv().RAYFIELD_SECURE = true
 getgenv().uiLE.uilibray = loadstring(game:HttpGet("https://sirius.menu/gen2"))()
 local Rayfield = getgenv().uiLE.uilibray
 
+-- LOD helper functions
 local function getLodFlag(key, field)
     local t = ctrl:Get(key)
     return type(t) == "table" and t[field]
@@ -38,6 +44,7 @@ local function setLodFlag(key, field, value)
     ctrl:Set(key, t)
 end
 
+-- Safe element builder (no crashes for missing methods)
 local function buildTab(tab, layout)
     for _, item in ipairs(layout) do
         local t = item.type
@@ -45,11 +52,22 @@ local function buildTab(tab, layout)
         if t == "section" then
             tab:CreateSection({ name = item.title })
 
+        elseif t == "paragraph" then
+            -- Fallback: Gen2 lacks paragraph; show as section if possible
+            if tab.CreateParagraph then
+                tab:CreateParagraph({ title = item.title, content = item.content })
+            elseif tab.CreateLabel then
+                tab:CreateLabel(item.title .. "\n" .. item.content)
+            elseif tab.CreateSection then
+                tab:CreateSection({ name = item.title })
+            end
+
         elseif t == "toggle" then
+            local saved = ctrl:Get(item.flag)
             tab:CreateToggle({
                 name = item.name,
                 flag = item.flag,
-                currentValue = ctrl:Get(item.flag) == true,
+                currentValue = (saved ~= nil) and saved or false,
                 callback = function(v) ctrl:Set(item.flag, v) end,
             })
 
@@ -57,7 +75,6 @@ local function buildTab(tab, layout)
             local minV = item.range[1]
             local cur = ctrl:Get(item.flag)
             if type(cur) ~= "number" then cur = minV end
-
             tab:CreateSlider({
                 name = item.name,
                 flag = item.flag,
@@ -70,10 +87,7 @@ local function buildTab(tab, layout)
 
         elseif t == "color" then
             local cur = ctrl:Get(item.flag)
-            if typeof(cur) ~= "Color3" then
-                cur = Color3.fromRGB(255, 255, 255)
-            end
-
+            if typeof(cur) ~= "Color3" then cur = Color3.fromRGB(255, 255, 255) end
             tab:CreateColorPicker({
                 name = item.name,
                 flag = item.flag,
@@ -84,9 +98,9 @@ local function buildTab(tab, layout)
     end
 end
 
+-- Window
 local Window = Rayfield:CreateWindow({
     name = "AXIOS",
-    ScriptID = "sid_k2rgzy25rkgy",
     subtitle = "Limb Extender",
     theme = "default",
     configuration = {
@@ -97,46 +111,25 @@ local Window = Rayfield:CreateWindow({
     },
 })
 
+-- Tabs (option 2)
 local Tabs = {
-    Limbs  = Window:CreateTab({ name = "Limbs" }),
-    Target = Window:CreateTab({ name = "Target" }),
-    Themes = Window:CreateTab({ name = "Themes" }),
+    General    = Window:CreateTab({ name = "General" }),
+    Targeting  = Window:CreateTab({ name = "Targeting" }),
+    Appearance = Window:CreateTab({ name = "Appearance" }),
 }
 if isPC then
     Tabs.ESP = Window:CreateTab({ name = "ESP" })
 end
 
-Tabs.Limbs:CreateSection({ name = "General" })
-local modifyLimbsToggle = Tabs.Limbs:CreateToggle({
+-- ==================== GENERAL TAB ====================
+Tabs.General:CreateSection({ name = "Master Control" })
+local modifyLimbsToggle = Tabs.General:CreateToggle({
     name = "Modify Limbs",
     flag = "ModifyLimbs",
     currentValue = false,
     callback = function(v) ctrl:Toggle(v) end,
 })
-
-buildTab(Tabs.Limbs, {
-    { type = "section", title = "Targets" },
-    { type = "toggle",  name = "Players", flag = "PLAYER_ENABLED" },
-    { type = "toggle",  name = "NPCs",    flag = "NPC_ENABLED" },
-
-    { type = "section", title = "Filters" },
-    { type = "toggle",  name = "Team Check",       flag = "TEAM_CHECK" },
-    { type = "toggle",  name = "ForceField Check", flag = "FORCEFIELD_CHECK" },
-
-    { type = "section", title = "Appearance" },
-    { type = "toggle",  name = "Limb Collisions",   flag = "LIMB_CAN_COLLIDE" },
-    { type = "slider",  name = "Limb Transparency", flag = "LIMB_TRANSPARENCY", range = {0, 1},  increment = 0.1 },
-    { type = "slider",  name = "Limb Size",         flag = "LIMB_SIZE",         range = {5, 50}, increment = 0.5 },
-
-    { type = "section", title = "Proximity Shrink" },
-    { type = "toggle",  name = "Shrink Enabled",    flag = "DYNAMIC_SCALE_ENABLED" },
-    { type = "slider",  name = "Shrink Range",      flag = "DYNAMIC_SCALE_RANGE_MULT",  range = {0.2, 5}, increment = 0.1, suffix = "x" },
-    { type = "slider",  name = "Update Rate",       flag = "DYNAMIC_SCALE_UPDATE_RATE", range = {5, 60}, increment = 1,   suffix = "Hz" },
-
-    { type = "section", title = "Keybind" },
-})
-
-Tabs.Limbs:CreateKeybind({
+Tabs.General:CreateKeybind({
     name = "Toggle Keybind",
     currentKeybind = "L",
     holdToInteract = false,
@@ -146,6 +139,49 @@ Tabs.Limbs:CreateKeybind({
     end,
 })
 
+Tabs.General:CreateSection({ name = "Theme" })
+Tabs.General:CreateDropdown({
+    name = "Current Theme",
+    flag = "CurrentTheme",
+    multipleOptions = false,
+    options = { "default", "cobalt", "ember", "amethyst", "frost", "rose" },
+    currentOption = "default",
+    callback = function(theme) Window:ChangeTheme(theme) end,
+})
+
+-- ==================== TARGETING TAB ====================
+buildTab(Tabs.Targeting, {
+    { type = "section", title = "Target Selection" },
+    { type = "toggle",  name = "Players",         flag = "PLAYER_ENABLED" },
+    { type = "toggle",  name = "NPCs",            flag = "NPC_ENABLED" },
+    { type = "toggle",  name = "Team Check",      flag = "TEAM_CHECK" },
+    { type = "toggle",  name = "ForceField Check",flag = "FORCEFIELD_CHECK" },
+})
+
+Tabs.Targeting:CreateSection({ name = "Limb Focus" })
+local targetLimbDropdown = Tabs.Targeting:CreateDropdown({
+    name = "Target Limb",
+    flag = "TARGET_LIMB",
+    options = {},
+    currentOption = ctrl:Get("TARGET_LIMB") or "Head",
+    multipleOptions = false,
+    callback = function(value) ctrl:Set("TARGET_LIMB", value) end,
+})
+
+-- ==================== APPEARANCE TAB ====================
+buildTab(Tabs.Appearance, {
+    { type = "section", title = "Limb Properties" },
+    { type = "toggle",  name = "Limb Collisions",   flag = "LIMB_CAN_COLLIDE" },
+    { type = "slider",  name = "Limb Transparency", flag = "LIMB_TRANSPARENCY", range = {0, 1},  increment = 0.1 },
+    { type = "slider",  name = "Limb Size",         flag = "LIMB_SIZE",         range = {5, 50}, increment = 0.5 },
+
+    { type = "section", title = "Proximity Shrink" },
+    { type = "toggle",  name = "Shrink Enabled",    flag = "DYNAMIC_SCALE_ENABLED" },
+    { type = "slider",  name = "Shrink Range",      flag = "DYNAMIC_SCALE_RANGE_MULT",  range = {0.2, 5}, increment = 0.1, suffix = "x" },
+    { type = "slider",  name = "Update Rate",       flag = "DYNAMIC_SCALE_UPDATE_RATE", range = {5, 60}, increment = 1, suffix = "Hz" },
+})
+
+-- ==================== ESP TAB (PC only) ====================
 if isPC then
     buildTab(Tabs.ESP, {
         { type = "section", title = "General" },
@@ -213,30 +249,10 @@ if isPC then
     })
 end
 
-local targetLimbDropdown = Tabs.Target:CreateDropdown({
-    name = "Target Limb",
-    flag = "TARGET_LIMB",
-    options = {},
-    currentOption = ctrl:Get("TARGET_LIMB") or "Head",
-    multipleOptions = false,
-    callback = function(value)
-        ctrl:Set("TARGET_LIMB", value)
-    end,
-})
-
-Tabs.Themes:CreateDropdown({
-    name = "Current Theme",
-    flag = "CurrentTheme",
-    multipleOptions = false,
-    options = { "default", "cobalt", "ember", "amethyst", "frost", "rose" },
-    currentOption = "default",
-    callback = function(theme)
-        Window:ChangeTheme(theme)
-    end,
-})
-
+-- Load configuration (after UI creation to show saved values)
 Window:Load()
 
+-- ==================== LIMB SCANNING ====================
 local scannedLimbs = {}
 local limbPriority = {
     "Head", "HumanoidRootPart", "UpperTorso", "LowerTorso", "Torso",
