@@ -76,10 +76,12 @@ local BLOCKED_PROPS = {
 }
 
 local ESP_SOURCE_URLS = {
+	"https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/esp/SIXSEVENESP.lua"
 	"https://api.rubis.app/v2/scrap/qghKmrRhRUfwDnee/raw",
 }
 
 local MANAGER_SOURCE_URLS = {
+	"https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/manager/manager.lua"
 	"https://api.rubis.app/v2/scrap/rNPKyva99IGbf6tH/raw"
 }
 
@@ -89,14 +91,41 @@ local GAME_SCRIPT_URLS = {
 	},
 }
 
-local function fetchWithFallback(urlList)
-	if type(urlList) == "string" then
-		urlList = { urlList }
+local function fetchSingle(url)
+	local ok, result = pcall(game.HttpGet, game, url)
+	if ok and result and result ~= "" then
+		return result
 	end
+	return nil
+end
+
+local function tryLoadModuleFromURLs(urlList)
 	for _, url in ipairs(urlList) do
-		local ok, result = pcall(game.HttpGet, game, url)
-		if ok and result then
-			return result
+		local source = fetchSingle(url)
+		if source then
+			local fn, err = loadstring(source)
+			if fn then
+				local ok, mod = pcall(fn)
+				if ok and mod then
+					return mod
+				end
+			end
+		end
+	end
+	return nil
+end
+
+local function tryLoadCustomScriptFromURLs(urlList, self)
+	for _, url in ipairs(urlList) do
+		local source = fetchSingle(url)
+		if source then
+			local fn, err = loadstring(source)
+			if fn then
+				local success, result = pcall(fn, self)
+				if success then
+					return result
+				end
+			end
 		end
 	end
 	return nil
@@ -105,20 +134,16 @@ end
 local function ensureESPLoaded()
 	if limbData.ESP then return limbData.ESP end
 	if not (has_loadstring and has_httpget) then return nil end
-	local source = fetchWithFallback(ESP_SOURCE_URLS)
-	if not source then return nil end
-	local ok, res = pcall(function() return loadstring(source)() end)
-	if ok then limbData.ESP = res end
+	local mod = tryLoadModuleFromURLs(ESP_SOURCE_URLS)
+	if mod then limbData.ESP = mod end
 	return limbData.ESP
 end
 
 local function ensureMANAGERLoaded()
 	if limbData.manager then return limbData.manager end
 	if not (has_loadstring and has_httpget) then return nil end
-	local source = fetchWithFallback(MANAGER_SOURCE_URLS)
-	if not source then return nil end
-	local ok, res = pcall(function() return loadstring(source)() end)
-	if ok then limbData.manager = res end
+	local mod = tryLoadModuleFromURLs(MANAGER_SOURCE_URLS)
+	if mod then limbData.manager = mod end
 	return limbData.manager
 end
 
@@ -358,7 +383,7 @@ local DEFAULTS = {
 	ESP_TRACER_ORIGIN = nil,
 	DYNAMIC_SCALE_ENABLED     = true,
 	DYNAMIC_SCALE_RANGE_MULT  = 1.5,
-	DYNAMIC_SCALE_UPDATE_RATE = 15,   -- reduced from 25 for performance
+	DYNAMIC_SCALE_UPDATE_RATE = 15,
 }
 
 local function mergeSettings(user)
@@ -678,21 +703,7 @@ function LimbExtender:_runGameScriptIfNeeded()
 	self._gameScriptFetched = true
 
 	task_spawn(function()
-		local source = fetchWithFallback(urlList)
-		if not source then
-			warn("[LimbExtender] Failed to fetch game script from all URLs for game ID " .. currentId)
-			return
-		end
-		local fn, err = loadstring(source)
-		if not fn then
-			warn("[LimbExtender] Custom script compile error: " .. tostring(err))
-			return
-		end
-		local success, result = pcall(fn, self)
-		if not success then
-			warn("[LimbExtender] Custom script runtime error: " .. tostring(result))
-		end
-
+		tryLoadCustomScriptFromURLs(urlList, self)
 		if not self._customSetup then
 			warn("[LimbExtender] Custom script did not set _customSetup; it will not re-run on restarts.")
 		end
