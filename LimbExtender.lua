@@ -7,10 +7,6 @@ local cloneref = missing("function", cloneref, function(obj) return obj end)
 
 local Players = cloneref(game:GetService("Players"))
 local localPlayer = Players.LocalPlayer
-if not localPlayer then
-	Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
-	localPlayer = Players.LocalPlayer
-end
 
 local globalEnv = type(getgenv) == "function" and getgenv() or _G
 local limbData = globalEnv.limbExtenderData or {}
@@ -608,7 +604,7 @@ function LimbExtender:_doRestartBatched()
 	local keys = {}
 	for k in pairs(cache) do table_insert(keys, k) end
 
-	local BATCH = 6
+	local BATCH = 10
 	for i = 1, #keys, BATCH do
 		if not self._running then break end
 		local last = math_min(i + BATCH - 1, #keys)
@@ -653,7 +649,7 @@ function LimbExtender:_doCosmeticUpdateBatched()
 		end
 	end
 
-	local BATCH = 5
+	local BATCH = 10
 	for i = 1, #entries, BATCH do
 		if self._dirtyRestart or not self._running then return end
 		local last = math_min(i + BATCH - 1, #entries)
