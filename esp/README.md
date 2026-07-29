@@ -2,6 +2,9 @@
 
 A strict character-only overlay module for Roblox character rigs.
 
+> Canonical source location: `/src/esp/SIXSEVENESP.lua`  
+> Backward-compatible loader path: `/esp/SIXSEVENESP.lua`
+
 ## Overview
 
 `SIXSEVENESP` is a client-side renderer/controller that tracks only valid character models and draws:
