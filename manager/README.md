@@ -1,5 +1,6 @@
 # manager
 
-Shared runtime manager module used by `LimbExtender.lua`.
+Compatibility loader for the shared runtime manager module.
 
-- `manager.lua` - character/NPC tracking and lifecycle utilities.
+- `manager.lua` - compatibility loader entry point
+- Canonical source: `/src/manager/manager.lua`

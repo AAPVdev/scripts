@@ -5,4 +5,4 @@ This folder contains legacy beta variants kept for compatibility and historical 
 - `LimbExtenderBETA.lua`
 - `managerBETA.lua`
 
-Active scripts are maintained at the repository root and in `/manager`.
+Active scripts are maintained in `/src`, with root-level compatibility loaders for backward compatibility.

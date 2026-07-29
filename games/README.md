@@ -1,5 +1,6 @@
 # games
 
-Game-specific integration scripts live here.
+Compatibility loaders for game-specific integration scripts.
 
-- `brm5.lua` - custom setup for BRM5 and ReplicatorService actor/player mapping.
+- `brm5.lua` - compatibility loader for BRM5 integration
+- Canonical source: `/src/games/brm5.lua`

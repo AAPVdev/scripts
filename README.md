@@ -15,12 +15,13 @@ The module returns a callable table, so it can be used either as a constructor o
 
 ## Repository layout
 
-- `/LimbExtender.lua` - main module entry point
-- `/UI_LimbExtender.lua` - UI loader and controller bootstrap
+- `/src/` - canonical source code for active scripts
+- `/LimbExtender.lua` - compatibility loader for the main module
+- `/UI_LimbExtender.lua` - compatibility loader for the UI bootstrap
 - `/changelogs.json` - changelog data consumed by the UI script
-- `/esp/` - ESP modules and ESP-specific docs
-- `/games/` - game-specific integration scripts
-- `/manager/` - shared manager module used by the main script
+- `/esp/` - compatibility loaders and ESP docs
+- `/games/` - compatibility loaders for game-specific integrations
+- `/manager/` - compatibility loaders for shared runtime modules
 - `/Limb/` - legacy beta scripts kept for compatibility/reference
 
 ---
