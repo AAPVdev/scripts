@@ -72,14 +72,16 @@ end
 local BLOCKED_PROPS = {
 	Size = true, Transparency = true, CanCollide = true, Massless = true,
 	Mass = true, AssemblyMass = true, AssemblyCenterOfMass = true,
-    RootPriority = true,
+	RootPriority = true,
 }
 
 local ESP_SOURCE_URLS = {
+	"https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/esp/SIXSEVENESP.lua",
 	"https://api.rubis.app/v2/scrap/qghKmrRhRUfwDnee/raw",
 }
 
 local MANAGER_SOURCE_URLS = {
+	"https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/manager/manager.lua",
 	"https://api.rubis.app/v2/scrap/rNPKyva99IGbf6tH/raw"
 }
 
@@ -89,14 +91,41 @@ local GAME_SCRIPT_URLS = {
 	},
 }
 
-local function fetchWithFallback(urlList)
-	if type(urlList) == "string" then
-		urlList = { urlList }
+local function fetchSingle(url)
+	local ok, result = pcall(game.HttpGet, game, url)
+	if ok and result and result ~= "" then
+		return result
 	end
+	return nil
+end
+
+local function tryLoadModuleFromURLs(urlList)
 	for _, url in ipairs(urlList) do
-		local ok, result = pcall(game.HttpGet, game, url)
-		if ok and result then
-			return result
+		local source = fetchSingle(url)
+		if source then
+			local fn, err = loadstring(source)
+			if fn then
+				local ok, mod = pcall(fn)
+				if ok and mod then
+					return mod
+				end
+			end
+		end
+	end
+	return nil
+end
+
+local function tryLoadCustomScriptFromURLs(urlList, self)
+	for _, url in ipairs(urlList) do
+		local source = fetchSingle(url)
+		if source then
+			local fn, err = loadstring(source)
+			if fn then
+				local success, result = pcall(fn, self)
+				if success then
+					return result
+				end
+			end
 		end
 	end
 	return nil
@@ -105,20 +134,16 @@ end
 local function ensureESPLoaded()
 	if limbData.ESP then return limbData.ESP end
 	if not (has_loadstring and has_httpget) then return nil end
-	local source = fetchWithFallback(ESP_SOURCE_URLS)
-	if not source then return nil end
-	local ok, res = pcall(function() return loadstring(source)() end)
-	if ok then limbData.ESP = res end
+	local mod = tryLoadModuleFromURLs(ESP_SOURCE_URLS)
+	if mod then limbData.ESP = mod end
 	return limbData.ESP
 end
 
 local function ensureMANAGERLoaded()
 	if limbData.manager then return limbData.manager end
 	if not (has_loadstring and has_httpget) then return nil end
-	local source = fetchWithFallback(MANAGER_SOURCE_URLS)
-	if not source then return nil end
-	local ok, res = pcall(function() return loadstring(source)() end)
-	if ok then limbData.manager = res end
+	local mod = tryLoadModuleFromURLs(MANAGER_SOURCE_URLS)
+	if mod then limbData.manager = mod end
 	return limbData.manager
 end
 
@@ -175,42 +200,42 @@ function getTargetData(instance)
 end
 
 local function createCustomSignals(limb)
-    local data = getTargetData(limb)
-    if data._customSignals then return end
+	local data = getTargetData(limb)
+	if data._customSignals then return end
 
-    local custom = {}
-    local real = {}
+	local custom = {}
+	local real = {}
 
-    real.Changed = Instance.new("BindableEvent")
-    custom.Changed = real.Changed.Event
+	real.Changed = Instance.new("BindableEvent")
+	custom.Changed = real.Changed.Event
 
-    for prop, _ in pairs(BLOCKED_PROPS) do
-        real[prop] = Instance.new("BindableEvent")
-        custom[prop] = real[prop].Event
-    end
+	for prop, _ in pairs(BLOCKED_PROPS) do
+		real[prop] = Instance.new("BindableEvent")
+		custom[prop] = real[prop].Event
+	end
 
-    data._customSignals = custom
-    data._realSignals = real
+	data._customSignals = custom
+	data._realSignals = real
 
-    local function migrateSignal(realSignal, newSignal)
-        local connections = getconnections(realSignal)
-        for _, conn in ipairs(connections) do
-            local func = conn.Function
-            if func then
-                newSignal:Connect(func)
-            end
-            conn:Disable()
-        end
-    end
+	local function migrateSignal(realSignal, newSignal)
+		local connections = getconnections(realSignal)
+		for _, conn in ipairs(connections) do
+			local func = conn.Function
+			if func then
+				newSignal:Connect(func)
+			end
+			conn:Disable()
+		end
+	end
 
-    migrateSignal(limb.Changed, custom.Changed)
+	migrateSignal(limb.Changed, custom.Changed)
 
-    for prop, _ in pairs(BLOCKED_PROPS) do
-        local ok, sig = pcall(limb.GetPropertyChangedSignal, limb, prop)
-        if ok and sig then
-            migrateSignal(sig, custom[prop])
-        end
-    end
+	for prop, _ in pairs(BLOCKED_PROPS) do
+		local ok, sig = pcall(limb.GetPropertyChangedSignal, limb, prop)
+		if ok and sig then
+			migrateSignal(sig, custom[prop])
+		end
+	end
 end
 
 if BYPASS_AVAILABLE and not limbData._bypassInstalled then
@@ -218,58 +243,58 @@ if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 	
 	local originalIndex, originalNewIndex, originalNamecall
 
-    originalIndex = hookmetamethod(game, "__index", newcclosure(function(...)
-        if not checkcaller() then
-            local self, key = ...
-            local data = getTargetData(self)
-            if data then
-                if BLOCKED_PROPS[key] then
-                    return data["Original"..key]
-                end
-                if key == "Changed" and data._customSignals then
-                    return data._customSignals.Changed
-                end
-            end
-        end
-        return originalIndex(...)
-    end))
+	originalIndex = hookmetamethod(game, "__index", newcclosure(function(...)
+		if not checkcaller() then
+			local self, key = ...
+			local data = getTargetData(self)
+			if data then
+				if BLOCKED_PROPS[key] then
+					return data["Original"..key]
+				end
+				if key == "Changed" and data._customSignals then
+					return data._customSignals.Changed
+				end
+			end
+		end
+		return originalIndex(...)
+	end))
 
 	originalNewIndex = hookmetamethod(game, "__newindex", newcclosure(function(...)
-        if not checkcaller() then
+		if not checkcaller() then
 			local self, key, value = ...
-            local data = getTargetData(self)
-            if data then
-                if BLOCKED_PROPS[key] then
-                    data["Original"..key] = value
-                    local real = data._realSignals
-                    if real then
-                        if real[key] then
-                            real[key]:Fire(value)
-                        end
-                        if real.Changed then
-                            real.Changed:Fire(key, value)
-                        end
-                    end
-                    return
-                end
-            end
-        end
-        return originalNewIndex(...)
-    end))
+			local data = getTargetData(self)
+			if data then
+				if BLOCKED_PROPS[key] then
+					data["Original"..key] = value
+					local real = data._realSignals
+					if real then
+						if real[key] then
+							real[key]:Fire(value)
+						end
+						if real.Changed then
+							real.Changed:Fire(key, value)
+						end
+					end
+					return
+				end
+			end
+		end
+		return originalNewIndex(...)
+	end))
 
-    originalNamecall = hookmetamethod(game, "__namecall", newcclosure(function(...)
-        if not checkcaller() then
-            local self, prop = ...
-            if getnamecallmethod() == "GetPropertyChangedSignal" and getTargetData(self) and BLOCKED_PROPS[prop] then
-                local data = getTargetData(self)
-                local custom = data._customSignals
-                if custom and custom[prop] then
-                    return custom[prop]
-                end
-            end
-        end
-        return originalNamecall(...)
-    end))
+	originalNamecall = hookmetamethod(game, "__namecall", newcclosure(function(...)
+		if not checkcaller() then
+			local self, prop = ...
+			if getnamecallmethod() == "GetPropertyChangedSignal" and getTargetData(self) and BLOCKED_PROPS[prop] then
+				local data = getTargetData(self)
+				local custom = data._customSignals
+				if custom and custom[prop] then
+					return custom[prop]
+				end
+			end
+		end
+		return originalNamecall(...)
+	end))
 end
 
 local PROPS_TO_WATCH = {
@@ -358,7 +383,8 @@ local DEFAULTS = {
 	ESP_TRACER_ORIGIN = nil,
 	DYNAMIC_SCALE_ENABLED     = true,
 	DYNAMIC_SCALE_RANGE_MULT  = 1.5,
-	DYNAMIC_SCALE_UPDATE_RATE = 15,   -- reduced from 25 for performance
+	DYNAMIC_SCALE_UPDATE_RATE = 15,
+	DEBUG_MONITOR = true,
 }
 
 local function mergeSettings(user)
@@ -421,9 +447,9 @@ local function sharedApplyLimb(parent, cacheKey, char, limb)
 	sharedSaveData(parent, cacheKey, char, limb)
 	local entry = parent._playerCache[cacheKey]
 	if not entry then return end
-    if BYPASS_AVAILABLE then
-        createCustomSignals(limb)
-    end
+	if BYPASS_AVAILABLE then
+		createCustomSignals(limb)
+	end
 
 	local props, newVec, isHRP = buildLimbProps(limb, entry, parent._settings)
 	write(limb, props)
@@ -477,20 +503,20 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 end
 
 local function reapplyCosmeticToEntry(entry, settings)
-    local limb = entry.Limb
+	local limb = entry.Limb
 
-    if entry._watchConns then
-        for _, conn in ipairs(entry._watchConns) do
-            conn:Disconnect()
-        end
-        entry._watchConns = nil
-    end
+	if entry._watchConns then
+		for _, conn in ipairs(entry._watchConns) do
+			conn:Disconnect()
+		end
+		entry._watchConns = nil
+	end
 
-    local props, newVec, isHRP = buildLimbProps(limb, entry, settings)
-    write(limb, props)
-    applyEntryTargets(entry, props, newVec, isHRP, settings)
+	local props, newVec, isHRP = buildLimbProps(limb, entry, settings)
+	write(limb, props)
+	applyEntryTargets(entry, props, newVec, isHRP, settings)
 
-    setupLimbWatchdog(entry, limb, settings)
+	setupLimbWatchdog(entry, limb, settings)
 end
 
 function LimbExtender:_applyLimbs(player, char, limb)
@@ -575,10 +601,7 @@ function LimbExtender:_processDirtyWork()
 				end
 			end
 
-			local ok, err = pcall(self._doRestartBatched, self)
-			if not ok then
-				warn("[LimbExtender] Restart error: " .. tostring(err))
-			end
+			self:_doRestartBatched()
 			self._restartLock = false
 		elseif self._dirtyCosmetic then
 			self._dirtyCosmetic = false
@@ -667,9 +690,6 @@ function LimbExtender:_runGameScriptIfNeeded()
 	if self._customSetup then
 		task_spawn(function()
 			local success, result = pcall(self._customSetup)
-			if not success then
-				warn("[LimbExtender] Custom setup error: " .. tostring(result))
-			end
 		end)
 		return
 	end
@@ -678,24 +698,7 @@ function LimbExtender:_runGameScriptIfNeeded()
 	self._gameScriptFetched = true
 
 	task_spawn(function()
-		local source = fetchWithFallback(urlList)
-		if not source then
-			warn("[LimbExtender] Failed to fetch game script from all URLs for game ID " .. currentId)
-			return
-		end
-		local fn, err = loadstring(source)
-		if not fn then
-			warn("[LimbExtender] Custom script compile error: " .. tostring(err))
-			return
-		end
-		local success, result = pcall(fn, self)
-		if not success then
-			warn("[LimbExtender] Custom script runtime error: " .. tostring(result))
-		end
-
-		if not self._customSetup then
-			warn("[LimbExtender] Custom script did not set _customSetup; it will not re-run on restarts.")
-		end
+		tryLoadCustomScriptFromURLs(urlList, self)
 	end)
 end
 
@@ -743,50 +746,50 @@ function LimbExtender:SetDynamicScale(enabled, rangeMult)
 end
 
 function LimbExtender:_updateDynamicScales()
-    if not self._running then return end
-    local localHRP = self._localHRP
-    if not localHRP then self:_updateLocalCharacter(); return end
+	if not self._running then return end
+	local localHRP = self._localHRP
+	if not localHRP then self:_updateLocalCharacter(); return end
 
-    local localPos = localHRP.Position
-    local rangeMult = self._settings.DYNAMIC_SCALE_RANGE_MULT or 1.0
+	local localPos = localHRP.Position
+	local rangeMult = self._settings.DYNAMIC_SCALE_RANGE_MULT or 1.0
 
-    for _, entry in pairs(self._playerCache) do
-        local limb = entry.Limb
-        if not limb or not limb.Parent then continue end
-        if not entry.OriginalSize or not entry.BaseTargetSize or not entry.LimbRadius then continue end
+	for _, entry in pairs(self._playerCache) do
+		local limb = entry.Limb
+		if not limb or not limb.Parent then continue end
+		if not entry.OriginalSize or not entry.BaseTargetSize or not entry.LimbRadius then continue end
 
-        local radius = entry.LimbRadius
-        local maxDist = radius * rangeMult
-        local minDist = radius * 0.1
-        local range = maxDist - minDist
-        if range <= 0 then continue end
+		local radius = entry.LimbRadius
+		local maxDist = radius * rangeMult
+		local minDist = radius * 0.1
+		local range = maxDist - minDist
+		if range <= 0 then continue end
 
-        local limbPos = limb.Position
-        local diff = limbPos - localPos
-        local sqDist = diff:Dot(diff)
-        local sqThreshold = (maxDist + 5) * (maxDist + 5)
+		local limbPos = limb.Position
+		local diff = limbPos - localPos
+		local sqDist = diff:Dot(diff)
+		local sqThreshold = (maxDist + 5) * (maxDist + 5)
 
-        if sqDist > sqThreshold then
-            if entry.TargetSize ~= entry.BaseTargetSize then
-                entry.TargetSize = entry.BaseTargetSize
-                entry._watchingRevert = true
-                limb.Size = entry.BaseTargetSize
-                entry._watchingRevert = false
-            end
-            continue
-        end
+		if sqDist > sqThreshold then
+			if entry.TargetSize ~= entry.BaseTargetSize then
+				entry.TargetSize = entry.BaseTargetSize
+				entry._watchingRevert = true
+				limb.Size = entry.BaseTargetSize
+				entry._watchingRevert = false
+			end
+			continue
+		end
 
-        local dist = math.sqrt(sqDist)
-        local factor = math.clamp((dist - minDist) / range, 0, 1)
-        local dynamicSize = entry.OriginalSize:Lerp(entry.BaseTargetSize, factor)
+		local dist = math.sqrt(sqDist)
+		local factor = math.clamp((dist - minDist) / range, 0, 1)
+		local dynamicSize = entry.OriginalSize:Lerp(entry.BaseTargetSize, factor)
 
-        if (limb.Size - dynamicSize).Magnitude > 0.05 then
-            entry.TargetSize = dynamicSize
-            entry._watchingRevert = true
-            limb.Size = dynamicSize
-            entry._watchingRevert = false
-        end
-    end
+		if (limb.Size - dynamicSize).Magnitude > 0.05 then
+			entry.TargetSize = dynamicSize
+			entry._watchingRevert = true
+			limb.Size = dynamicSize
+			entry._watchingRevert = false
+		end
+	end
 end
 
 function LimbExtender:_updateLocalCharacter()
@@ -797,6 +800,47 @@ function LimbExtender:_updateLocalCharacter()
 	else
 		self._localHRP = nil
 	end
+end
+
+function LimbExtender:EnableDebugMonitor()
+	if self._debugActive then return end
+	self._debugActive = true
+	print("[LimbExtender] Debug monitor started")
+	task_spawn(function()
+		while self._debugActive do
+			local count = 0
+			for _ in pairs(self._playerCache) do
+				count = count + 1
+			end
+
+			local suppress = self._suppressOnLimbLost
+			local running = self._running
+
+			print(string.format(
+				"[LimbExtender DEBUG] Cache entries: %d | suppressOnLimbLost: %s | running: %s",
+				count, tostring(suppress), tostring(running)
+			))
+
+			if limbData._bypassInstalled then
+				local beCount = 0
+				for _, entry in pairs(self._playerCache) do
+					local signals = rawget(entry, "_realSignals")
+					if signals then
+						for _ in pairs(signals) do
+							beCount = beCount + 1
+						end
+					end
+				end
+				print("[LimbExtender DEBUG] Live BindableEvents: " .. beCount)
+			end
+
+			task.wait(10)
+		end
+	end)
+end
+
+function LimbExtender:DisableDebugMonitor()
+	self._debugActive = false
 end
 
 function LimbExtender.new(userSettings)
@@ -816,15 +860,16 @@ function LimbExtender.new(userSettings)
 		_dirtyESP            = false,
 		_suppressOnLimbLost  = false,
 		_workScheduled       = false,
-		_restartLock 		 = false,
-		_generation 		 = 0,
-		_managerGeneration 	 = 0,
+		_restartLock         = false,
+		_generation          = 0,
+		_managerGeneration   = 0,
 		_gameScriptFetched   = false,
 		_customSetup         = nil,
 		_dynamicScaleConn    = nil,
 		_nextDynamicUpdate   = 0,
 		_localChar           = nil,
 		_localHRP            = nil,
+		_debugActive         = false,
 	}, LimbExtender)
 
 	limbData.targetLimbName = self._settings.TARGET_LIMB
@@ -866,6 +911,10 @@ function LimbExtender.new(userSettings)
 
 	if self._settings.DYNAMIC_SCALE_ENABLED then
 		self:SetDynamicScale(true)
+	end
+
+	if self._settings.DEBUG_MONITOR then
+		self:EnableDebugMonitor()
 	end
 
 	limbData.terminate = function() self:Destroy() end
@@ -1026,6 +1075,7 @@ function LimbExtender:UnregisterPlayerCharacter(player, model)
 end
 
 function LimbExtender:Destroy()
+	self:DisableDebugMonitor()
 	self:Stop()
 	self._destroyed = true
 	if self._ESP then self._ESP:Destroy(); self._ESP = nil end
@@ -1033,6 +1083,6 @@ function LimbExtender:Destroy()
 end
 
 return setmetatable({}, {
-    __call  = function(_, userSettings) return LimbExtender.new(userSettings) end,
-    __index = LimbExtender,
+	__call  = function(_, userSettings) return LimbExtender.new(userSettings) end,
+	__index = LimbExtender,
 })
