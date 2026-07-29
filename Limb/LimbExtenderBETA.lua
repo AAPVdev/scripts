@@ -823,9 +823,11 @@ function LimbExtender:_updateLocalCharacter()
 end
 
 function LimbExtender:EnableDebugMonitor()
-	if self._debugConnection then return end
-	self._debugConnection = task.spawn(function()
-		while self._debugConnection do
+	if self._debugActive then return end
+	self._debugActive = true
+	print("[LimbExtender] Debug monitor started")
+	task_spawn(function()
+		while self._debugActive do
 			local count = 0
 			for _ in pairs(self._playerCache) do
 				count = count + 1
@@ -858,9 +860,7 @@ function LimbExtender:EnableDebugMonitor()
 end
 
 function LimbExtender:DisableDebugMonitor()
-	if self._debugConnection then
-		self._debugConnection = nil
-	end
+	self._debugActive = false
 end
 
 function LimbExtender.new(userSettings)
@@ -889,7 +889,7 @@ function LimbExtender.new(userSettings)
 		_nextDynamicUpdate   = 0,
 		_localChar           = nil,
 		_localHRP            = nil,
-		_debugConnection     = nil,
+		_debugActive         = false,
 	}, LimbExtender)
 
 	limbData.targetLimbName = self._settings.TARGET_LIMB
