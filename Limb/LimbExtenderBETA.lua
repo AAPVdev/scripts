@@ -601,7 +601,7 @@ function LimbExtender:_processDirtyWork()
 				end
 			end
 
-			local ok, err = pcall(self._doRestartBatched, self)
+			self:_doRestartBatched()
 			self._restartLock = false
 		elseif self._dirtyCosmetic then
 			self._dirtyCosmetic = false
@@ -620,46 +620,38 @@ end
 function LimbExtender:_doRestartBatched()
 	if not self._running then return end
 	self._suppressOnLimbLost = true
+	self._manager:Stop()
 
-	local function doWork()
-		self._manager:Stop()
+	local cache = self._playerCache
+	local keys = {}
+	for k in pairs(cache) do table_insert(keys, k) end
 
-		local cache = self._playerCache
-		local keys = {}
-		for k in pairs(cache) do table_insert(keys, k) end
-
-		local BATCH = 10
-		for i = 1, #keys, BATCH do
-			if not self._running then break end
-			local last = math_min(i + BATCH - 1, #keys)
-			for j = i, last do
-				local entry = cache[keys[j]]
-				if entry and entry.Limb then
-					sharedRestoreLimb(self, keys[j], entry.Limb)
-					if self._ESP and entry.Character then
-						self._ESP:Untrack(entry.Character)
-					end
-				elseif entry and entry.Character then
-					limbData.instanceLookup[entry.Character] = nil
-					if self._ESP then
-						self._ESP:Untrack(entry.Character)
-					end
-					cache[keys[j]] = nil
+	local BATCH = 10
+	for i = 1, #keys, BATCH do
+		if not self._running then break end
+		local last = math_min(i + BATCH - 1, #keys)
+		for j = i, last do
+			local entry = cache[keys[j]]
+			if entry and entry.Limb then
+				sharedRestoreLimb(self, keys[j], entry.Limb)
+				if self._ESP and entry.Character then
+					self._ESP:Untrack(entry.Character)
 				end
+			elseif entry and entry.Character then
+				limbData.instanceLookup[entry.Character] = nil
+				if self._ESP then
+					self._ESP:Untrack(entry.Character)
+				end
+				cache[keys[j]] = nil
 			end
-			task_wait()
 		end
+		task_wait()
 	end
-
-	local success, err = pcall(doWork)
 
 	self._suppressOnLimbLost = false
-	table_clear(self._playerCache)
+	table_clear(cache)
 
-	if not success then
-		warn("[LimbExtender] Error during batched restart: " .. tostring(err))
-	end
-
+	if self._ESP then self._ESP:Stop() end
 	if not self._running then return end
 
 	self._generation = self._generation + 1
@@ -760,18 +752,6 @@ function LimbExtender:_updateDynamicScales()
 
 	local localPos = localHRP.Position
 	local rangeMult = self._settings.DYNAMIC_SCALE_RANGE_MULT or 1.0
-
-	local toRemove = {}
-	for cacheKey, entry in pairs(self._playerCache) do
-		local char = entry.Character
-		local limb = entry.Limb
-		if not char or not char.Parent or not limb or not limb.Parent then
-			toRemove[cacheKey] = entry
-		end
-	end
-	for cacheKey, entry in pairs(toRemove) do
-		self:_removeLimbs(nil, entry.Character, entry.Limb)
-	end
 
 	for _, entry in pairs(self._playerCache) do
 		local limb = entry.Limb
