@@ -384,7 +384,7 @@ local DEFAULTS = {
 	DYNAMIC_SCALE_ENABLED     = true,
 	DYNAMIC_SCALE_RANGE_MULT  = 1.5,
 	DYNAMIC_SCALE_UPDATE_RATE = 15,
-	DEBUG_MONITOR = true,
+	DEBUG_MONITOR = false,
 }
 
 local function mergeSettings(user)
