@@ -280,11 +280,12 @@ getgenv().ChangelogHelper = getgenv().ChangelogHelper or (function()
         local wantPopups = window:Get("Changelog.ShowPopups")
         if wantPopups == nil then wantPopups = true end
 
-        local function parseSemver(v)
-            if not v then return nil, nil end
-            local a,b = v:match("^(%d+)%.(%d+)")
-            return tonumber(a), tonumber(b)
+        local function parseFullSemver(v)
+            if not v then return nil end
+            local major, minor, patch = v:match("^(%d+)%.(%d+)%.?(%d*)$")
+            return tonumber(major), tonumber(minor), tonumber(patch) or 0
         end
+
         local function significant(oldV, newV)
             if not newV then return false end
             if not oldV then return true end
@@ -298,23 +299,39 @@ getgenv().ChangelogHelper = getgenv().ChangelogHelper or (function()
 
         if seen == latest then return end
 
-        if significant(seen, latest) and wantPopups and opts.showPopupOnUpdate ~= false then
-            local latestEntry = changelogs[1]
-            local shouldNotify = true
-            if latestEntry.notify ~= nil then shouldNotify = latestEntry.notify end
-            if shouldNotify then
-                window:Toast({ title = "New update: " .. (latestEntry.version or latest), subtitle = (latestEntry.date or "") })
-                task.spawn(function()
-                    task.wait(0.18)
-                    showPopup(window, latestEntry)
-                end)
-            else
-                window:Toast({ title = "Updated to " .. (latestEntry.version or latest) })
+        local entryToShow
+        if seen == nil then
+            local latestMajor, latestMinor, latestPatch = parseFullSemver(latest)
+            for i, entry in ipairs(changelogs) do
+                local major, minor, patch = parseFullSemver(entry.version)
+                if major == latestMajor and minor == latestMinor and patch == 0 then
+                    entryToShow = entry
+                    break
+                end
             end
-            persist_seen_version(latestEntry.version)
+            entryToShow = entryToShow or changelogs[1]
         else
-            window:Toast({ title = "Updated: " .. (changelogs[1].version or latest) })
-            persist_seen_version(changelogs[1].version)
+            entryToShow = changelogs[1]
+        end
+
+        if entryToShow then
+            if significant(seen, entryToShow.version) and wantPopups and opts.showPopupOnUpdate ~= false then
+                local shouldNotify = true
+                if entryToShow.notify ~= nil then shouldNotify = entryToShow.notify end
+                if shouldNotify then
+                    window:Toast({ title = "New update: " .. (entryToShow.version or latest), subtitle = (entryToShow.date or "") })
+                    task.spawn(function()
+                        task.wait(0.18)
+                        showPopup(window, entryToShow)
+                    end)
+                else
+                    window:Toast({ title = "Updated to " .. (entryToShow.version or latest) })
+                end
+                persist_seen_version(entryToShow.version)
+            else
+                window:Toast({ title = "Updated: " .. (entryToShow.version or latest) })
+                persist_seen_version(entryToShow.version)
+            end
         end
     end
 
