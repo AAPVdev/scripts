@@ -4,110 +4,62 @@ getgenv().uiLE.loading = true
 
 local function fetchUrlList(urls)
     for _, url in ipairs(urls) do
-        local result = game:HttpGet(url)
-        if result and result ~= "" then
-            return result
-        end
+        local ok, result = pcall(function() return game:HttpGet(url) end)
+        if ok and result and result ~= "" then return result end
     end
-    error("All URLs failed")
+    return nil
 end
 
 local function tryLoadFromURL(url)
     local content = fetchUrlList({url})
-    local func = assert(loadstring(content))
-    return func()
+    if not content then return nil end
+    local func = loadstring(content)
+    if not func then return nil end
+    local ok, result = pcall(func)
+    if not ok then return nil end
+    return result
 end
 
 local function safeLoadString(urls)
     for _, url in ipairs(urls) do
         local result = tryLoadFromURL(url)
-        if result then
-            return result
-        end
-    end
-    return nil
-end
-
-local function normalizeVersion(s)
-    if not s then return nil end
-    return tostring(s):gsub("^%s+", ""):gsub("%s+$", ""):gsub("^v", "")
-end
-
-local SEEN_FILENAME = "AXIOS_LastSeenVersion.txt"
-local function file_write_safe(name, contents)
-    writefile(name, contents)
-    return true
-end
-local function file_read_safe(name)
-    if isfile(name) then
-        local data = readfile(name)
-        if data then return data end
-    end
-    return nil
-end
-
-local function persist_seen_version(ver)
-    if not ver then return end
-    local norm = normalizeVersion(ver)
-    file_write_safe(SEEN_FILENAME, norm)
-end
-
-local function load_seen_from_file()
-    local raw = file_read_safe(SEEN_FILENAME)
-    if raw and raw ~= "" then
-        return normalizeVersion(raw)
+        if result then return result end
     end
     return nil
 end
 
 local limbExtenderURLs = {
-    "https://raw.githubusercontent.com/AAPVdev/scripts/main/LimbExtender.lua",
+    "https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua",
     "https://api.rubis.app/v2/scrap/BASPm347G6urjvnO/raw"
 }
-getgenv().uiLE.le = getgenv().uiLE.le or nil
-if not getgenv().uiLE.le then
-    local le = safeLoadString(limbExtenderURLs)
-    if not le then
-        getgenv().uiLE.loading = false
-        return
-    end
-    getgenv().uiLE.le = le
-end
+getgenv().uiLE.le = getgenv().uiLE.le or safeLoadString(limbExtenderURLs)
+if not getgenv().uiLE.le then getgenv().uiLE.loading = false return end
 
 if getgenv().uiLE.gcontroller then
     getgenv().uiLE.gcontroller:Destroy()
     getgenv().uiLE.gcontroller = nil
 end
-
-local newCtrl = getgenv().uiLE.le.new()
-if not newCtrl then
-    getgenv().uiLE.loading = false
-    return
-end
-getgenv().uiLE.gcontroller = newCtrl
+getgenv().uiLE.gcontroller = getgenv().uiLE.le.new()
 local ctrl = getgenv().uiLE.gcontroller
 
-if getgenv().uiLE.uilibray then
-    getgenv().uiLE.uilibray.Window:Unload()
-    getgenv().uiLE.uilibray = nil
-end
-
-local rayfieldURLs = {
-    "https://sirius.menu/gen2",
-}
-getgenv().RAYFIELD_SECURE = true
-local rayfieldLib = safeLoadString(rayfieldURLs)
-if not rayfieldLib then
-    getgenv().uiLE.loading = false
-    return
-end
-getgenv().uiLE.uilibray = rayfieldLib
-local Rayfield = getgenv().uiLE.uilibray
-
-local Players = cloneref(game:GetService("Players"))
+local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
-local UserInputService = cloneref(game:GetService("UserInputService"))
-local isPC = (UserInputService:GetPlatform() == Enum.Platform.Windows) or (UserInputService:GetPlatform() == Enum.Platform.OSX)
+local UserInputService = game:GetService("UserInputService")
+local isPC = UserInputService:GetPlatform() == Enum.Platform.Windows or UserInputService:GetPlatform() == Enum.Platform.OSX
+
+local function getLodFlag(key, field)
+    local t = ctrl:Get(key)
+    return type(t) == "table" and t[field]
+end
+
+local function setLodFlag(key, field, value)
+    local t = ctrl:Get(key)
+    if type(t) ~= "table" then t = {} end
+    t[field] = value
+    ctrl:Set(key, t)
+end
+
+getgenv().uiLE.targetLimbDropdown = nil
 
 local scannedLimbs = {}
 local limbPriority = {
@@ -117,16 +69,15 @@ local limbPriority = {
     "LeftUpperLeg","LeftLowerLeg","LeftFoot","RightUpperLeg","RightLowerLeg","RightFoot",
     "Left Leg","Right Leg",
 }
+
 local function getLimbPriority(name)
-    if not name or type(name) ~= "string" then return math.huge end
     local lower = name:lower()
     for index, limb in ipairs(limbPriority) do
-        if lower:find(limb:lower(), 1, true) then
-            return index
-        end
+        if lower:find(limb:lower(), 1, true) then return index end
     end
     return math.huge
 end
+
 local function sortLimbs()
     table.sort(scannedLimbs, function(a, b)
         local pa = getLimbPriority(a)
@@ -136,22 +87,13 @@ local function sortLimbs()
     end)
 end
 
-local refreshTimer
-local function debounceRefreshDropdown(dropdown)
-    if refreshTimer then return end
-    refreshTimer = task.delay(0.06, function()
-        refreshTimer = nil
-        local copy = {}
-        for i, v in ipairs(scannedLimbs) do copy[i] = v end
-        dropdown:Refresh(copy)
-    end)
-end
-
-local function registerLimb(name, dropdown)
+local function registerLimb(name)
     if not name or table.find(scannedLimbs, name) then return end
     table.insert(scannedLimbs, name)
     sortLimbs()
-    debounceRefreshDropdown(dropdown)
+    if getgenv().uiLE.targetLimbDropdown then
+        getgenv().uiLE.targetLimbDropdown:Refresh(scannedLimbs)
+    end
 end
 
 local function getPartPath(part, character)
@@ -164,244 +106,87 @@ local function getPartPath(part, character)
     return path
 end
 
-local charDescConn, charRemovingConn
-local function disconnectCharConns()
-    if charDescConn then
-        charDescConn:Disconnect()
-        charDescConn = nil
-    end
-    if charRemovingConn then
-        charRemovingConn:Disconnect()
-        charRemovingConn = nil
-    end
-end
-
-local function scanCharacter(character, dropdown)
+local function scanCharacter(character)
     if not character then return end
-    disconnectCharConns()
     table.clear(scannedLimbs)
     for _, desc in ipairs(character:GetDescendants()) do
         if desc:IsA("BasePart") then
-            registerLimb(getPartPath(desc, character), dropdown)
+            registerLimb(getPartPath(desc, character))
         end
     end
-    charDescConn = character.DescendantAdded:Connect(function(desc)
-        if desc:IsA("BasePart") then
-            registerLimb(getPartPath(desc, character), dropdown)
-        end
+end
+
+local charAddedConn
+local function InitializeLimbScanning()
+    if charAddedConn then charAddedConn:Disconnect() end
+    charAddedConn = LocalPlayer.CharacterAdded:Connect(function(character)
+        scanCharacter(character)
+        character.DescendantAdded:Connect(function(desc)
+            if desc:IsA("BasePart") then registerLimb(getPartPath(desc, character)) end
+        end)
     end)
-    charRemovingConn = character.AncestryChanged:Connect(function(_, parent)
-        if not parent then
-            disconnectCharConns()
-        end
-    end)
-end
-
-local function getLodFlag(key, field)
-    local t = ctrl:Get(key)
-    return type(t) == "table" and t[field]
-end
-local function setLodFlag(key, field, value)
-    local t = ctrl:Get(key)
-    if type(t) ~= "table" then t = {} end
-    t[field] = value
-    ctrl:Set(key, t)
-end
-
-local function buildTab(tab, layout)
-    for _, item in ipairs(layout) do
-        local t = item.type
-        if t == "section" then
-            tab:CreateSection({ name = item.title })
-        elseif t == "paragraph" then
-            tab:CreateParagraph({ title = item.title, content = item.content })
-        elseif t == "toggle" then
-            local saved = ctrl:Get(item.flag)
-            tab:CreateToggle({
-                name = item.name,
-                flag = item.flag,
-                value = (saved ~= nil) and saved or false,
-                callback = function(v) ctrl:Set(item.flag, v) end,
-            })
-        elseif t == "slider" then
-            local cur = ctrl:Get(item.flag)
-            tab:CreateSlider({
-                name = item.name,
-                flag = item.flag,
-                value = cur,
-                range = item.range,
-                increment = item.increment,
-                suffix = item.suffix or "",
-                callback = function(v) ctrl:Set(item.flag, v) end,
-            })
-        elseif t == "color" then
-            tab:CreateColorPicker({
-                name = item.name,
-                flag = item.flag,
-                value = ctrl:Get(item.flag),
-                callback = function(v) ctrl:Set(item.flag, v) end,
-            })
-        end
+    if LocalPlayer.Character then
+        scanCharacter(LocalPlayer.Character)
+        LocalPlayer.Character.DescendantAdded:Connect(function(desc)
+            if desc:IsA("BasePart") then registerLimb(getPartPath(desc, LocalPlayer.Character)) end
+        end)
     end
 end
 
-local function cleanup()
-    disconnectCharConns()
-    ctrl:Stop()
-    ctrl:Destroy()
-    getgenv().uiLE.uilibray.Window:Unload()
-    getgenv().uiLE.uilibray = nil
-    getgenv().uiLE.gcontroller = nil
-    getgenv().uiLE.loading = false
+local function normalizeVersion(s)
+    if not s then return nil end
+    return tostring(s):gsub("^%s+", ""):gsub("%s+$", ""):gsub("^v", "")
 end
-getgenv().uiLE.cleanup = cleanup
 
-local Window = Rayfield:CreateWindow({
-    name = "AXIOS",
-    subtitle = "Limb Extender",
-    theme = "default",
-    configuration = {
-        autoSave = true,
-        autoLoad = true,
-        fileName = "Configuration",
-        customFolder = "LimbExtenderConfigs",
-    },
-})
+local CONFIG_FILE = "AXIOS_Config.json"
+local HttpService = game:GetService("HttpService")
 
-getgenv().uiLE.uilibray.Window = Window
-
-local Tabs = {
-    General    = Window:CreateTab({ name = "General" }),
-    Targeting  = Window:CreateTab({ name = "Targeting" }),
-    Appearance = Window:CreateTab({ name = "Appearance" }),
-}
-if isPC then Tabs.ESP = Window:CreateTab({ name = "ESP" }) end
-
-Tabs.General:CreateSection({ name = "Master Control" })
-local modifyLimbsToggle = Tabs.General:CreateToggle({
-    name = "Modify Limbs",
-    flag = "ModifyLimbs",
-    value = false,
-    callback = function(v) ctrl:Toggle(v) end,
-})
-Tabs.General:CreateKeybind({
-    name = "Toggle Keybind",
-    flag = "ToggleKeybind",
-    value = Enum.KeyCode.L,
-    holdToInteract = false,
-    callback = function()
-        local running = ctrl._running
-        local newState = not (running == true)
-        modifyLimbsToggle:Set(newState)
-        ctrl:Toggle(newState)
-    end,
-    onChanged = function(newKey) ctrl:Set("ToggleKeybind", newKey) end,
-})
-Tabs.General:CreateSection({ name = "Theme" })
-Tabs.General:CreateDropdown({
-    name = "Current Theme",
-    flag = "CurrentTheme",
-    multiSelect = false,
-    options = { "default", "cobalt", "ember", "amethyst", "frost", "rose" },
-    value = "default",
-    callback = function(theme) Window:ChangeTheme(theme) end,
-})
-
-buildTab(Tabs.Targeting, {
-    { type = "section", title = "Target Selection" },
-    { type = "toggle", name = "Players", flag = "PLAYER_ENABLED" },
-    { type = "toggle", name = "NPCs", flag = "NPC_ENABLED" },
-    { type = "toggle", name = "Team Check", flag = "TEAM_CHECK" },
-    { type = "toggle", name = "ForceField Check", flag = "FORCEFIELD_CHECK" },
-})
-Tabs.Targeting:CreateSection({ name = "Limb Focus" })
-local targetLimbDropdown = Tabs.Targeting:CreateDropdown({
-    name = "Target Limb",
-    flag = "TARGET_LIMB",
-    options = {},
-    value = ctrl:Get("TARGET_LIMB") or "Head",
-    multiSelect = false,
-    callback = function(selection)
-        local chosen = selection
-        if type(selection) == "table" then chosen = selection[1] end
-        ctrl:Set("TARGET_LIMB", chosen)
-    end,
-})
-
-buildTab(Tabs.Appearance, {
-    { type = "section", title = "Limb Properties" },
-    { type = "toggle", name = "Limb Collisions", flag = "LIMB_CAN_COLLIDE" },
-    { type = "slider", name = "Limb Transparency", flag = "LIMB_TRANSPARENCY", range = {0,1}, increment = 0.1 },
-    { type = "slider", name = "Limb Size", flag = "LIMB_SIZE", range = {5,50}, increment = 0.5 },
-    { type = "section", title = "Proximity Shrink" },
-    { type = "toggle", name = "Shrink Enabled", flag = "DYNAMIC_SCALE_ENABLED" },
-    { type = "slider", name = "Shrink Range", flag = "DYNAMIC_SCALE_RANGE_MULT", range = {0.2,5}, increment = 0.1, suffix = "x" },
-    { type = "slider", name = "Update Rate", flag = "DYNAMIC_SCALE_UPDATE_RATE", range = {5,60}, increment = 1, suffix = "Hz" },
-})
-
-if isPC then
-    buildTab(Tabs.ESP, {
-        { type = "section", title = "General" },
-        { type = "toggle", name = "Enabled", flag = "ESP" },
-        { type = "toggle", name = "Filter Local Player", flag = "ESP_FILTER_LOCAL" },
-        { type = "section", title = "Elements" },
-        { type = "toggle", name = "2D Box", flag = "ESP_BOX" },
-        { type = "toggle", name = "3D Box", flag = "ESP_BOX3D" },
-        { type = "toggle", name = "Tracer", flag = "ESP_TRACER" },
-        { type = "toggle", name = "Skeleton", flag = "ESP_SKELETON" },
-        { type = "toggle", name = "Health Bar", flag = "ESP_HEALTH" },
-        { type = "toggle", name = "Label", flag = "ESP_LABEL" },
-        { type = "toggle", name = "Off-Screen Arrow", flag = "ESP_OFFSCREEN_POINT" },
-        { type = "section", title = "Colors" },
-        { type = "color", name = "Box / Tracer", flag = "ESP_COLOR" },
-        { type = "color", name = "3D Box", flag = "ESP_BOX3D_COLOR" },
-        { type = "color", name = "Skeleton", flag = "ESP_SKELETON_COLOR" },
-        { type = "color", name = "Health (Full)", flag = "ESP_HEALTH_COLOR" },
-        { type = "color", name = "Health (Empty)", flag = "ESP_EMPTY_COLOR" },
-        { type = "color", name = "Text", flag = "ESP_TEXT_COLOR" },
-        { type = "section", title = "Text" },
-        { type = "slider", name = "Text Size", flag = "ESP_TEXT_SIZE", range = {8,32}, increment = 1, suffix = "px" },
-        { type = "section", title = "Distance Thresholds" },
-        { type = "paragraph", title = "Level of Detail (LOD)", content = "Targets within Near Distance use the Near set; between Near and Medium uses Medium; beyond uses Far." },
-        { type = "slider", name = "Near Distance", flag = "ESP_NEAR_DISTANCE", range = {50,500}, increment = 10, suffix = "st" },
-        { type = "slider", name = "Medium Distance", flag = "ESP_MEDIUM_DISTANCE", range = {100,1000}, increment = 10, suffix = "st" },
-        { type = "slider", name = "Max Distance", flag = "ESP_MAX_DISTANCE", range = {100,2000}, increment = 50, suffix = "st" },
-    })
-    local LOD_TIERS = {
-        { label = "Near Range Features", key = "ESP_NEAR_FLAGS" },
-        { label = "Medium Range Features", key = "ESP_MEDIUM_FLAGS" },
-        { label = "Far Range Features", key = "ESP_FAR_FLAGS" },
-    }
-    local LOD_FEATURES = {
-        { name = "2D Box", field = "Box" },
-        { name = "3D Box", field = "Box3D" },
-        { name = "Tracer", field = "Tracer" },
-        { name = "Skeleton", field = "Skeleton" },
-        { name = "Health Bar", field = "Health" },
-        { name = "Label", field = "Label" },
-    }
-    for _, tier in ipairs(LOD_TIERS) do
-        Tabs.ESP:CreateSection({ name = tier.label })
-        for _, feature in ipairs(LOD_FEATURES) do
-            local key, field = tier.key, feature.field
-            Tabs.ESP:CreateToggle({
-                name = feature.name,
-                flag = key .. "_" .. field,
-                value = getLodFlag(key, field) == true,
-                callback = function(v) setLodFlag(key, field, v) end,
-            })
-        end
+local function loadConfig()
+    if not (isfile and readfile) then return {} end
+    if not isfile(CONFIG_FILE) then return {} end
+    local ok, data = pcall(function() return readfile(CONFIG_FILE) end)
+    if not ok or not data then return {} end
+    local ok2, tbl = pcall(function() return HttpService:JSONDecode(data) end)
+    if ok2 and type(tbl) == "table" then
+        return tbl
     end
-    buildTab(Tabs.ESP, {
-        { type = "section", title = "Performance" },
-        { type = "toggle", name = "Occlusion Checking", flag = "ESP_OCCLUSION" },
-        { type = "slider", name = "Occlusion Frequency", flag = "ESP_OCCLUSION_FREQUENCY", range = {1,20}, increment = 1, suffix = "frames" },
-    })
+    return {}
 end
 
-LocalPlayer.CharacterAdded:Connect(function(ch) scanCharacter(ch, targetLimbDropdown) end)
-if LocalPlayer.Character then scanCharacter(LocalPlayer.Character, targetLimbDropdown) end
-Window:Load()
+local function saveConfig(tbl)
+    if not (writefile and type(tbl) == "table") then return false end
+    local ok, json = pcall(function() return HttpService:JSONEncode(tbl) end)
+    if not ok then return false end
+    local ok2 = pcall(function() writefile(CONFIG_FILE, json) end)
+    return ok2
+end
+
+local function persist_seen_version(ver)
+    if not ver then return end
+    local norm = normalizeVersion(ver)
+    local cfg = loadConfig()
+    cfg.lastSeenVersion = norm
+    saveConfig(cfg)
+end
+
+local function load_seen_from_file()
+    local cfg = loadConfig()
+    return normalizeVersion(cfg.lastSeenVersion)
+end
+
+local function saveUIVersion(version)
+    local cfg = loadConfig()
+    cfg.uiVersion = version
+    saveConfig(cfg)
+end
+
+local function loadUIVersion()
+    local cfg = loadConfig()
+    if cfg.uiVersion == 1 or cfg.uiVersion == 2 then
+        return cfg.uiVersion
+    end
+    return 2  
+end
 
 getgenv().ChangelogHelper = getgenv().ChangelogHelper or (function()
     local M = {}
@@ -421,6 +206,7 @@ getgenv().ChangelogHelper = getgenv().ChangelogHelper or (function()
     end
 
     local function showPopup(window, entry)
+        if not window or not entry then return end
         local content = nil
         if entry.highlights and #entry.highlights > 0 then content = "Highlights:\n" .. table.concat(entry.highlights, "\n• ") end
         local popup = {
@@ -431,21 +217,21 @@ getgenv().ChangelogHelper = getgenv().ChangelogHelper or (function()
             options = {
                 { text = "Close", style = "primary" },
                 { text = "Copy notes", style = "neutral", callback = function()
-                    setclipboard("# " .. (entry.version or "Changelog") .. "\n" ..
-                        (entry.date and "_"..entry.date.."_\n\n" or "") ..
-                        (entry.highlights and "## Highlights\n" .. table.concat(entry.highlights, "\n- ") .. "\n\n" or "") ..
-                        (function()
-                            local md = ""
-                            for _, s in ipairs(entry.sections or {}) do
-                                md = md .. "## " .. s.title .. "\n"
-                                for _, it in ipairs(s.items or {}) do
-                                    md = md .. "- " .. it .. "\n"
-                                end
-                                md = md .. "\n"
-                            end
-                            return md
-                        end)()
-                    )
+                    if setclipboard then
+                        local md = "# " .. (entry.version or "Changelog") .. "\n"
+                        if entry.date then md = md .. "_"..entry.date.."_\n\n" end
+                        if entry.highlights then
+                            md = md .. "## Highlights\n"
+                            for _, h in ipairs(entry.highlights) do md = md .. "- " .. h .. "\n" end
+                            md = md .. "\n"
+                        end
+                        for _, s in ipairs(entry.sections or {}) do
+                            md = md .. "## " .. s.title .. "\n"
+                            for _, it in ipairs(s.items or {}) do md = md .. "- " .. it .. "\n" end
+                            md = md .. "\n"
+                        end
+                        setclipboard(md)
+                    end
                 end },
             },
             dismissable = true,
@@ -455,12 +241,15 @@ getgenv().ChangelogHelper = getgenv().ChangelogHelper or (function()
 
     local function createTab(window)
         if tabHandle then return tabHandle end
+        if not window then return nil end
         local t = window:CreateTab({ name = "Changelog" })
         t:CreateSection({ name = "Releases" })
         for i, entry in ipairs(changelogs) do
+            local title = entry.version or ("Release " .. i)
+            local descr = entry.date or ""
             t:CreateButton({
-                name = entry.version or ("Release " .. i),
-                description = entry.date or "",
+                name = title,
+                description = descr,
                 callback = function()
                     showPopup(window, entry)
                     persist_seen_version(entry.version)
@@ -507,17 +296,12 @@ getgenv().ChangelogHelper = getgenv().ChangelogHelper or (function()
             return false
         end
 
-        if seen == latest then
-            return
-        end
+        if seen == latest then return end
 
         if significant(seen, latest) and wantPopups and opts.showPopupOnUpdate ~= false then
             local latestEntry = changelogs[1]
             local shouldNotify = true
-            if latestEntry.notify ~= nil then
-                shouldNotify = latestEntry.notify
-            end
-
+            if latestEntry.notify ~= nil then shouldNotify = latestEntry.notify end
             if shouldNotify then
                 window:Toast({ title = "New update: " .. (latestEntry.version or latest), subtitle = (latestEntry.date or "") })
                 task.spawn(function()
@@ -538,16 +322,16 @@ getgenv().ChangelogHelper = getgenv().ChangelogHelper or (function()
     return M
 end)()
 
-local changelogURLs = {
-    "https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/changelogs.json",
-    "https://api.rubis.app/v2/scrap/btATRjMxQttd1sy8/raw"
-}
 local function loadRemoteChangelogs()
+    local changelogURLs = {
+        "https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/changelogs.json",
+        "https://api.rubis.app/v2/scrap/btATRjMxQttd1sy8/raw"
+    }
     for _, url in ipairs(changelogURLs) do
-        local content = game:HttpGet(url)
+        local content = fetchUrlList({url})
         if content then
-            local data = game:GetService("HttpService"):JSONDecode(content)
-            if type(data) == "table" then
+            local success, data = pcall(function() return game:GetService("HttpService"):JSONDecode(content) end)
+            if success and type(data) == "table" then
                 for _, entry in ipairs(data) do
                     getgenv().ChangelogHelper.add(entry)
                 end
@@ -558,8 +342,339 @@ local function loadRemoteChangelogs()
     return false
 end
 
-getgenv().ChangelogHelper.reset()
-loadRemoteChangelogs()
-getgenv().ChangelogHelper.register(Window, { showPopupOnUpdate = true })
+function BuildUI(version)
+    
+    saveUIVersion(version)
+    getgenv().uiLE.uiVersion = version
 
+    if getgenv().uiLE.uilibray then
+        pcall(function()
+            if getgenv().uiLE.uilibray.Window then getgenv().uiLE.uilibray.Window:Unload() end
+        end)
+        pcall(function() getgenv().uiLE.uilibray:Destroy() end)
+        getgenv().uiLE.uilibray = nil
+    end
+
+    getgenv().RAYFIELD_SECURE = true
+   	getgenv().RAYFIELD_ASSET_ID = 84895246331982
+
+    local libURL = version == 1 and "https://sirius.menu/rayfield" or "https://sirius.menu/gen2"
+    getgenv().uiLE.uilibray = safeLoadString({libURL})
+    if not getgenv().uiLE.uilibray then getgenv().uiLE.loading = false return end
+
+    local Rayfield = getgenv().uiLE.uilibray
+
+    local LOADING_SUBTITLES = {
+        "aint no part like a baszucki party",
+        "boi ts not tuff",
+        "fuh twin",
+        "gosh i hate hackers"
+    }
+
+    local Window
+    if version == 1 then
+        Window = Rayfield:CreateWindow({
+            Name = "AXIOS",
+            LoadingTitle = "AXIOS",
+            LoadingSubtitle = LOADING_SUBTITLES[math.random(#LOADING_SUBTITLES)],
+            Theme = "Default",
+            DisableRayfieldPrompts = true,
+            ConfigurationSaving = {
+                Enabled = true,
+                FolderName = "LimbExtenderConfigs",
+                FileName = "Configuration",
+            },
+        })
+    else
+        Window = Rayfield:CreateWindow({
+            name = "AXIOS",
+            loadingTitle = "AXIOS",
+            loadingSubtitle = LOADING_SUBTITLES[math.random(#LOADING_SUBTITLES)],
+            theme = "default",
+            disableRayfieldPrompts = true,
+            configuration = {
+                autoSave = true,
+                autoLoad = true,
+                fileName = "Configuration",
+                customFolder = "LimbExtenderConfigs",
+            },
+        })
+    end
+
+    getgenv().uiLE.uilibray.Window = Window
+
+    local function createSection(tab, title)
+        if version == 1 then tab:CreateSection(title) else tab:CreateSection({ name = title }) end
+    end
+
+    local function createToggle(tab, name, flag, default)
+        default = default or false
+        local saved = ctrl:Get(flag)
+        local value = saved ~= nil and saved or default
+        if version == 1 then
+            return tab:CreateToggle({
+                Name = name, Flag = flag, CurrentValue = value,
+                Callback = function(v) ctrl:Set(flag, v) end,
+            })
+        else
+            return tab:CreateToggle({
+                name = name, flag = flag, value = value,
+                callback = function(v) ctrl:Set(flag, v) end,
+            })
+        end
+    end
+
+    local function createSlider(tab, name, flag, range, increment, suffix, default)
+        default = default or range[1]
+        local saved = ctrl:Get(flag)
+        local value = saved ~= nil and saved or default
+        if version == 1 then
+            return tab:CreateSlider({
+                Name = name, Flag = flag, CurrentValue = value,
+                Range = range, Increment = increment, Suffix = suffix or "",
+                Callback = function(v) ctrl:Set(flag, v) end,
+            })
+        else
+            return tab:CreateSlider({
+                name = name, flag = flag, value = value,
+                range = range, increment = increment, suffix = suffix or "",
+                callback = function(v) ctrl:Set(flag, v) end,
+            })
+        end
+    end
+
+    local function createColorPicker(tab, name, flag)
+        local saved = ctrl:Get(flag)
+        local color = saved or Color3.new(1, 1, 1)
+        if version == 1 then
+            return tab:CreateColorPicker({
+                Name = name, Flag = flag, Color = color,
+                Callback = function(v) ctrl:Set(flag, v) end,
+            })
+        else
+            return tab:CreateColorPicker({
+                name = name, flag = flag, value = color,
+                callback = function(v) ctrl:Set(flag, v) end,
+            })
+        end
+    end
+
+    local function createKeybind(tab, name, flag, defaultKey, callback)
+        if version == 1 then
+            return tab:CreateKeybind({
+                Name = name, Flag = flag, CurrentKeybind = defaultKey,
+                HoldToInteract = false, Callback = callback,
+            })
+        else
+            return tab:CreateKeybind({
+                name = name, flag = flag, value = Enum.KeyCode[defaultKey] or Enum.KeyCode.L,
+                holdToInteract = false, callback = callback,
+                onChanged = function(newKey) ctrl:Set(flag, newKey) end,
+            })
+        end
+    end
+
+    local function createDropdown(tab, name, flag, options, defaultOption, multi, callback)
+        if version == 1 then
+            local currentOption = defaultOption and {defaultOption} or {}
+            return tab:CreateDropdown({
+                Name = name, Flag = flag, Options = options,
+                CurrentOption = currentOption, MultipleOptions = multi or false,
+                Callback = function(opts)
+                    if multi then callback(opts) else callback(opts[1]) end
+                end,
+            })
+        else
+            return tab:CreateDropdown({
+                name = name, flag = flag, options = options,
+                value = defaultOption, multiSelect = multi or false,
+                callback = function(selection)
+                    callback(selection)
+                end,
+            })
+        end
+    end
+
+    local function createButton(tab, name, callback)
+        if version == 1 then
+            return tab:CreateButton({ Name = name, Callback = callback })
+        else
+            tab:CreateButton({ name = name, callback = callback })
+        end
+    end
+
+    local function createParagraph(tab, title, content)
+        if version == 1 then
+            tab:CreateParagraph({ Title = title, Content = content })
+		end
+    end
+
+    local Tabs = {
+        General    = version == 1 and Window:CreateTab("General")  or Window:CreateTab({ name = "General" }),
+        Targeting  = version == 1 and Window:CreateTab("Targeting") or Window:CreateTab({ name = "Targeting" }),
+        Appearance = version == 1 and Window:CreateTab("Appearance")   or Window:CreateTab({ name = "Appearance" }),
+    }
+    if isPC then
+        Tabs.ESP = version == 1 and Window:CreateTab("ESP") or Window:CreateTab({ name = "ESP" })
+    end
+
+    createSection(Tabs.General, "Master Control")
+
+    local flagModify = "ModifyLimbs"
+    local modifySaved = ctrl:Get(flagModify)
+    local modifyVal = modifySaved ~= nil and modifySaved or false
+
+    local modifyLimbsToggle
+    if version == 1 then
+        modifyLimbsToggle = Tabs.General:CreateToggle({
+            Name = "Modify Limbs",
+            Flag = flagModify,
+            CurrentValue = modifyVal,
+            Callback = function(v)
+                ctrl:Set(flagModify, v)
+                ctrl:Toggle(v)
+            end,
+        })
+    else
+        modifyLimbsToggle = Tabs.General:CreateToggle({
+            name = "Modify Limbs",
+            flag = flagModify,
+            value = modifyVal,
+            callback = function(v)
+                ctrl:Set(flagModify, v)
+                ctrl:Toggle(v)
+            end,
+        })
+    end
+
+    local function toggleLimbs()
+        modifyLimbsToggle:Set(not ctrl._running)
+    end
+    createKeybind(Tabs.General, "Toggle Keybind", "ToggleKeybind", "L", toggleLimbs)
+
+	createSection(Tabs.General, "Theme")
+
+    local themes, defaultTheme
+    if version == 1 then
+        themes = { "Default", "AmberGlow", "Amethyst", "Bloom", "DarkBlue", "Green", "Light", "Ocean", "Serenity" }
+        defaultTheme = "Default"
+    else
+        themes = { "default", "cobalt", "ember", "amethyst", "frost", "rose" }
+        defaultTheme = "default"
+    end
+
+    createDropdown(Tabs.General, "Current Theme", "CurrentTheme", themes, currentTheme, false, function(selected)
+        if selected then
+            if version == 1 then Window.ModifyTheme(selected) else Window:ChangeTheme(selected) end
+        end
+    end)
+
+    local switchLabel = version == 1 and "Switch to Gen2 UI" or "Switch to Gen1 UI"
+    createButton(Tabs.General, switchLabel, function()
+        local newVersion = version == 1 and 2 or 1
+        BuildUI(newVersion)
+    end)
+
+    createSection(Tabs.Targeting, "Target Selection")
+    createToggle(Tabs.Targeting, "Players", "PLAYER_ENABLED", true)
+    createToggle(Tabs.Targeting, "NPCs", "NPC_ENABLED", false)
+    createToggle(Tabs.Targeting, "Team Check", "TEAM_CHECK", false)
+    createToggle(Tabs.Targeting, "ForceField Check", "FORCEFIELD_CHECK", false)
+
+    createSection(Tabs.Targeting, "Limb Focus")
+    local existingLimbs = #scannedLimbs > 0 and table.clone(scannedLimbs) or {"Head"}
+    local targetLimbDropdown = createDropdown(Tabs.Targeting, "Target Limb", "TARGET_LIMB",
+        existingLimbs, ctrl:Get("TARGET_LIMB") or "Head", false, function(selected)
+            if type(selected) == "table" then selected = selected[1] end
+            ctrl:Set("TARGET_LIMB", selected)
+        end)
+    getgenv().uiLE.targetLimbDropdown = targetLimbDropdown
+
+    createSection(Tabs.Appearance, "Limb Properties")
+    createToggle(Tabs.Appearance, "Limb Collisions", "LIMB_CAN_COLLIDE", false)
+    createSlider(Tabs.Appearance, "Limb Transparency", "LIMB_TRANSPARENCY", {0, 1}, 0.1, "", 0)
+    createSlider(Tabs.Appearance, "Limb Size", "LIMB_SIZE", {5, 50}, 0.5, "", 5)
+
+    createSection(Tabs.Appearance, "Proximity Shrink")
+    createToggle(Tabs.Appearance, "Shrink Enabled", "DYNAMIC_SCALE_ENABLED", false)
+    createSlider(Tabs.Appearance, "Shrink Range", "DYNAMIC_SCALE_RANGE_MULT", {0.2, 5}, 0.1, "x", 1)
+    createSlider(Tabs.Appearance, "Update Rate", "DYNAMIC_SCALE_UPDATE_RATE", {5, 60}, 1, "Hz", 30)
+
+    if isPC then
+        createSection(Tabs.ESP, "General")
+        createToggle(Tabs.ESP, "Enabled", "ESP", false)
+        createToggle(Tabs.ESP, "Filter Local Player", "ESP_FILTER_LOCAL", false)
+
+        createSection(Tabs.ESP, "Elements")
+        createToggle(Tabs.ESP, "2D Box", "ESP_BOX", false)
+        createToggle(Tabs.ESP, "3D Box", "ESP_BOX3D", false)
+        createToggle(Tabs.ESP, "Tracer", "ESP_TRACER", false)
+        createToggle(Tabs.ESP, "Skeleton", "ESP_SKELETON", false)
+        createToggle(Tabs.ESP, "Health Bar", "ESP_HEALTH", false)
+        createToggle(Tabs.ESP, "Label", "ESP_LABEL", false)
+        createToggle(Tabs.ESP, "Off-Screen Arrow", "ESP_OFFSCREEN_POINT", false)
+
+        createSection(Tabs.ESP, "Colors")
+        createColorPicker(Tabs.ESP, "Box / Tracer", "ESP_COLOR")
+        createColorPicker(Tabs.ESP, "3D Box", "ESP_BOX3D_COLOR")
+        createColorPicker(Tabs.ESP, "Skeleton", "ESP_SKELETON_COLOR")
+        createColorPicker(Tabs.ESP, "Health (Full)", "ESP_HEALTH_COLOR")
+        createColorPicker(Tabs.ESP, "Health (Empty)", "ESP_EMPTY_COLOR")
+        createColorPicker(Tabs.ESP, "Text", "ESP_TEXT_COLOR")
+
+        createSection(Tabs.ESP, "Text")
+        createSlider(Tabs.ESP, "Text Size", "ESP_TEXT_SIZE", {8, 32}, 1, "px", 13)
+
+        createSection(Tabs.ESP, "Distance Thresholds")
+        createParagraph(Tabs.ESP, "Level of Detail (LOD)",
+            "Targets within Near Distance use the Near feature set. " ..
+            "Between Near and Medium uses the Medium set. " ..
+            "Beyond Medium up to Max Distance uses the Far set. " ..
+            "Configure each set in the sections below.")
+        createSlider(Tabs.ESP, "Near Distance", "ESP_NEAR_DISTANCE", {50, 500}, 10, "st", 100)
+        createSlider(Tabs.ESP, "Medium Distance", "ESP_MEDIUM_DISTANCE", {100, 1000}, 10, "st", 250)
+        createSlider(Tabs.ESP, "Max Distance", "ESP_MAX_DISTANCE", {100, 2000}, 50, "st", 1000)
+
+        local LOD_TIERS = {
+            { label = "Near Range Features",   key = "ESP_NEAR_FLAGS"   },
+            { label = "Medium Range Features", key = "ESP_MEDIUM_FLAGS" },
+            { label = "Far Range Features",    key = "ESP_FAR_FLAGS"    },
+        }
+        local LOD_FEATURES = {
+            { name = "2D Box",     field = "Box"      },
+            { name = "3D Box",     field = "Box3D"    },
+            { name = "Tracer",     field = "Tracer"   },
+            { name = "Skeleton",   field = "Skeleton" },
+            { name = "Health Bar", field = "Health"   },
+            { name = "Label",      field = "Label"    },
+        }
+
+        for _, tier in ipairs(LOD_TIERS) do
+            createSection(Tabs.ESP, tier.label)
+            for _, feature in ipairs(LOD_FEATURES) do
+                local key, field = tier.key, feature.field
+                createToggle(Tabs.ESP, feature.name, key .. "_" .. field, getLodFlag(key, field) == true)
+            end
+        end
+
+        createSection(Tabs.ESP, "Performance")
+        createToggle(Tabs.ESP, "Occlusion Checking", "ESP_OCCLUSION", false)
+        createSlider(Tabs.ESP, "Occlusion Frequency", "ESP_OCCLUSION_FREQUENCY", {1, 20}, 1, "frames", 5)
+    end
+
+    if version == 1 then
+        Rayfield:LoadConfiguration()
+    else
+        Window:Load()
+        
+        getgenv().ChangelogHelper.reset()
+        loadRemoteChangelogs()
+        getgenv().ChangelogHelper.register(Window, { showPopupOnUpdate = true })
+    end
+end
+
+InitializeLimbScanning()
+
+local initialVersion = loadUIVersion()
+BuildUI(initialVersion)
 getgenv().uiLE.loading = false
