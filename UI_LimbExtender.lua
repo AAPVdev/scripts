@@ -375,6 +375,7 @@ function BuildUI(version)
     if version == 1 then
         Window = Rayfield:CreateWindow({
             Name = "AXIOS",
+			ScriptID = "sid_k2rgzy25rkgy",
             LoadingTitle = "AXIOS",
             LoadingSubtitle = LOADING_SUBTITLES[math.random(#LOADING_SUBTITLES)],
             Theme = "Default",
