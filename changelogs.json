@@ -1,4 +1,32 @@
 [
+    {
+    "version": "1.1.2",
+    "date": "Jul. 30, 2026",
+    "highlights": ["Anti-Detection Overhaul"],
+    "sections": [
+      {
+        "title": "Security",
+        "items": [
+          "Rewrote limb property hooks to eliminate environment leaks.",
+          "Added upvalue obfuscation for executor environments where direct metatable hooks are used."
+        ]
+      },
+      {
+        "title": "Bypass Engine",
+        "items": [
+          "Auto-detection of hookmetamethod vs raw metatable hooking — uses the best available method.",
+          "New proxy-based table hiding when raw metatable path is active (renders internal tables invisible to AC scanners)."
+        ]
+      },
+      {
+        "title": "Miscellaneous",
+        "items": [
+          "Removed leftover debugging function `getTargetData` that was causing a stack-level signature.",
+          "Unified bypass logic into a single, conditionally compiled block; no more BYPASS_AVAILABLE flag checks at runtime."
+        ]
+      }
+    ]
+  },
   {
     "version": "1.1.1",
     "date": "Jul. 30, 2026",
