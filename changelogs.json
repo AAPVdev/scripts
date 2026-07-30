@@ -1,5 +1,18 @@
 [
   {
+    "version": "1.1.1",
+    "date": "Jul. 30, 2026",
+    "highlights": ["ESP LOD Fix"],
+    "sections": [
+      {
+        "title": "UI Bug Fixes",
+        "items": [
+          "Fixed ESP Level of Detail (LOD) toggles not updating correctly.",
+        ]
+      }
+    ]
+  },
+  {
     "version": "1.1.0",
     "date": "Jul. 30, 2026",
     "highlights": ["UI Switching"],
