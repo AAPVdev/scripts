@@ -408,19 +408,26 @@ function BuildUI(version)
         if version == 1 then tab:CreateSection(title) else tab:CreateSection({ name = title }) end
     end
 
-    local function createToggle(tab, name, flag, default)
+    local function createToggle(tab, name, flag, default, customCallback)
         default = default or false
         local saved = ctrl:Get(flag)
         local value = saved ~= nil and saved or default
+        local callbackFn = customCallback or function(v) ctrl:Set(flag, v) end
         if version == 1 then
             return tab:CreateToggle({
                 Name = name, Flag = flag, CurrentValue = value,
-                Callback = function(v) ctrl:Set(flag, v) end,
+                Callback = function(v)
+                    callbackFn(v)
+                    ctrl:Set(flag, v)
+                end,
             })
         else
             return tab:CreateToggle({
                 name = name, flag = flag, value = value,
-                callback = function(v) ctrl:Set(flag, v) end,
+                callback = function(v)
+                    callbackFn(v)
+                    ctrl:Set(flag, v)
+                end,
             })
         end
     end
@@ -654,7 +661,15 @@ function BuildUI(version)
             createSection(Tabs.ESP, tier.label)
             for _, feature in ipairs(LOD_FEATURES) do
                 local key, field = tier.key, feature.field
-                createToggle(Tabs.ESP, feature.name, key .. "_" .. field, getLodFlag(key, field) == true)
+                createToggle(
+                    Tabs.ESP,
+                    feature.name,
+                    key .. "_" .. field,
+                    getLodFlag(key, field) == true,
+                    function(v)
+                        setLodFlag(key, field, v)
+                    end
+                )
             end
         end
 
