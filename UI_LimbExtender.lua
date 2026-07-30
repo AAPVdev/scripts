@@ -4,33 +4,23 @@ getgenv().uiLE.loading = true
 
 local function fetchUrlList(urls)
     for _, url in ipairs(urls) do
-        local ok, result = pcall(function() return game:HttpGet(url) end)
-        if ok and result and result ~= "" then
+        local result = game:HttpGet(url)
+        if result and result ~= "" then
             return result
         end
     end
-    return nil, "All URLs failed"
+    error("All URLs failed")
 end
 
 local function tryLoadFromURL(url)
-    local content, _ = fetchUrlList({url})
-    if not content then
-        return nil, "fetch failed"
-    end
-    local func, loadErr = loadstring(content)
-    if not func then
-        return nil, "compile failed: " .. tostring(loadErr)
-    end
-    local ok, result = pcall(func)
-    if not ok then
-        return nil, "execution failed: " .. tostring(result)
-    end
-    return result
+    local content = fetchUrlList({url})
+    local func = assert(loadstring(content))
+    return func()
 end
 
 local function safeLoadString(urls)
     for _, url in ipairs(urls) do
-        local result, err = tryLoadFromURL(url)
+        local result = tryLoadFromURL(url)
         if result then
             return result
         end
@@ -45,16 +35,13 @@ end
 
 local SEEN_FILENAME = "AXIOS_LastSeenVersion.txt"
 local function file_write_safe(name, contents)
-    if writefile then
-        pcall(function() writefile(name, contents) end)
-        return true
-    end
-    return false
+    writefile(name, contents)
+    return true
 end
 local function file_read_safe(name)
-    if isfile and isfile(name) and readfile then
-        local ok, data = pcall(function() return readfile(name) end)
-        if ok and data then return data end
+    if isfile(name) then
+        local data = readfile(name)
+        if data then return data end
     end
     return nil
 end
@@ -62,7 +49,7 @@ end
 local function persist_seen_version(ver)
     if not ver then return end
     local norm = normalizeVersion(ver)
-    pcall(function() file_write_safe(SEEN_FILENAME, norm) end)
+    file_write_safe(SEEN_FILENAME, norm)
 end
 
 local function load_seen_from_file()
@@ -79,7 +66,7 @@ local limbExtenderURLs = {
 }
 getgenv().uiLE.le = getgenv().uiLE.le or nil
 if not getgenv().uiLE.le then
-    local le, leErr = safeLoadString(limbExtenderURLs)
+    local le = safeLoadString(limbExtenderURLs)
     if not le then
         getgenv().uiLE.loading = false
         return
@@ -88,16 +75,12 @@ if not getgenv().uiLE.le then
 end
 
 if getgenv().uiLE.gcontroller then
-    pcall(function()
-        if getgenv().uiLE.gcontroller.Destroy then
-            getgenv().uiLE.gcontroller:Destroy()
-        end
-    end)
+    getgenv().uiLE.gcontroller:Destroy()
     getgenv().uiLE.gcontroller = nil
 end
 
-local ok, newCtrl = pcall(function() return getgenv().uiLE.le.new() end)
-if not ok or not newCtrl then
+local newCtrl = getgenv().uiLE.le.new()
+if not newCtrl then
     getgenv().uiLE.loading = false
     return
 end
@@ -105,11 +88,7 @@ getgenv().uiLE.gcontroller = newCtrl
 local ctrl = getgenv().uiLE.gcontroller
 
 if getgenv().uiLE.uilibray then
-    pcall(function()
-        if getgenv().uiLE.uilibray.Window then
-            getgenv().uiLE.uilibray.Window:Unload()
-        end
-    end)
+    getgenv().uiLE.uilibray.Window:Unload()
     getgenv().uiLE.uilibray = nil
 end
 
@@ -162,11 +141,9 @@ local function debounceRefreshDropdown(dropdown)
     if refreshTimer then return end
     refreshTimer = task.delay(0.06, function()
         refreshTimer = nil
-        if dropdown and dropdown.Refresh then
-            local copy = {}
-            for i, v in ipairs(scannedLimbs) do copy[i] = v end
-            pcall(function() dropdown:Refresh(copy) end)
-        end
+        local copy = {}
+        for i, v in ipairs(scannedLimbs) do copy[i] = v end
+        dropdown:Refresh(copy)
     end)
 end
 
@@ -190,11 +167,11 @@ end
 local charDescConn, charRemovingConn
 local function disconnectCharConns()
     if charDescConn then
-        pcall(function() charDescConn:Disconnect() end)
+        charDescConn:Disconnect()
         charDescConn = nil
     end
     if charRemovingConn then
-        pcall(function() charRemovingConn:Disconnect() end)
+        charRemovingConn:Disconnect()
         charRemovingConn = nil
     end
 end
@@ -235,73 +212,47 @@ local function buildTab(tab, layout)
     for _, item in ipairs(layout) do
         local t = item.type
         if t == "section" then
-            if tab.CreateSection then tab:CreateSection({ name = item.title }) end
+            tab:CreateSection({ name = item.title })
         elseif t == "paragraph" then
-            if tab.CreateParagraph then
-                tab:CreateParagraph({ title = item.title, content = item.content })
-            elseif tab.CreateLabel then
-                tab:CreateLabel(item.title .. "\n" .. item.content)
-            elseif tab.CreateSection then
-                tab:CreateSection({ name = item.title })
-            end
+            tab:CreateParagraph({ title = item.title, content = item.content })
         elseif t == "toggle" then
             local saved = ctrl:Get(item.flag)
-            if tab.CreateToggle then
-                tab:CreateToggle({
-                    name = item.name,
-                    flag = item.flag,
-                    value = (saved ~= nil) and saved or false,
-                    callback = function(v) pcall(function() ctrl:Set(item.flag, v) end) end,
-                })
-            end
+            tab:CreateToggle({
+                name = item.name,
+                flag = item.flag,
+                value = (saved ~= nil) and saved or false,
+                callback = function(v) ctrl:Set(item.flag, v) end,
+            })
         elseif t == "slider" then
-            local minV = (item.range and item.range[1]) or 0
             local cur = ctrl:Get(item.flag)
-            if type(cur) ~= "number" then cur = minV end
-            if tab.CreateSlider then
-                tab:CreateSlider({
-                    name = item.name,
-                    flag = item.flag,
-                    value = cur,
-                    range = item.range,
-                    increment = item.increment,
-                    suffix = item.suffix or "",
-                    callback = function(v) pcall(function() ctrl:Set(item.flag, v) end) end,
-                })
-            end
+            tab:CreateSlider({
+                name = item.name,
+                flag = item.flag,
+                value = cur,
+                range = item.range,
+                increment = item.increment,
+                suffix = item.suffix or "",
+                callback = function(v) ctrl:Set(item.flag, v) end,
+            })
         elseif t == "color" then
-            local cur = ctrl:Get(item.flag)
-            if typeof(cur) == "Color3" then
-                cur = { color = cur, alpha = 1 }
-            elseif type(cur) ~= "table" then
-                cur = { color = Color3.fromRGB(255,255,255), alpha = 1 }
-            end
-            if tab.CreateColorPicker then
-                tab:CreateColorPicker({
-                    name = item.name,
-                    flag = item.flag,
-                    value = cur,
-                    callback = function(v) pcall(function() ctrl:Set(item.flag, v) end) end,
-                })
-            end
+            tab:CreateColorPicker({
+                name = item.name,
+                flag = item.flag,
+                value = ctrl:Get(item.flag),
+                callback = function(v) ctrl:Set(item.flag, v) end,
+            })
         end
     end
 end
 
 local function cleanup()
     disconnectCharConns()
-    if ctrl then
-        pcall(function()
-            if ctrl.Stop then pcall(function() ctrl:Stop() end) end
-            if ctrl.Destroy then pcall(function() ctrl:Destroy() end) end
-        end)
-    end
-    if getgenv().uiLE and getgenv().uiLE.uilibray then
-        pcall(function() if getgenv().uiLE.uilibray.Window then getgenv().uiLE.Window:Unload() end end)
-        getgenv().uiLE.uilibray = nil
-    end
-    if getgenv().uiLE then getgenv().uiLE.gcontroller = nil end
-    if getgenv().uiLE then getgenv().uiLE.loading = false end
+    ctrl:Stop()
+    ctrl:Destroy()
+    getgenv().uiLE.uilibray.Window:Unload()
+    getgenv().uiLE.uilibray = nil
+    getgenv().uiLE.gcontroller = nil
+    getgenv().uiLE.loading = false
 end
 getgenv().uiLE.cleanup = cleanup
 
@@ -326,44 +277,35 @@ local Tabs = {
 }
 if isPC then Tabs.ESP = Window:CreateTab({ name = "ESP" }) end
 
-if Tabs.General and Tabs.General.CreateSection then Tabs.General:CreateSection({ name = "Master Control" }) end
-local modifyLimbsToggle
-if Tabs.General and Tabs.General.CreateToggle then
-    modifyLimbsToggle = Tabs.General:CreateToggle({
-        name = "Modify Limbs",
-        flag = "ModifyLimbs",
-        value = false,
-        callback = function(v) pcall(function() ctrl:Toggle(v) end) end,
-    })
-end
-if Tabs.General and Tabs.General.CreateKeybind then
-    Tabs.General:CreateKeybind({
-        name = "Toggle Keybind",
-        flag = "ToggleKeybind",
-        value = Enum.KeyCode.L,
-        holdToInteract = false,
-        callback = function()
-            if modifyLimbsToggle and modifyLimbsToggle.Set then
-                local ok, running = pcall(function() return ctrl._running end)
-                local newState = not (running == true)
-                pcall(function() modifyLimbsToggle:Set(newState) end)
-                pcall(function() if ctrl.Toggle then ctrl:Toggle(newState) end end)
-            end
-        end,
-        onChanged = function(newKey) pcall(function() ctrl:Set("ToggleKeybind", newKey) end) end,
-    })
-end
-if Tabs.General and Tabs.General.CreateSection then Tabs.General:CreateSection({ name = "Theme" }) end
-if Tabs.General and Tabs.General.CreateDropdown then
-    Tabs.General:CreateDropdown({
-        name = "Current Theme",
-        flag = "CurrentTheme",
-        multiSelect = false,
-        options = { "default", "cobalt", "ember", "amethyst", "frost", "rose" },
-        value = "default",
-        callback = function(theme) pcall(function() Window:ChangeTheme(theme) end) end,
-    })
-end
+Tabs.General:CreateSection({ name = "Master Control" })
+local modifyLimbsToggle = Tabs.General:CreateToggle({
+    name = "Modify Limbs",
+    flag = "ModifyLimbs",
+    value = false,
+    callback = function(v) ctrl:Toggle(v) end,
+})
+Tabs.General:CreateKeybind({
+    name = "Toggle Keybind",
+    flag = "ToggleKeybind",
+    value = Enum.KeyCode.L,
+    holdToInteract = false,
+    callback = function()
+        local running = ctrl._running
+        local newState = not (running == true)
+        modifyLimbsToggle:Set(newState)
+        ctrl:Toggle(newState)
+    end,
+    onChanged = function(newKey) ctrl:Set("ToggleKeybind", newKey) end,
+})
+Tabs.General:CreateSection({ name = "Theme" })
+Tabs.General:CreateDropdown({
+    name = "Current Theme",
+    flag = "CurrentTheme",
+    multiSelect = false,
+    options = { "default", "cobalt", "ember", "amethyst", "frost", "rose" },
+    value = "default",
+    callback = function(theme) Window:ChangeTheme(theme) end,
+})
 
 buildTab(Tabs.Targeting, {
     { type = "section", title = "Target Selection" },
@@ -372,22 +314,19 @@ buildTab(Tabs.Targeting, {
     { type = "toggle", name = "Team Check", flag = "TEAM_CHECK" },
     { type = "toggle", name = "ForceField Check", flag = "FORCEFIELD_CHECK" },
 })
-if Tabs.Targeting and Tabs.Targeting.CreateSection then Tabs.Targeting:CreateSection({ name = "Limb Focus" }) end
-local targetLimbDropdown
-if Tabs.Targeting and Tabs.Targeting.CreateDropdown then
-    targetLimbDropdown = Tabs.Targeting:CreateDropdown({
-        name = "Target Limb",
-        flag = "TARGET_LIMB",
-        options = {},
-        value = ctrl:Get("TARGET_LIMB") or "Head",
-        multiSelect = false,
-        callback = function(selection)
-            local chosen = selection
-            if type(selection) == "table" then chosen = selection[1] end
-            pcall(function() ctrl:Set("TARGET_LIMB", chosen) end)
-        end,
-    })
-end
+Tabs.Targeting:CreateSection({ name = "Limb Focus" })
+local targetLimbDropdown = Tabs.Targeting:CreateDropdown({
+    name = "Target Limb",
+    flag = "TARGET_LIMB",
+    options = {},
+    value = ctrl:Get("TARGET_LIMB") or "Head",
+    multiSelect = false,
+    callback = function(selection)
+        local chosen = selection
+        if type(selection) == "table" then chosen = selection[1] end
+        ctrl:Set("TARGET_LIMB", chosen)
+    end,
+})
 
 buildTab(Tabs.Appearance, {
     { type = "section", title = "Limb Properties" },
@@ -400,7 +339,7 @@ buildTab(Tabs.Appearance, {
     { type = "slider", name = "Update Rate", flag = "DYNAMIC_SCALE_UPDATE_RATE", range = {5,60}, increment = 1, suffix = "Hz" },
 })
 
-if isPC and Tabs.ESP then
+if isPC then
     buildTab(Tabs.ESP, {
         { type = "section", title = "General" },
         { type = "toggle", name = "Enabled", flag = "ESP" },
@@ -462,7 +401,7 @@ end
 
 LocalPlayer.CharacterAdded:Connect(function(ch) scanCharacter(ch, targetLimbDropdown) end)
 if LocalPlayer.Character then scanCharacter(LocalPlayer.Character, targetLimbDropdown) end
-pcall(function() Window:Load() end)
+Window:Load()
 
 getgenv().ChangelogHelper = getgenv().ChangelogHelper or (function()
     local M = {}
@@ -482,7 +421,6 @@ getgenv().ChangelogHelper = getgenv().ChangelogHelper or (function()
     end
 
     local function showPopup(window, entry)
-        if not window or not entry then return end
         local content = nil
         if entry.highlights and #entry.highlights > 0 then content = "Highlights:\n" .. table.concat(entry.highlights, "\n• ") end
         local popup = {
@@ -493,47 +431,44 @@ getgenv().ChangelogHelper = getgenv().ChangelogHelper or (function()
             options = {
                 { text = "Close", style = "primary" },
                 { text = "Copy notes", style = "neutral", callback = function()
-                    pcall(function()
-                        if setclipboard then
-                            local md = "# " .. (entry.version or "Changelog") .. "\n"
-                            if entry.date then md = md .. "_"..entry.date.."_\n\n" end
-                            if entry.highlights then
-                                md = md .. "## Highlights\n"
-                                for _, h in ipairs(entry.highlights) do md = md .. "- " .. h .. "\n" end
-                                md = md .. "\n"
-                            end
+                    setclipboard("# " .. (entry.version or "Changelog") .. "\n" ..
+                        (entry.date and "_"..entry.date.."_\n\n" or "") ..
+                        (entry.highlights and "## Highlights\n" .. table.concat(entry.highlights, "\n- ") .. "\n\n" or "") ..
+                        (function()
+                            local md = ""
                             for _, s in ipairs(entry.sections or {}) do
                                 md = md .. "## " .. s.title .. "\n"
-                                for _, it in ipairs(s.items or {}) do md = md .. "- " .. it .. "\n" end
+                                for _, it in ipairs(s.items or {}) do
+                                    md = md .. "- " .. it .. "\n"
+                                end
                                 md = md .. "\n"
                             end
-                            setclipboard(md)
-                        end
-                    end)
+                            return md
+                        end)()
+                    )
                 end },
             },
             dismissable = true,
         }
-        pcall(function() window:Popup(popup) end)
+        window:Popup(popup)
     end
 
     local function createTab(window)
         if tabHandle then return tabHandle end
-        if not window then return nil end
-        local t = window:CreateTab({ name = "Changelog"})
+        local t = window:CreateTab({ name = "Changelog" })
         t:CreateSection({ name = "Releases" })
         for i, entry in ipairs(changelogs) do
-            local title = entry.version or ("Release " .. i)
-            local descr = entry.date or ""
             t:CreateButton({
-                name = title,
-                description = descr,
+                name = entry.version or ("Release " .. i),
+                description = entry.date or "",
                 callback = function()
                     showPopup(window, entry)
                     persist_seen_version(entry.version)
                 end,
             })
         end
+        tabHandle = t
+        return t
     end
 
     M.add = function(entry)
@@ -541,10 +476,10 @@ getgenv().ChangelogHelper = getgenv().ChangelogHelper or (function()
         tabHandle = nil
     end
 
-	M.reset = function()
-		table.clear(changelogs)
-		tabHandle = nil
-	end
+    M.reset = function()
+        table.clear(changelogs)
+        tabHandle = nil
+    end
 
     M.register = function(window, opts)
         createTab(window)
@@ -552,9 +487,7 @@ getgenv().ChangelogHelper = getgenv().ChangelogHelper or (function()
         local latestRaw = changelogs[1] and changelogs[1].version
         if not latestRaw then return end
         local latest = normalizeVersion(latestRaw)
-
         local seen = load_seen_from_file()
-
         local wantPopups = window:Get("Changelog.ShowPopups")
         if wantPopups == nil then wantPopups = true end
 
@@ -586,17 +519,17 @@ getgenv().ChangelogHelper = getgenv().ChangelogHelper or (function()
             end
 
             if shouldNotify then
-                pcall(function() window:Toast({ title = "New update: " .. (latestEntry.version or latest), subtitle = (latestEntry.date or "") }) end)
+                window:Toast({ title = "New update: " .. (latestEntry.version or latest), subtitle = (latestEntry.date or "") })
                 task.spawn(function()
                     task.wait(0.18)
                     showPopup(window, latestEntry)
                 end)
             else
-                pcall(function() window:Toast({ title = "Updated to " .. (latestEntry.version or latest) }) end)
+                window:Toast({ title = "Updated to " .. (latestEntry.version or latest) })
             end
             persist_seen_version(latestEntry.version)
         else
-            pcall(function() window:Toast({ title = "Updated: " .. (changelogs[1].version or latest) }) end)
+            window:Toast({ title = "Updated: " .. (changelogs[1].version or latest) })
             persist_seen_version(changelogs[1].version)
         end
     end
@@ -611,12 +544,10 @@ local changelogURLs = {
 }
 local function loadRemoteChangelogs()
     for _, url in ipairs(changelogURLs) do
-        local content, _ = fetchUrlList({url})
+        local content = game:HttpGet(url)
         if content then
-            local success, data = pcall(function()
-                return game:GetService("HttpService"):JSONDecode(content)
-            end)
-            if success and type(data) == "table" then
+            local data = game:GetService("HttpService"):JSONDecode(content)
+            if type(data) == "table" then
                 for _, entry in ipairs(data) do
                     getgenv().ChangelogHelper.add(entry)
                 end
