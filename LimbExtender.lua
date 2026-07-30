@@ -185,121 +185,108 @@ do
 	has_newproxy = check("newproxy")
 end
 
-if has_checkcaller and has_getnamecallmethod and has_getconnections and (has_hookmetamethod or has_getrawmetatable) then
+local hooksInstalled = false
+
+if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawmetatable and has_setreadonly)) then
+
 	local checkcaller = checkcaller
-	local getnamecallmethod = getnamecallmethod
 	local blockedProps = BLOCKED_PROPS
 	local blockedPropsOriginal = BLOCKED_PROPS
 	local instanceLookup = limbData.instanceLookup
 	local Instance_new = Instance.new
-	local getconnections = getconnections
 	local pcall = pcall
+	local getnamecallmethod = has_getnamecallmethod and getnamecallmethod or nil
+	local getconnections = has_getconnections and getconnections or nil
 
 	local function getData(instance)
 		local cached = instanceLookup[instance]
 		return cached and cached.data
 	end
 
-	local function makeHooks(installMetatable, getOriginal)
-		local originalIndex, originalNewIndex, originalNamecall
+	local originalIndex, originalNewIndex, originalNamecall
 
-		local function hookedIndex(...)
-			if not checkcaller() then
-				local self, key = ...
-				local data = getData(self)
-				if data then
-					if blockedProps[key] then
-						return data["Original"..key]
-					end
-					if key == "Changed" and data._customSignals then
-						return data._customSignals.Changed
-					end
+	local function hookedIndex(...)
+		local self = ...
+		if not checkcaller() then
+			local data = getData(self)
+			if data then
+				local key = select(2, ...)
+				if blockedProps[key] then
+					return data["Original"..key]
+				end
+				if key == "Changed" and data._customSignals then
+					return data._customSignals.Changed
 				end
 			end
-			return originalIndex(...)
 		end
-
-		local function hookedNewIndex(...)
-			if not checkcaller() then
-				local self, key, value = ...
-				local data = getData(self)
-				if data then
-					if blockedProps[key] then
-						data["Original"..key] = value
-						local real = data._realSignals
-						if real then
-							if real[key] then
-								real[key]:Fire(value)
-							end
-							if real.Changed then
-								real.Changed:Fire(key, value)
-							end
-						end
-						return
-					end
-				end
-			end
-			return originalNewIndex(...)
-		end
-
-		local function hookedNamecall(...)
-			if not checkcaller() then
-				local method = getnamecallmethod()
-				if method == "GetPropertyChangedSignal" then
-					local self, prop = ...
-					local data = getData(self)
-					if data and blockedProps[prop] then
-						local custom = data._customSignals
-						if custom and custom[prop] then
-							return custom[prop]
-						end
-					end
-				end
-			end
-			return originalNamecall(...)
-		end
-
-		installMetatable(hookedIndex, hookedNewIndex, hookedNamecall)
-
-		originalIndex, originalNewIndex, originalNamecall = getOriginal()
-
-		return hookedIndex, hookedNewIndex, hookedNamecall
+		return originalIndex(...)
 	end
 
-	local hookedIndex, hookedNewIndex, hookedNamecall
+	local function hookedNewIndex(...)
+		local self = ...
+		if not checkcaller() then
+			local data = getData(self)
+			if data then
+				local key = select(2, ...)
+				if blockedProps[key] then
+					local value = select(3, ...)
+					data["Original"..key] = value
+					local real = data._realSignals
+					if real then
+						if real[key] then
+							real[key]:Fire(value)
+						end
+						if real.Changed then
+							real.Changed:Fire(key, value)
+						end
+					end
+					return
+				end
+			end
+		end
+		return originalNewIndex(...)
+	end
+
+	local function hookedNamecall(...)
+		if not checkcaller() then
+			local method = getnamecallmethod()
+			if method == "GetPropertyChangedSignal" then
+				local self = ...
+				local prop = select(2, ...)
+				local data = getData(self)
+				if data and blockedProps[prop] then
+					local custom = data._customSignals
+					if custom and custom[prop] then
+						return custom[prop]
+					end
+				end
+			end
+		end
+		return originalNamecall(...)
+	end
 
 	if has_hookmetamethod and has_newcclosure then
-		
-		local origHolder = {}
-		function origHolder.install(hI, hNI, hNC)
-			origHolder._origI = hookmetamethod(game, "__index",    newcclosure(hI))
-			origHolder._origNI = hookmetamethod(game, "__newindex", newcclosure(hNI))
-			origHolder._origNC = hookmetamethod(game, "__namecall", newcclosure(hNC))
+		originalIndex    = hookmetamethod(game, "__index",    newcclosure(hookedIndex))
+		originalNewIndex = hookmetamethod(game, "__newindex", newcclosure(hookedNewIndex))
+		if has_getnamecallmethod then
+			originalNamecall = hookmetamethod(game, "__namecall", newcclosure(hookedNamecall))
 		end
-		function origHolder.get()
-			return origHolder._origI, origHolder._origNI, origHolder._origNC
-		end
-		hookedIndex, hookedNewIndex, hookedNamecall = makeHooks(origHolder.install, origHolder.get)
 
 	elseif has_getrawmetatable and has_setreadonly then
-		
 		local mt = getrawmetatable(WS)
 		setreadonly(mt, false)
 
-		local origIndex = mt.__index
-		local origNewIndex = mt.__newindex
-		local origNamecall = mt.__namecall
+		originalIndex    = mt.__index
+		originalNewIndex = mt.__newindex
+		mt.__index = hookedIndex
+		mt.__newindex = hookedNewIndex
 
-		local function installManual(hI, hNI, hNC)
-			mt.__index = hI
-			mt.__newindex = hNI
-			mt.__namecall = hNC
-			setreadonly(mt, true)
+		if has_getnamecallmethod then
+			originalNamecall = mt.__namecall
+			mt.__namecall = hookedNamecall
 		end
-		local function getManual()
-			return origIndex, origNewIndex, origNamecall
-		end
-		hookedIndex, hookedNewIndex, hookedNamecall = makeHooks(installManual, getManual)
+
+		setreadonly(mt, true)
 
 		if has_debug_upvalues and has_debug_setupvalue and has_newproxy then
 			local function scrubUpvalues(fn)
@@ -325,12 +312,14 @@ if has_checkcaller and has_getnamecallmethod and has_getconnections and (has_hoo
 
 			scrubUpvalues(hookedIndex)
 			scrubUpvalues(hookedNewIndex)
-			scrubUpvalues(hookedNamecall)
+			if has_getnamecallmethod then
+				scrubUpvalues(hookedNamecall)
+			end
 			scrubUpvalues(getData)
 		end
 	end
 
-	if hookedIndex then
+	if has_getconnections and has_getnamecallmethod then
 		local createCustomSignals
 		createCustomSignals = function(limb)
 			local data = getData(limb)
@@ -372,6 +361,8 @@ if has_checkcaller and has_getnamecallmethod and has_getconnections and (has_hoo
 		end
 
 		limbData._createCustomSignals = createCustomSignals
+		hooksInstalled = true
+	else
 		hooksInstalled = true
 	end
 end
