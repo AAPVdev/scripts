@@ -332,8 +332,8 @@ local function loadRemoteChangelogs()
         if content then
             local success, data = pcall(function() return game:GetService("HttpService"):JSONDecode(content) end)
             if success and type(data) == "table" then
-                for _, entry in ipairs(data) do
-                    getgenv().ChangelogHelper.add(entry)
+                for i = #data, 1, -1 do
+                    getgenv().ChangelogHelper.add(data[i])
                 end
                 return true
             end
