@@ -6,6 +6,7 @@ end
 local cloneref = missing("function", cloneref, function(obj) return obj end)
 
 local Players = cloneref(game:GetService("Players"))
+local WS = cloneref(game:GetService("Workspace"))
 local localPlayer = Players.LocalPlayer
 
 local globalEnv = type(getgenv) == "function" and getgenv() or _G
@@ -37,37 +38,6 @@ local has_httpget = pcall(function()
 	local f = game.HttpGet
 	if type(f) ~= "function" then error("not callable") end
 end)
-
-local BYPASS_AVAILABLE = false
-do
-	local required = {
-		"getrawmetatable",
-		"setreadonly",
-		"newcclosure",
-		"hookfunction",
-		"getconnections",
-		"checkcaller",
-	}
-
-	local ok = true
-	for _, name in ipairs(required) do
-		local fn = loadstring("return " .. name)()
-		if type(fn) ~= "function" then
-			ok = false
-			break
-		end
-	end
-
-	if ok then
-		local success = pcall(function()
-			local mt = getrawmetatable(game)
-			if type(mt) ~= "table" then error("expected table") end
-		end)
-		if success then
-			BYPASS_AVAILABLE = true
-		end
-	end
-end
 
 local BLOCKED_PROPS = {
 	Size = true, Transparency = true, CanCollide = true, Massless = true,
@@ -192,109 +162,224 @@ local function write(limb, props)
 	end
 end
 
-function getTargetData(instance)
-	if typeof(instance) ~= "Instance" then return nil, nil end
-	local cached = limbData.instanceLookup[instance]
-	if cached then return cached.data, cached.type end
-	return nil, nil
+local hooksInstalled = false
+
+local has_checkcaller, has_getnamecallmethod, has_getconnections = false, false, false
+local has_hookmetamethod, has_newcclosure, has_getrawmetatable, has_setreadonly = false, false, false, false
+local has_debug_upvalues, has_debug_setupvalue, has_newproxy = false, false, false
+
+do
+	local function check(name)
+		local ok, fn = pcall(function() return loadstring("return " .. name)() end)
+		return ok and type(fn) == "function"
+	end
+	has_checkcaller = check("checkcaller")
+	has_getnamecallmethod = check("getnamecallmethod")
+	has_getconnections = check("getconnections")
+	has_hookmetamethod = check("hookmetamethod")
+	has_newcclosure = check("newcclosure")
+	has_getrawmetatable = check("getrawmetatable")
+	has_setreadonly = check("setreadonly")
+	has_debug_upvalues = check("debug.getupvalues")
+	has_debug_setupvalue = check("debug.setupvalue")
+	has_newproxy = check("newproxy")
+end
+
+if has_checkcaller and has_getnamecallmethod and has_getconnections and (has_hookmetamethod or has_getrawmetatable) then
+	local checkcaller = checkcaller
+	local getnamecallmethod = getnamecallmethod
+	local blockedProps = BLOCKED_PROPS
+	local blockedPropsOriginal = BLOCKED_PROPS
+	local instanceLookup = limbData.instanceLookup
+	local Instance_new = Instance.new
+	local getconnections = getconnections
+	local pcall = pcall
+
+	local function getData(instance)
+		local cached = instanceLookup[instance]
+		return cached and cached.data
+	end
+
+	local function makeHooks(installMetatable, getOriginal)
+		local originalIndex, originalNewIndex, originalNamecall
+
+		local function hookedIndex(...)
+			if not checkcaller() then
+				local self, key = ...
+				local data = getData(self)
+				if data then
+					if blockedProps[key] then
+						return data["Original"..key]
+					end
+					if key == "Changed" and data._customSignals then
+						return data._customSignals.Changed
+					end
+				end
+			end
+			return originalIndex(...)
+		end
+
+		local function hookedNewIndex(...)
+			if not checkcaller() then
+				local self, key, value = ...
+				local data = getData(self)
+				if data then
+					if blockedProps[key] then
+						data["Original"..key] = value
+						local real = data._realSignals
+						if real then
+							if real[key] then
+								real[key]:Fire(value)
+							end
+							if real.Changed then
+								real.Changed:Fire(key, value)
+							end
+						end
+						return
+					end
+				end
+			end
+			return originalNewIndex(...)
+		end
+
+		local function hookedNamecall(...)
+			if not checkcaller() then
+				local method = getnamecallmethod()
+				if method == "GetPropertyChangedSignal" then
+					local self, prop = ...
+					local data = getData(self)
+					if data and blockedProps[prop] then
+						local custom = data._customSignals
+						if custom and custom[prop] then
+							return custom[prop]
+						end
+					end
+				end
+			end
+			return originalNamecall(...)
+		end
+
+		installMetatable(hookedIndex, hookedNewIndex, hookedNamecall)
+
+		originalIndex, originalNewIndex, originalNamecall = getOriginal()
+
+		return hookedIndex, hookedNewIndex, hookedNamecall
+	end
+
+	local hookedIndex, hookedNewIndex, hookedNamecall
+
+	if has_hookmetamethod and has_newcclosure then
+		
+		local origHolder = {}
+		function origHolder.install(hI, hNI, hNC)
+			origHolder._origI = hookmetamethod(game, "__index",    newcclosure(hI))
+			origHolder._origNI = hookmetamethod(game, "__newindex", newcclosure(hNI))
+			origHolder._origNC = hookmetamethod(game, "__namecall", newcclosure(hNC))
+		end
+		function origHolder.get()
+			return origHolder._origI, origHolder._origNI, origHolder._origNC
+		end
+		hookedIndex, hookedNewIndex, hookedNamecall = makeHooks(origHolder.install, origHolder.get)
+
+	elseif has_getrawmetatable and has_setreadonly then
+		
+		local mt = getrawmetatable(WS)
+		setreadonly(mt, false)
+
+		local origIndex = mt.__index
+		local origNewIndex = mt.__newindex
+		local origNamecall = mt.__namecall
+
+		local function installManual(hI, hNI, hNC)
+			mt.__index = hI
+			mt.__newindex = hNI
+			mt.__namecall = hNC
+			setreadonly(mt, true)
+		end
+		local function getManual()
+			return origIndex, origNewIndex, origNamecall
+		end
+		hookedIndex, hookedNewIndex, hookedNamecall = makeHooks(installManual, getManual)
+
+		if has_debug_upvalues and has_debug_setupvalue and has_newproxy then
+			local function scrubUpvalues(fn)
+				if type(fn) ~= "function" then return end
+				pcall(function()
+					local upvals = debug.getupvalues(fn)
+					for i, val in ipairs(upvals) do
+						if type(val) == "table" and val ~= blockedPropsOriginal then
+							local proxy = newproxy(true)
+							local proxyMt = getmetatable(proxy)
+							proxyMt.__index = val
+							proxyMt.__newindex = function(_, k, v) val[k] = v end
+							proxyMt.__pairs = function() return pairs(val) end
+							local valMt = getmetatable(val)
+							if valMt and valMt.__call then
+								proxyMt.__call = function(_, ...) return val(...) end
+							end
+							debug.setupvalue(fn, i, proxy)
+						end
+					end
+				end)
+			end
+
+			scrubUpvalues(hookedIndex)
+			scrubUpvalues(hookedNewIndex)
+			scrubUpvalues(hookedNamecall)
+			scrubUpvalues(getData)
+		end
+	end
+
+	if hookedIndex then
+		local createCustomSignals
+		createCustomSignals = function(limb)
+			local data = getData(limb)
+			if data._customSignals then return end
+
+			local custom = {}
+			local real = {}
+
+			real.Changed = Instance_new("BindableEvent")
+			custom.Changed = real.Changed.Event
+
+			for prop, _ in pairs(blockedPropsOriginal) do
+				real[prop] = Instance_new("BindableEvent")
+				custom[prop] = real[prop].Event
+			end
+
+			data._customSignals = custom
+			data._realSignals = real
+
+			local function migrateSignal(realSignal, newSignal)
+				local connections = getconnections(realSignal)
+				for _, conn in ipairs(connections) do
+					local func = conn.Function
+					if func then
+						newSignal:Connect(func)
+					end
+					conn:Disable()
+				end
+			end
+
+			migrateSignal(limb.Changed, custom.Changed)
+
+			for prop, _ in pairs(blockedPropsOriginal) do
+				local ok, sig = pcall(limb.GetPropertyChangedSignal, limb, prop)
+				if ok and sig then
+					migrateSignal(sig, custom[prop])
+				end
+			end
+		end
+
+		limbData._createCustomSignals = createCustomSignals
+		hooksInstalled = true
+	end
 end
 
 local function createCustomSignals(limb)
-	local data = getTargetData(limb)
-	if data._customSignals then return end
-
-	local custom = {}
-	local real = {}
-
-	real.Changed = Instance.new("BindableEvent")
-	custom.Changed = real.Changed.Event
-
-	for prop, _ in pairs(BLOCKED_PROPS) do
-		real[prop] = Instance.new("BindableEvent")
-		custom[prop] = real[prop].Event
+	if limbData._createCustomSignals then
+		limbData._createCustomSignals(limb)
 	end
-
-	data._customSignals = custom
-	data._realSignals = real
-
-	local function migrateSignal(realSignal, newSignal)
-		local connections = getconnections(realSignal)
-		for _, conn in ipairs(connections) do
-			local func = conn.Function
-			if func then
-				newSignal:Connect(func)
-			end
-			conn:Disable()
-		end
-	end
-
-	migrateSignal(limb.Changed, custom.Changed)
-
-	for prop, _ in pairs(BLOCKED_PROPS) do
-		local ok, sig = pcall(limb.GetPropertyChangedSignal, limb, prop)
-		if ok and sig then
-			migrateSignal(sig, custom[prop])
-		end
-	end
-end
-
-if BYPASS_AVAILABLE and not limbData._bypassInstalled then
-	limbData._bypassInstalled = true
-	
-	local originalIndex, originalNewIndex, originalNamecall
-
-	originalIndex = hookmetamethod(game, "__index", newcclosure(function(...)
-		if not checkcaller() then
-			local self, key = ...
-			local data = getTargetData(self)
-			if data then
-				if BLOCKED_PROPS[key] then
-					return data["Original"..key]
-				end
-				if key == "Changed" and data._customSignals then
-					return data._customSignals.Changed
-				end
-			end
-		end
-		return originalIndex(...)
-	end))
-
-	originalNewIndex = hookmetamethod(game, "__newindex", newcclosure(function(...)
-		if not checkcaller() then
-			local self, key, value = ...
-			local data = getTargetData(self)
-			if data then
-				if BLOCKED_PROPS[key] then
-					data["Original"..key] = value
-					local real = data._realSignals
-					if real then
-						if real[key] then
-							real[key]:Fire(value)
-						end
-						if real.Changed then
-							real.Changed:Fire(key, value)
-						end
-					end
-					return
-				end
-			end
-		end
-		return originalNewIndex(...)
-	end))
-
-	originalNamecall = hookmetamethod(game, "__namecall", newcclosure(function(...)
-		if not checkcaller() then
-			local self, prop = ...
-			if getnamecallmethod() == "GetPropertyChangedSignal" and getTargetData(self) and BLOCKED_PROPS[prop] then
-				local data = getTargetData(self)
-				local custom = data._customSignals
-				if custom and custom[prop] then
-					return custom[prop]
-				end
-			end
-		end
-		return originalNamecall(...)
-	end))
 end
 
 local PROPS_TO_WATCH = {
@@ -410,7 +495,6 @@ local function sharedSaveData(parent, cacheKey, char, limb)
 		entry = {}
 		cache[cacheKey] = entry
 	end
-	local extents              = char:GetExtentsSize()
 	entry.Character            = char
 	entry.Limb                 = limb
 	entry.OriginalSize         = limb.Size
@@ -420,10 +504,8 @@ local function sharedSaveData(parent, cacheKey, char, limb)
 	entry.OriginalMass         = limb.Mass
 	entry.OriginalAssemblyMass = limb.AssemblyMass
 	entry.OriginalAssemblyCOM  = limb.AssemblyCenterOfMass
-	entry.OriginalExtents      = extents
 	entry.OriginalRootPriority = limb.RootPriority or 0
 	if not entry.TrueSize    then entry.TrueSize    = entry.OriginalSize end
-	if not entry.TrueExtents then entry.TrueExtents = extents end
 	limbData.instanceLookup[limb] = { data = entry, type = "Part" }
 	limbData.instanceLookup[char] = { data = entry, type = "Model" }
 end
@@ -447,7 +529,7 @@ local function sharedApplyLimb(parent, cacheKey, char, limb)
 	sharedSaveData(parent, cacheKey, char, limb)
 	local entry = parent._playerCache[cacheKey]
 	if not entry then return end
-	if BYPASS_AVAILABLE then
+	if hooksInstalled then
 		createCustomSignals(limb)
 	end
 
@@ -821,7 +903,7 @@ function LimbExtender:EnableDebugMonitor()
 				count, tostring(suppress), tostring(running)
 			))
 
-			if limbData._bypassInstalled then
+			if hooksInstalled then
 				local beCount = 0
 				for _, entry in pairs(self._playerCache) do
 					local signals = rawget(entry, "_realSignals")
