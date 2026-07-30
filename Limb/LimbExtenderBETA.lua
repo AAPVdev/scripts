@@ -326,68 +326,19 @@ if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawm
 		return originalNamecall(...)
 	end
 
+	local useNewcclosure = false
 	if has_hookmetamethod and has_newcclosure then
-		local useNewcclosure = false
 		local detectionResult = isNewcclosureDetected()
-		if detectionResult == false then
-			useNewcclosure = true
+		useNewcclosure = (detectionResult == false)
+	end
+
+	if useNewcclosure then
+		originalIndex    = hookmetamethod(game, "__index",    newcclosure(hookedIndex))
+		originalNewIndex = hookmetamethod(game, "__newindex", newcclosure(hookedNewIndex))
+		if has_getnamecallmethod then
+			originalNamecall = hookmetamethod(game, "__namecall", newcclosure(hookedNamecall))
 		end
-
-		if useNewcclosure then
-			originalIndex    = hookmetamethod(game, "__index",    newcclosure(hookedIndex))
-			originalNewIndex = hookmetamethod(game, "__newindex", newcclosure(hookedNewIndex))
-			if has_getnamecallmethod then
-				originalNamecall = hookmetamethod(game, "__namecall", newcclosure(hookedNamecall))
-			end
-			hooksInstalled = true
-		elseif has_getrawmetatable and has_setreadonly then
-			local mt = getrawmetatable(WS)
-			setreadonly(mt, false)
-
-			originalIndex    = mt.__index
-			originalNewIndex = mt.__newindex
-			mt.__index = hookedIndex
-			mt.__newindex = hookedNewIndex
-
-			if has_getnamecallmethod then
-				originalNamecall = mt.__namecall
-				mt.__namecall = hookedNamecall
-			end
-
-			setreadonly(mt, true)
-
-			if has_debug_upvalues and has_debug_setupvalue and has_newproxy then
-				local function scrubUpvalues(fn)
-					if type(fn) ~= "function" then return end
-					pcall(function()
-						local upvals = debug.getupvalues(fn)
-						for i, val in ipairs(upvals) do
-							if type(val) == "table" and val ~= blockedPropsOriginal then
-								local proxy = newproxy(true)
-								local proxyMt = getmetatable(proxy)
-								proxyMt.__index = val
-								proxyMt.__newindex = function(_, k, v) val[k] = v end
-								proxyMt.__pairs = function() return pairs(val) end
-								local valMt = getmetatable(val)
-								if valMt and valMt.__call then
-									proxyMt.__call = function(_, ...) return val(...) end
-								end
-								debug.setupvalue(fn, i, proxy)
-							end
-						end
-					end)
-				end
-
-				scrubUpvalues(hookedIndex)
-				scrubUpvalues(hookedNewIndex)
-				if has_getnamecallmethod then
-					scrubUpvalues(hookedNamecall)
-				end
-				scrubUpvalues(getData)
-			end
-			hooksInstalled = true
-		end
-
+		hooksInstalled = true
 	elseif has_getrawmetatable and has_setreadonly then
 		local mt = getrawmetatable(WS)
 		setreadonly(mt, false)
