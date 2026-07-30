@@ -8,7 +8,8 @@
         "title": "Security",
         "items": [
           "Rewrote limb property hooks to eliminate environment leaks.",
-          "Added upvalue obfuscation for executor environments where direct metatable hooks are used."
+          "Added upvalue obfuscation for executor environments where direct metatable hooks are used.",
+          "Solara executor users now have significantly lower detection."
         ]
       },
       {
