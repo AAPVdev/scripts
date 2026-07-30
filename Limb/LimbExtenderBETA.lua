@@ -40,32 +40,38 @@ end)
 
 local BYPASS_AVAILABLE = false
 do
-	local required = {
-		"getrawmetatable",
-		"setreadonly",
-		"newcclosure",
-		"hookfunction",
-		"getconnections",
+	local mandatory = {
 		"checkcaller",
+		"newcclosure",
 	}
 
-	local ok = true
-	for _, name in ipairs(required) do
+	local hasHookMeta = pcall(function()
+		local fn = hookmetamethod
+		if type(fn) ~= "function" then error("not callable") end
+	end)
+
+	local hasDirectMeta = pcall(function()
+		local getraw = getrawmetatable
+		local setro = setreadonly
+		local newcc = newcclosure
+		if type(getraw) ~= "function" or type(setro) ~= "function" or type(newcc) ~= "function" then
+			error("missing direct meta functions")
+		end
+		local mt = getraw(game)
+		if type(mt) ~= "table" then error("metatable not accessible") end
+	end)
+
+	local allMandatory = true
+	for _, name in ipairs(mandatory) do
 		local fn = loadstring("return " .. name)()
 		if type(fn) ~= "function" then
-			ok = false
+			allMandatory = false
 			break
 		end
 	end
 
-	if ok then
-		local success = pcall(function()
-			local mt = getrawmetatable(game)
-			if type(mt) ~= "table" then error("expected table") end
-		end)
-		if success then
-			BYPASS_AVAILABLE = true
-		end
+	if (hasHookMeta or hasDirectMeta) and allMandatory then
+		BYPASS_AVAILABLE = true
 	end
 end
 
@@ -217,84 +223,121 @@ local function createCustomSignals(limb)
 	data._customSignals = custom
 	data._realSignals = real
 
-	local function migrateSignal(realSignal, newSignal)
-		local connections = getconnections(realSignal)
-		for _, conn in ipairs(connections) do
-			local func = conn.Function
-			if func then
-				newSignal:Connect(func)
+	local hasGetConns = type(getconnections) == "function"
+	if hasGetConns then
+		local function migrateSignal(realSignal, newSignal)
+			local connections = getconnections(realSignal)
+			for _, conn in ipairs(connections) do
+				local func = conn.Function
+				if func then
+					newSignal:Connect(func)
+				end
+				conn:Disable()
 			end
-			conn:Disable()
 		end
-	end
 
-	migrateSignal(limb.Changed, custom.Changed)
+		migrateSignal(limb.Changed, custom.Changed)
 
-	for prop, _ in pairs(BLOCKED_PROPS) do
-		local ok, sig = pcall(limb.GetPropertyChangedSignal, limb, prop)
-		if ok and sig then
-			migrateSignal(sig, custom[prop])
+		for prop, _ in pairs(BLOCKED_PROPS) do
+			local ok, sig = pcall(limb.GetPropertyChangedSignal, limb, prop)
+			if ok and sig then
+				migrateSignal(sig, custom[prop])
+			end
 		end
 	end
 end
 
 if BYPASS_AVAILABLE and not limbData._bypassInstalled then
 	limbData._bypassInstalled = true
-	
+
+	local HAS_HOOKMETAMETHOD = type(hookmetamethod) == "function"
 	local originalIndex, originalNewIndex, originalNamecall
 
-	originalIndex = hookmetamethod(game, "__index", newcclosure(function(...)
-		if not checkcaller() then
-			local self, key = ...
-			local data = getTargetData(self)
-			if data then
-				if BLOCKED_PROPS[key] then
-					return data["Original"..key]
-				end
-				if key == "Changed" and data._customSignals then
-					return data._customSignals.Changed
-				end
-			end
-		end
-		return originalIndex(...)
-	end))
-
-	originalNewIndex = hookmetamethod(game, "__newindex", newcclosure(function(...)
-		if not checkcaller() then
-			local self, key, value = ...
-			local data = getTargetData(self)
-			if data then
-				if BLOCKED_PROPS[key] then
-					data["Original"..key] = value
-					local real = data._realSignals
-					if real then
-						if real[key] then
-							real[key]:Fire(value)
-						end
-						if real.Changed then
-							real.Changed:Fire(key, value)
-						end
-					end
-					return
-				end
-			end
-		end
-		return originalNewIndex(...)
-	end))
-
-	originalNamecall = hookmetamethod(game, "__namecall", newcclosure(function(...)
-		if not checkcaller() then
-			local self, prop = ...
-			if getnamecallmethod() == "GetPropertyChangedSignal" and getTargetData(self) and BLOCKED_PROPS[prop] then
+	local function makeIndexHook(oldIndex)
+		return newcclosure(function(...)
+			if not checkcaller() then
+				local self, key = ...
 				local data = getTargetData(self)
-				local custom = data._customSignals
-				if custom and custom[prop] then
-					return custom[prop]
+				if data then
+					if BLOCKED_PROPS[key] then
+						return data["Original"..key]
+					end
+					if key == "Changed" and data._customSignals then
+						return data._customSignals.Changed
+					end
 				end
 			end
+			return oldIndex(...)
+		end)
+	end
+
+	local function makeNewIndexHook(oldNewIndex)
+		return newcclosure(function(...)
+			if not checkcaller() then
+				local self, key, value = ...
+				local data = getTargetData(self)
+				if data then
+					if BLOCKED_PROPS[key] then
+						data["Original"..key] = value
+						local real = data._realSignals
+						if real then
+							if real[key] then
+								real[key]:Fire(value)
+							end
+							if real.Changed then
+								real.Changed:Fire(key, value)
+							end
+						end
+						return
+					end
+				end
+			end
+			return oldNewIndex(...)
+		end)
+	end
+
+	local function makeNamecallHook(oldNamecall)
+		return newcclosure(function(...)
+			if not checkcaller() then
+				local self, prop = ...
+				if getnamecallmethod() == "GetPropertyChangedSignal" and getTargetData(self) and BLOCKED_PROPS[prop] then
+					local data = getTargetData(self)
+					local custom = data._customSignals
+					if custom and custom[prop] then
+						return custom[prop]
+					end
+				end
+			end
+			return oldNamecall(...)
+		end)
+	end
+
+	if HAS_HOOKMETAMETHOD then
+		local origIndex = hookmetamethod(game, "__index", function() end)
+		hookmetamethod(game, "__index", nil)
+		originalIndex = hookmetamethod(game, "__index", makeIndexHook(origIndex))
+		
+		local origNewIndex = hookmetamethod(game, "__newindex", function() end)
+		hookmetamethod(game, "__newindex", nil)
+		originalNewIndex = hookmetamethod(game, "__newindex", makeNewIndexHook(origNewIndex))
+		
+		local origNamecall = hookmetamethod(game, "__namecall", function() end)
+		hookmetamethod(game, "__namecall", nil)
+		originalNamecall = hookmetamethod(game, "__namecall", makeNamecallHook(origNamecall))
+	else
+		local mt = getrawmetatable(game)
+		if mt then
+			originalIndex = mt.__index
+			originalNewIndex = mt.__newindex
+			originalNamecall = mt.__namecall
+
+			setreadonly(mt, false)
+			mt.__index = makeIndexHook(originalIndex)
+			mt.__newindex = makeNewIndexHook(originalNewIndex)
+			mt.__namecall = makeNamecallHook(originalNamecall)
+			setreadonly(mt, true)
 		end
-		return originalNamecall(...)
-	end))
+	end
 end
 
 local PROPS_TO_WATCH = {
@@ -384,7 +427,7 @@ local DEFAULTS = {
 	DYNAMIC_SCALE_ENABLED     = true,
 	DYNAMIC_SCALE_RANGE_MULT  = 1.5,
 	DYNAMIC_SCALE_UPDATE_RATE = 15,
-	DEBUG_MONITOR = true,
+	DEBUG_MONITOR = false,
 }
 
 local function mergeSettings(user)
