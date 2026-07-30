@@ -365,10 +365,12 @@ function BuildUI(version)
     local Rayfield = getgenv().uiLE.uilibray
 
     local LOADING_SUBTITLES = {
-        "aint no part like a baszucki party",
-        "boi ts not tuff",
-        "fuh twin",
-        "gosh i hate hackers"
+		"multiply by delta",
+		"working for the cia",
+		"shoutout serene fr",
+		"avis was here",
+		"seizure causing soap?",
+		"skids skid from skids"
     }
 
     local Window
@@ -389,10 +391,8 @@ function BuildUI(version)
     else
         Window = Rayfield:CreateWindow({
             name = "AXIOS",
-            loadingTitle = "AXIOS",
-            loadingSubtitle = LOADING_SUBTITLES[math.random(#LOADING_SUBTITLES)],
+            subtitle = LOADING_SUBTITLES[math.random(#LOADING_SUBTITLES)],
             theme = "default",
-            disableRayfieldPrompts = true,
             configuration = {
                 autoSave = true,
                 autoLoad = true,
