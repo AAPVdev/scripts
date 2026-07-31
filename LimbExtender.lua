@@ -186,12 +186,10 @@ end
 
 if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawmetatable and has_setreadonly)) and not hooksInstalled then
 
-	local checkcaller = checkcaller
 	local blockedProps = BLOCKED_PROPS
 	local blockedPropsOriginal = BLOCKED_PROPS
 	local instanceLookup = limbData.instanceLookup
 	local Instance_new = Instance.new
-	local pcall = pcall
 	local getnamecallmethod = has_getnamecallmethod and getnamecallmethod or nil
 	local getconnections = has_getconnections and getconnections or nil
 
@@ -262,21 +260,19 @@ if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawm
 	local function scrubUpvalues(fn)
 		if not (has_debug_upvalues and has_debug_setupvalue and has_newproxy) then return end
 		if type(fn) ~= "function" then return end
-		pcall(function()
-			local upvals = debug.getupvalues(fn)
-			for i, val in ipairs(upvals) do
-				if type(val) == "table" and val ~= blockedPropsOriginal then
-					local proxy = newproxy(true)
-					local proxyMt = getmetatable(proxy)
-					proxyMt.__index = val
-					proxyMt.__newindex = function(_, k, v) val[k] = v end
-					proxyMt.__pairs = function() return pairs(val) end
-					local valMt = getmetatable(val)
-					if valMt and valMt.__call then
-						proxyMt.__call = function(_, ...) return val(...) end
-					end
-					debug.setupvalue(fn, i, proxy)
+		local upvals = debug.getupvalues(fn)
+		for i, val in ipairs(upvals) do
+			if type(val) == "table" and val ~= blockedPropsOriginal then
+				local proxy = newproxy(true)
+				local proxyMt = getmetatable(proxy)
+				proxyMt.__index = val
+				proxyMt.__newindex = function(_, k, v) val[k] = v end
+				proxyMt.__pairs = function() return pairs(val) end
+				local valMt = getmetatable(val)
+				if valMt and valMt.__call then
+					proxyMt.__call = function(_, ...) return val(...) end
 				end
+				debug.setupvalue(fn, i, proxy)
 			end
 		end)
 	end
@@ -612,7 +608,7 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 
 	if activeLimb and activeLimb.Parent then
 		if entry._humanoidStateConn then entry._humanoidStateConn:Disconnect() end
-		pcall(write, activeLimb, {
+		write({
 			Size                     = entry.OriginalSize,
 			Transparency             = entry.OriginalTransparency,
 			CanCollide               = entry.OriginalCanCollide,
