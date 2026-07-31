@@ -6,7 +6,6 @@ end
 local cloneref = missing("function", cloneref, function(obj) return obj end)
 
 local Players = cloneref(game:GetService("Players"))
-local WS = cloneref(game:GetService("Workspace"))
 local localPlayer = Players.LocalPlayer
 
 local globalEnv = type(getgenv) == "function" and getgenv() or _G
@@ -185,9 +184,7 @@ do
 	has_newproxy = check("newproxy")
 end
 
-local hooksInstalled = false
-
-if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawmetatable and has_setreadonly)) then
+if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawmetatable and has_setreadonly)) and not hooksInstalled then
 
 	local checkcaller = checkcaller
 	local blockedProps = BLOCKED_PROPS
@@ -198,19 +195,18 @@ if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawm
 	local getnamecallmethod = has_getnamecallmethod and getnamecallmethod or nil
 	local getconnections = has_getconnections and getconnections or nil
 
+	local originalIndex, originalNewIndex, originalNamecall
+
 	local function getData(instance)
 		local cached = instanceLookup[instance]
 		return cached and cached.data
 	end
 
-	local originalIndex, originalNewIndex, originalNamecall
-
 	local function hookedIndex(...)
-		local self = ...
+		local self, key = ...
 		if not checkcaller() then
 			local data = getData(self)
 			if data then
-				local key = select(2, ...)
 				if blockedProps[key] then
 					return data["Original"..key]
 				end
@@ -223,11 +219,10 @@ if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawm
 	end
 
 	local function hookedNewIndex(...)
-		local self = ...
+		local self, key = ...
 		if not checkcaller() then
 			local data = getData(self)
 			if data then
-				local key = select(2, ...)
 				if blockedProps[key] then
 					local value = select(3, ...)
 					data["Original"..key] = value
@@ -251,8 +246,7 @@ if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawm
 		if not checkcaller() then
 			local method = getnamecallmethod()
 			if method == "GetPropertyChangedSignal" then
-				local self = ...
-				local prop = select(2, ...)
+				local self, prop = ...
 				local data = getData(self)
 				if data and blockedProps[prop] then
 					local custom = data._customSignals
@@ -265,15 +259,104 @@ if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawm
 		return originalNamecall(...)
 	end
 
-	if has_hookmetamethod and has_newcclosure then
-		originalIndex    = hookmetamethod(game, "__index",    newcclosure(hookedIndex))
-		originalNewIndex = hookmetamethod(game, "__newindex", newcclosure(hookedNewIndex))
-		if has_getnamecallmethod then
-			originalNamecall = hookmetamethod(game, "__namecall", newcclosure(hookedNamecall))
+	local function scrubUpvalues(fn)
+		if not (has_debug_upvalues and has_debug_setupvalue and has_newproxy) then return end
+		if type(fn) ~= "function" then return end
+		pcall(function()
+			local upvals = debug.getupvalues(fn)
+			for i, val in ipairs(upvals) do
+				if type(val) == "table" and val ~= blockedPropsOriginal then
+					local proxy = newproxy(true)
+					local proxyMt = getmetatable(proxy)
+					proxyMt.__index = val
+					proxyMt.__newindex = function(_, k, v) val[k] = v end
+					proxyMt.__pairs = function() return pairs(val) end
+					local valMt = getmetatable(val)
+					if valMt and valMt.__call then
+						proxyMt.__call = function(_, ...) return val(...) end
+					end
+					debug.setupvalue(fn, i, proxy)
+				end
+			end
+		end)
+	end
+
+	local function isNewcclosureDetected()
+		if not (has_hookmetamethod and has_newcclosure) then
+			return nil
 		end
 
+		local function spawnProbe()
+			local overflow = nil
+			local finished = false
+
+			task.spawn(function()
+				local capturedFunction = nil
+
+				xpcall(function()
+					return game.AAAAAAA
+				end, function()
+					capturedFunction = debug.info(2, "f")
+				end)
+
+				if capturedFunction then
+					local recursiveCaller
+					recursiveCaller = function(depth)
+						if depth < 19995 then
+							recursiveCaller(depth + 1)
+						else
+							capturedFunction(workspace, "Name")
+						end
+					end
+
+					local success, err = pcall(recursiveCaller, 1)
+					overflow = (not success) and type(err) == "string" and err:find("stack overflow")
+				else
+					overflow = true
+				end
+
+				finished = true
+			end)
+
+			repeat task.wait() until finished
+			return overflow
+		end
+
+		local baselineOverflow = spawnProbe()
+		if baselineOverflow == nil or baselineOverflow == true then
+			return nil
+		end
+
+		local orig
+		orig = hookmetamethod(game, "__index", newcclosure(function(...)
+			return orig(...)
+		end))
+		local hookOverflow = spawnProbe()
+		hookmetamethod(game, "__index", orig)
+
+		return hookOverflow
+	end
+
+	local useNewcclosure = true
+	if has_hookmetamethod and has_newcclosure then
+		local detected = isNewcclosureDetected()
+		useNewcclosure = (detected == false)
+	end
+
+	if useNewcclosure then
+		local idx = newcclosure(hookedIndex)
+		local nidx = newcclosure(hookedNewIndex)
+		local nm = has_getnamecallmethod and newcclosure(hookedNamecall) or nil
+
+		originalIndex    = hookmetamethod(game, "__index",    idx)
+		originalNewIndex = hookmetamethod(game, "__newindex", nidx)
+		if nm then
+			originalNamecall = hookmetamethod(game, "__namecall", nm)
+		end
+
+		hooksInstalled = true
 	elseif has_getrawmetatable and has_setreadonly then
-		local mt = getrawmetatable(WS)
+		local mt = getrawmetatable(game)
 		setreadonly(mt, false)
 
 		originalIndex    = mt.__index
@@ -288,38 +371,17 @@ if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawm
 
 		setreadonly(mt, true)
 
-		if has_debug_upvalues and has_debug_setupvalue and has_newproxy then
-			local function scrubUpvalues(fn)
-				if type(fn) ~= "function" then return end
-				pcall(function()
-					local upvals = debug.getupvalues(fn)
-					for i, val in ipairs(upvals) do
-						if type(val) == "table" and val ~= blockedPropsOriginal then
-							local proxy = newproxy(true)
-							local proxyMt = getmetatable(proxy)
-							proxyMt.__index = val
-							proxyMt.__newindex = function(_, k, v) val[k] = v end
-							proxyMt.__pairs = function() return pairs(val) end
-							local valMt = getmetatable(val)
-							if valMt and valMt.__call then
-								proxyMt.__call = function(_, ...) return val(...) end
-							end
-							debug.setupvalue(fn, i, proxy)
-						end
-					end
-				end)
-			end
-
-			scrubUpvalues(hookedIndex)
-			scrubUpvalues(hookedNewIndex)
-			if has_getnamecallmethod then
-				scrubUpvalues(hookedNamecall)
-			end
-			scrubUpvalues(getData)
+		scrubUpvalues(hookedIndex)
+		scrubUpvalues(hookedNewIndex)
+		if has_getnamecallmethod then
+			scrubUpvalues(hookedNamecall)
 		end
+		scrubUpvalues(getData)
+
+		hooksInstalled = true
 	end
 
-	if has_getconnections and has_getnamecallmethod then
+	if has_getconnections then
 		local createCustomSignals
 		createCustomSignals = function(limb)
 			local data = getData(limb)
@@ -361,9 +423,6 @@ if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawm
 		end
 
 		limbData._createCustomSignals = createCustomSignals
-		hooksInstalled = true
-	else
-		hooksInstalled = true
 	end
 end
 
