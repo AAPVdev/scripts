@@ -162,10 +162,11 @@ local function write(limb, props)
 	end
 end
 
+local hooksInstalled = false
+
 local has_checkcaller, has_getnamecallmethod, has_getconnections = false, false, false
 local has_hookmetamethod, has_newcclosure, has_getrawmetatable, has_setreadonly = false, false, false, false
 local has_debug_upvalues, has_debug_setupvalue, has_newproxy = false, false, false
-local has_iscclosure = false
 
 do
 	local function check(name)
@@ -182,68 +183,6 @@ do
 	has_debug_upvalues = check("debug.getupvalues")
 	has_debug_setupvalue = check("debug.setupvalue")
 	has_newproxy = check("newproxy")
-	has_iscclosure = check("iscclosure")
-end
-
-local function isNewcclosureDetected()
-	if not (has_hookmetamethod and has_newcclosure and has_iscclosure) then
-		return nil
-	end
-
-	local function testAtDepth(func, depth)
-		local overflow = false
-		local function recurse(d)
-			if d < depth then
-				recurse(d + 1)
-			else
-				func()
-			end
-		end
-		local ok, err = pcall(recurse, 0)
-		if not ok and type(err) == "string" and err:find("stack overflow") then
-			overflow = true
-		end
-		return overflow
-	end
-
-	local origIndex = hookmetamethod(game, "__index", function(t, k)
-		return (origIndex or rawget)(t, k)
-	end)
-	hookmetamethod(game, "__index", origIndex)
-
-	if not iscclosure(origIndex) then
-		return nil
-	end
-
-	local cSafe = 19995
-	while cSafe > 0 and testAtDepth(origIndex, cSafe) do
-		cSafe = cSafe - 1
-	end
-
-	local plainLua = function() end
-	local luaThreshold = cSafe
-	while luaThreshold <= 100000 and not testAtDepth(plainLua, luaThreshold) do
-		luaThreshold = luaThreshold + 1
-	end
-
-	if testAtDepth(origIndex, cSafe) or testAtDepth(plainLua, cSafe) or not testAtDepth(plainLua, luaThreshold) then
-		return nil
-	end
-
-	local hookWrapper = newcclosure(function(t, k)
-		return origIndex(t, k)
-	end)
-
-	local safeAtC = not testAtDepth(hookWrapper, cSafe)
-	local overflowsAtLua = testAtDepth(hookWrapper, luaThreshold)
-
-	if safeAtC and overflowsAtLua then
-		return true
-	elseif safeAtC and not overflowsAtLua then
-		return false
-	else
-		return true
-	end
 end
 
 local hooksInstalled = false
@@ -263,8 +202,6 @@ if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawm
 		local cached = instanceLookup[instance]
 		return cached and cached.data
 	end
-
-	local originalIndex, originalNewIndex, originalNamecall
 
 	local function hookedIndex(...)
 		local self = ...
@@ -326,10 +263,65 @@ if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawm
 		return originalNamecall(...)
 	end
 
+	local function isNewcclosureDetected()
+		if not (has_hookmetamethod and has_newcclosure) then
+			return nil
+		end
+
+		local function spawnProbe()
+			local overflow = nil
+			local finished = false
+
+			task.spawn(function()
+				local capturedFunction = nil
+
+				xpcall(function()
+					return game.AAAAAAA
+				end, function()
+					capturedFunction = debug.info(2, "f")
+				end)
+
+				if capturedFunction then
+					local recursiveCaller
+					recursiveCaller = function(depth)
+						if depth < 19995 then
+							recursiveCaller(depth + 1)
+						else
+							capturedFunction(workspace, "Name")
+						end
+					end
+
+					local success, err = pcall(recursiveCaller, 1)
+					overflow = (not success) and type(err) == "string" and err:find("stack overflow")
+				else
+					overflow = true
+				end
+
+				finished = true
+			end)
+
+			repeat task.wait() until finished
+			return overflow
+		end
+
+		local baselineOverflow = spawnProbe()
+		if baselineOverflow == nil or baselineOverflow == true then
+			return nil
+		end
+
+		local orig = hookmetamethod(game, "__index", newcclosure(function(...)
+			return orig(...)
+		end))
+		local hookOverflow = spawnProbe()
+		hookmetamethod(game, "__index", orig)
+
+		return hookOverflow
+	end
+
 	local useNewcclosure = false
 	if has_hookmetamethod and has_newcclosure then
-		local detectionResult = isNewcclosureDetected()
-		useNewcclosure = (detectionResult == false)
+		local detected = isNewcclosureDetected()
+		useNewcclosure = (detected == false)
 	end
 
 	if useNewcclosure then
@@ -384,52 +376,56 @@ if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawm
 			end
 			scrubUpvalues(getData)
 		end
+
 		hooksInstalled = true
 	end
+end
 
-	if has_getconnections and has_getnamecallmethod and hooksInstalled then
-		local createCustomSignals
-		createCustomSignals = function(limb)
-			local data = getData(limb)
-			if data._customSignals then return end
+if has_getconnections and has_getnamecallmethod then
+	local createCustomSignals
+	createCustomSignals = function(limb)
+		local data = getData(limb)
+		if data._customSignals then return end
 
-			local custom = {}
-			local real = {}
+		local custom = {}
+		local real = {}
 
-			real.Changed = Instance_new("BindableEvent")
-			custom.Changed = real.Changed.Event
+		real.Changed = Instance_new("BindableEvent")
+		custom.Changed = real.Changed.Event
 
-			for prop, _ in pairs(blockedPropsOriginal) do
-				real[prop] = Instance_new("BindableEvent")
-				custom[prop] = real[prop].Event
-			end
+		for prop, _ in pairs(blockedPropsOriginal) do
+			real[prop] = Instance_new("BindableEvent")
+			custom[prop] = real[prop].Event
+		end
 
-			data._customSignals = custom
-			data._realSignals = real
+		data._customSignals = custom
+		data._realSignals = real
 
-			local function migrateSignal(realSignal, newSignal)
-				local connections = getconnections(realSignal)
-				for _, conn in ipairs(connections) do
-					local func = conn.Function
-					if func then
-						newSignal:Connect(func)
-					end
-					conn:Disable()
+		local function migrateSignal(realSignal, newSignal)
+			local connections = getconnections(realSignal)
+			for _, conn in ipairs(connections) do
+				local func = conn.Function
+				if func then
+					newSignal:Connect(func)
 				end
-			end
-
-			migrateSignal(limb.Changed, custom.Changed)
-
-			for prop, _ in pairs(blockedPropsOriginal) do
-				local ok, sig = pcall(limb.GetPropertyChangedSignal, limb, prop)
-				if ok and sig then
-					migrateSignal(sig, custom[prop])
-				end
+				conn:Disable()
 			end
 		end
 
-		limbData._createCustomSignals = createCustomSignals
+		migrateSignal(limb.Changed, custom.Changed)
+
+		for prop, _ in pairs(blockedPropsOriginal) do
+			local ok, sig = pcall(limb.GetPropertyChangedSignal, limb, prop)
+			if ok and sig then
+				migrateSignal(sig, custom[prop])
+			end
+		end
 	end
+
+	limbData._createCustomSignals = createCustomSignals
+	hooksInstalled = true
+else
+	hooksInstalled = true
 end
 
 local function createCustomSignals(limb)
