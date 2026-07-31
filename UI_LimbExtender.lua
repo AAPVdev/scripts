@@ -365,10 +365,8 @@ function BuildUI(version)
     getgenv().uiLE.uiVersion = version
 
     if getgenv().uiLE.uilibray then
-        pcall(function()
-            if getgenv().uiLE.uilibray.Window then getgenv().uiLE.uilibray.Window:Unload() end
-        end)
-        pcall(function() getgenv().uiLE.uilibray:Destroy() end)
+		if getgenv().uiLE.uilibray.Window then getgenv().uiLE.uilibray.Window:Unload() end
+        getgenv().uiLE.uilibray:Destroy()
         getgenv().uiLE.uilibray = nil
     end
 
