@@ -185,9 +185,7 @@ do
 	has_newproxy = check("newproxy")
 end
 
-local hooksInstalled = false
-
-if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawmetatable and has_setreadonly)) then
+if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawmetatable and has_setreadonly)) and not hooksInstalled then
 
 	local checkcaller = checkcaller
 	local blockedProps = BLOCKED_PROPS
@@ -206,11 +204,10 @@ if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawm
 	end
 
 	local function hookedIndex(...)
-		local self = ...
+		local self, key = ...
 		if not checkcaller() then
 			local data = getData(self)
 			if data then
-				local key = select(2, ...)
 				if blockedProps[key] then
 					return data["Original"..key]
 				end
@@ -223,11 +220,10 @@ if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawm
 	end
 
 	local function hookedNewIndex(...)
-		local self = ...
+		local self, key = ...
 		if not checkcaller() then
 			local data = getData(self)
 			if data then
-				local key = select(2, ...)
 				if blockedProps[key] then
 					local value = select(3, ...)
 					data["Original"..key] = value
@@ -251,8 +247,7 @@ if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawm
 		if not checkcaller() then
 			local method = getnamecallmethod()
 			if method == "GetPropertyChangedSignal" then
-				local self = ...
-				local prop = select(2, ...)
+				local self, prop = ...
 				local data = getData(self)
 				if data and blockedProps[prop] then
 					local custom = data._customSignals
@@ -391,7 +386,7 @@ if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawm
 		hooksInstalled = true
 	end
 
-	if has_getconnections and has_getnamecallmethod then
+	if has_getconnections then
 		local createCustomSignals
 		createCustomSignals = function(limb)
 			local data = getData(limb)
@@ -433,9 +428,6 @@ if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawm
 		end
 
 		limbData._createCustomSignals = createCustomSignals
-		hooksInstalled = true
-	else
-		hooksInstalled = true
 	end
 end
 
