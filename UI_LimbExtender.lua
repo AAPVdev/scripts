@@ -33,7 +33,7 @@ local limbExtenderURLs = {
     "https://api.rubis.app/v2/scrap/BASPm347G6urjvnO/raw"
 }
 getgenv().uiLE.le = getgenv().uiLE.le or safeLoadString(limbExtenderURLs)
-if not getgenv().uiLE.le then getgenv().uiLE.loading = false return end
+if not getgenv().uiLE.le then getgenv().uiLE.loading = false; return end  -- Fixed: added semicolon
 
 if getgenv().uiLE.gcontroller then
     getgenv().uiLE.gcontroller:Destroy()
@@ -289,8 +289,8 @@ getgenv().ChangelogHelper = getgenv().ChangelogHelper or (function()
         local function significant(oldV, newV)
             if not newV then return false end
             if not oldV then return true end
-            local o1,o2 = parseSemver(oldV)
-            local n1,n2 = parseSemver(newV)
+            local o1,o2 = parseFullSemver(oldV)  -- Fixed: use parseFullSemver
+            local n1,n2 = parseFullSemver(newV)  -- Fixed: use parseFullSemver
             if not (o1 and n1) then return true end
             if n1 > o1 then return true end
             if (n2 and o2) and n2 > o2 then return true end
@@ -365,36 +365,34 @@ function BuildUI(version)
     getgenv().uiLE.uiVersion = version
 
     if getgenv().uiLE.uilibray then
-        pcall(function()
-            if getgenv().uiLE.uilibray.Window then getgenv().uiLE.uilibray.Window:Unload() end
-        end)
-        pcall(function() getgenv().uiLE.uilibray:Destroy() end)
+        if getgenv().uiLE.uilibray.Window then getgenv().uiLE.uilibray.Window:Unload()
+        getgenv().uiLE.uilibray:Destroy()
         getgenv().uiLE.uilibray = nil
     end
 
     getgenv().RAYFIELD_SECURE = true
-   	getgenv().RAYFIELD_ASSET_ID = 84895246331982
+    getgenv().RAYFIELD_ASSET_ID = 84895246331982
 
     local libURL = version == 1 and "https://sirius.menu/rayfield" or "https://sirius.menu/gen2"
     getgenv().uiLE.uilibray = safeLoadString({libURL})
-    if not getgenv().uiLE.uilibray then getgenv().uiLE.loading = false return end
+    if not getgenv().uiLE.uilibray then getgenv().uiLE.loading = false; return end  -- Fixed: added semicolon
 
     local Rayfield = getgenv().uiLE.uilibray
 
     local LOADING_SUBTITLES = {
-		"multiply by delta",
-		"working for the cia",
-		"shoutout serene fr",
-		"avis was here",
-		"seizure causing soap?",
-		"skids skid from skids"
+        "multiply by delta",
+        "working for the cia",
+        "shoutout serene fr",
+        "avis was here",
+        "seizure causing soap?",
+        "skids skid from skids"
     }
 
     local Window
     if version == 1 then
         Window = Rayfield:CreateWindow({
             Name = "AXIOS",
-			ScriptID = "sid_k2rgzy25rkgy",
+            ScriptID = "sid_k2rgzy25rkgy",
             LoadingTitle = "AXIOS",
             LoadingSubtitle = LOADING_SUBTITLES[math.random(#LOADING_SUBTITLES)],
             Theme = "Default",
@@ -524,14 +522,14 @@ function BuildUI(version)
         if version == 1 then
             return tab:CreateButton({ Name = name, Callback = callback })
         else
-            tab:CreateButton({ name = name, callback = callback })
+            return tab:CreateButton({ name = name, callback = callback })  -- Fixed: added return to avoid implicit nil return
         end
     end
 
     local function createParagraph(tab, title, content)
         if version == 1 then
             tab:CreateParagraph({ Title = title, Content = content })
-		end
+        end
     end
 
     local Tabs = {
@@ -577,7 +575,7 @@ function BuildUI(version)
     end
     createKeybind(Tabs.General, "Toggle Keybind", "ToggleKeybind", "L", toggleLimbs)
 
-	createSection(Tabs.General, "Theme")
+    createSection(Tabs.General, "Theme")
 
     local themes, defaultTheme
     if version == 1 then
@@ -588,7 +586,7 @@ function BuildUI(version)
         defaultTheme = "default"
     end
 
-    createDropdown(Tabs.General, "Current Theme", "CurrentTheme", themes, currentTheme, false, function(selected)
+    createDropdown(Tabs.General, "Current Theme", "CurrentTheme", themes, defaultTheme, false, function(selected)  -- Fixed: replaced currentTheme with defaultTheme
         if selected then
             if version == 1 then Window.ModifyTheme(selected) else Window:ChangeTheme(selected) end
         end
