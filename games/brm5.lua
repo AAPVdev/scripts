@@ -10,6 +10,7 @@ local getNil = function(name, class)
             return v
         end
     end
+    return nil
 end
 
 local ReplicatorService = require(getNil("ReplicatorService", "ModuleScript"))
@@ -68,32 +69,33 @@ local function setup()
 
     if extender:Get("PLAYER_ENABLED") then
 
-    local characterFolder
-    while not characterFolder do
-        for uid, actor in ReplicatorService.Actors do
-            if actor.Character and actor.Character.Parent then
-                characterFolder = actor.Character.Parent
-                break
+        local characterFolder
+        while not characterFolder do
+            for uid, actor in ReplicatorService.Actors do
+                if actor.Character and actor.Character.Parent then
+                    characterFolder = actor.Character.Parent
+                    break
+                end
             end
+            task.wait(0.5)
         end
-        task.wait(0.5)
-    end
-    
-    for _, model in ipairs(characterFolder:GetChildren()) do
-        registerIfPlayer(model)
-    end
-    
-    characterFolder.ChildAdded:Connect(function(child)
-        registerIfPlayer(child)
-    end)
-    
-    characterFolder.ChildRemoved:Connect(function(child)
-        if not child:IsA("Model") then return end
-        local player = customGetPlayer(child)
-        if player then
-            extender:UnregisterPlayerCharacter(player, child)
+        
+        for _, model in ipairs(characterFolder:GetChildren()) do
+            registerIfPlayer(model)
         end
-    end)
+        
+        characterFolder.ChildAdded:Connect(function(child)
+            registerIfPlayer(child)
+        end)
+        
+        characterFolder.ChildRemoved:Connect(function(child)
+            if not child:IsA("Model") then return end
+            local player = customGetPlayer(child)
+            if player then
+                extender:UnregisterPlayerCharacter(player, child)
+            end
+        end)
+    end 
 end
 
 setup()
