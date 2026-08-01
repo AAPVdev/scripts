@@ -27,6 +27,7 @@ limbData.playerCache    = limbData.playerCache    or {}
 limbData.instanceLookup = limbData.instanceLookup or setmetatable({}, { __mode = "k" })
 limbData.npcIdCounter   = limbData.npcIdCounter   or 0
 limbData.limbBlocked    = limbData.limbBlocked    or setmetatable({}, { __mode = "k" })
+limbData.chamsIdCounter = limbData.chamsIdCounter or 0
 
 if type(limbData.terminate) == "function" then
 	limbData.terminate()
@@ -53,6 +54,10 @@ end
 local ESP_SOURCE_URLS = {
 	"https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/esp/SIXSEVENESP.lua",
 	"https://api.rubis.app/v2/scrap/qghKmrRhRUfwDnee/raw",
+}
+
+local CHAMS_SOURCE_URLS = {
+	"https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/esp/chams.lua",
 }
 
 local MANAGER_SOURCE_URLS = {
@@ -112,6 +117,14 @@ local function ensureESPLoaded()
 	local mod = tryLoadModuleFromURLs(ESP_SOURCE_URLS)
 	if mod then limbData.ESP = mod end
 	return limbData.ESP
+end
+
+local function ensureCHAMSLoaded()
+	if limbData.CHAMS then return limbData.CHAMS end
+	if not (has_loadstring and has_httpget) then return nil end
+	local mod = tryLoadModuleFromURLs(CHAMS_SOURCE_URLS)
+	if mod then limbData.CHAMS = mod end
+	return limbData.CHAMS
 end
 
 local function ensureMANAGERLoaded()
@@ -485,6 +498,11 @@ end
 local LimbExtender = {}
 LimbExtender.__index = LimbExtender
 
+local function nextChamsSourceKey()
+	limbData.chamsIdCounter = limbData.chamsIdCounter + 1
+	return "LimbExtender_" .. limbData.chamsIdCounter
+end
+
 local DEFAULTS = {
 	TARGET_LIMB             = "Head",
 	LIMB_SIZE               = 15,
@@ -526,6 +544,12 @@ local DEFAULTS = {
 	ESP_TEXT_RESOLVER = nil,
 	ESP_CAN_DRAW      = nil,
 	ESP_TRACER_ORIGIN = nil,
+	CHAMS                     = false,
+	CHAMS_FILL_COLOR          = Color3.fromRGB(255, 255, 0),
+	CHAMS_OUTLINE_COLOR       = Color3.fromRGB(255, 255, 255),
+	CHAMS_FILL_TRANSPARENCY   = 0.5,
+	CHAMS_OUTLINE_TRANSPARENCY= 0.5,
+	CHAMS_PRIORITY            = 100,
 	DYNAMIC_SCALE_ENABLED     = true,
 	DYNAMIC_SCALE_RANGE_MULT  = 1.5,
 	DYNAMIC_SCALE_UPDATE_RATE = 15,
@@ -706,6 +730,9 @@ function LimbExtender:_applyLimbs(player, char, limb)
 			end)
 		end
 	end
+	if self._settings.CHAMS and self._CHAMS then
+		self._CHAMS.addHighlight(char, self._chamsSourceKey, self:_buildChamsConfig(), self._settings.CHAMS_PRIORITY)
+	end
 end
 
 function LimbExtender:_removeLimbs(player, char, limb)
@@ -713,6 +740,7 @@ function LimbExtender:_removeLimbs(player, char, limb)
 	local cacheKey = player and player.Name or self._npcIdMap[char]
 	sharedRestoreLimb(self, cacheKey, limb)
 	if self._ESP and char then self._ESP:Untrack(char) end
+	if self._CHAMS and char then self._CHAMS.removeHighlight(char, self._chamsSourceKey) end
 	if not player then self._npcIdMap[char] = nil end
 end
 
@@ -735,6 +763,7 @@ function LimbExtender:_processDirtyWork()
 							if entry.Character then self._ESP:Track(entry.Character) end
 						end
 					end
+
 				else
 					self._ESP:SetOptions(self:_buildESPConfig())
 				end
@@ -743,6 +772,35 @@ function LimbExtender:_processDirtyWork()
 			end
 		else
 			if self._ESP then self._ESP:Destroy(); self._ESP = nil end
+		end
+	end
+
+	if self._dirtyCHAMS then
+		self._dirtyCHAMS = false
+		if s.CHAMS then
+			local chamsModule = ensureCHAMSLoaded()
+			if chamsModule then
+				self._CHAMS = chamsModule
+				local config = self:_buildChamsConfig()
+				for _, entry in pairs(self._playerCache) do
+					if entry.Character then
+						local updated = chamsModule.updateHighlight(entry.Character, self._chamsSourceKey, config)
+						if not updated then
+							chamsModule.addHighlight(entry.Character, self._chamsSourceKey, config, s.CHAMS_PRIORITY)
+						end
+					end
+				end
+			else
+				s.CHAMS = false
+			end
+		else
+			if self._CHAMS then
+				for _, entry in pairs(self._playerCache) do
+					if entry.Character then
+						self._CHAMS.removeHighlight(entry.Character, self._chamsSourceKey)
+					end
+				end
+			end
 		end
 	end
 
@@ -774,7 +832,7 @@ function LimbExtender:_processDirtyWork()
 		end
 	end
 
-	if self._dirtyRestart or self._dirtyCosmetic or self._dirtyESP then
+	if self._dirtyRestart or self._dirtyCosmetic or self._dirtyESP or self._dirtyCHAMS then
 		self._workScheduled = true
 		task_spawn(function() self:_processDirtyWork() end)
 	end
@@ -800,10 +858,16 @@ function LimbExtender:_doRestartBatched()
 				if self._ESP and entry.Character then
 					self._ESP:Untrack(entry.Character)
 				end
+				if self._CHAMS and entry.Character then
+					self._CHAMS.removeHighlight(entry.Character, self._chamsSourceKey)
+				end
 			elseif entry and entry.Character then
 				limbData.instanceLookup[entry.Character] = nil
 				if self._ESP then
 					self._ESP:Untrack(entry.Character)
+				end
+				if self._CHAMS then
+					self._CHAMS.removeHighlight(entry.Character, self._chamsSourceKey)
 				end
 				cache[keys[j]] = nil
 			end
@@ -1026,6 +1090,7 @@ function LimbExtender.new(userSettings)
 		_playerCache         = limbData.playerCache,
 		_manager             = nil,
 		_ESP                 = nil,
+		_CHAMS               = nil,
 		_running             = false,
 		_destroyed           = false,
 		_npcIdMap            = {},
@@ -1035,6 +1100,7 @@ function LimbExtender.new(userSettings)
 		_dirtyRestart        = false,
 		_dirtyCosmetic       = false,
 		_dirtyESP            = false,
+		_dirtyCHAMS          = false,
 		_suppressOnLimbLost  = false,
 		_workScheduled       = false,
 		_restartLock         = false,
@@ -1048,6 +1114,7 @@ function LimbExtender.new(userSettings)
 		_localHRP            = nil,
 		_dynKeys             = nil,
 		_dynNextIndex        = 1,
+		_chamsSourceKey      = nextChamsSourceKey(),
 	}, LimbExtender)
 
 	limbData.targetLimbName = self._settings.TARGET_LIMB
@@ -1079,6 +1146,15 @@ function LimbExtender.new(userSettings)
 			self._ESP = espModule.new(self:_buildESPConfig())
 		else
 			self._settings.ESP = false
+		end
+	end
+
+	if self._settings.CHAMS then
+		local chamsModule = ensureCHAMSLoaded()
+		if chamsModule then
+			self._CHAMS = chamsModule
+		else
+			self._settings.CHAMS = false
 		end
 	end
 
@@ -1125,6 +1201,16 @@ function LimbExtender:_buildESPConfig()
 	}
 end
 
+function LimbExtender:_buildChamsConfig()
+	local s = self._settings
+	return {
+		FillColor = s.CHAMS_FILL_COLOR,
+		OutlineColor = s.CHAMS_OUTLINE_COLOR,
+		FillTransparency = s.CHAMS_FILL_TRANSPARENCY,
+		OutlineTransparency = s.CHAMS_OUTLINE_TRANSPARENCY,
+	}
+end
+
 function LimbExtender:Start()
 	if self._destroyed or self._running then return end
 	self._running = true
@@ -1137,7 +1223,7 @@ function LimbExtender:Start()
 
 	self:_runGameScriptIfNeeded()
 
-	if self._dirtyRestart or self._dirtyCosmetic or self._dirtyESP then
+	if self._dirtyRestart or self._dirtyCosmetic or self._dirtyESP or self._dirtyCHAMS then
 		self._workScheduled = true
 		task_spawn(function() self:_processDirtyWork() end)
 	end
@@ -1159,6 +1245,9 @@ function LimbExtender:Stop()
 
 	self._manager:Stop()
 	for cacheKey, entry in pairs(self._playerCache) do
+		if self._CHAMS and entry.Character then
+			self._CHAMS.removeHighlight(entry.Character, self._chamsSourceKey)
+		end
 		sharedRestoreLimb(self, cacheKey, entry.Limb)
 	end
 	table_clear(self._playerCache)
@@ -1221,9 +1310,13 @@ function LimbExtender:Set(key, value)
 		return
 	end
 
+	local isCHAMSKey = key == "CHAMS" or (type(key) == "string" and key:sub(1,6) == "CHAMS_")
+
 	if RESTART_KEYS[key] then
 		if key == "TARGET_LIMB" then limbData.targetLimbName = value end
 		self._dirtyRestart = true
+	elseif isCHAMSKey then
+		self._dirtyCHAMS = true
 	else
 		self._dirtyCosmetic = true
 	end
@@ -1260,6 +1353,13 @@ end
 function LimbExtender:Destroy()
 	self:Stop()
 	self._destroyed = true
+	if self._CHAMS then
+		for _, entry in pairs(self._playerCache) do
+			if entry.Character then
+				self._CHAMS.removeHighlight(entry.Character, self._chamsSourceKey)
+			end
+		end
+	end
 	if self._ESP then self._ESP:Destroy(); self._ESP = nil end
 	limbData.terminate = nil
 end
