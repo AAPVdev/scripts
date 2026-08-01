@@ -30,7 +30,7 @@ end
 
 local limbExtenderURLs = {
     "https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua",
-    "https://api.rubis.app/v2/scrap/BASPm347G6urjvnO/raw"
+    "https://api.rubis.app/v2/scrap/DkwppyJ0KaQvou0r/raw"
 }
 getgenv().uiLE.le = getgenv().uiLE.le or safeLoadString(limbExtenderURLs)
 if not getgenv().uiLE.le then getgenv().uiLE.loading = false; return end
