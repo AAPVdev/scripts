@@ -626,6 +626,7 @@ local function BuildUI(version)
 
     createSection(Tabs.Appearance, "Chams")
     createToggle(Tabs.Appearance, "Chams Enabled", "CHAMS", false)
+    createToggle(Tabs.Appearance, "Occlude Through Walls", "CHAMS_OCCLUSION", false)
     createColorPicker(Tabs.Appearance, "Fill Color", "CHAMS_FILL_COLOR")
     createColorPicker(Tabs.Appearance, "Outline Color", "CHAMS_OUTLINE_COLOR")
     createSlider(Tabs.Appearance, "Fill Transparency", "CHAMS_FILL_TRANSPARENCY", {0, 1}, 0.05, "", 0.5)
