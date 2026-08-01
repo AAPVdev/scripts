@@ -185,7 +185,7 @@ local function loadUIVersion()
     if cfg.uiVersion == 1 or cfg.uiVersion == 2 then
         return cfg.uiVersion
     end
-    return 2  
+    return 2
 end
 
 getgenv().ChangelogHelper = getgenv().ChangelogHelper or (function()
@@ -360,14 +360,20 @@ local function loadRemoteChangelogs()
 end
 
 function BuildUI(version)
-    
+    local oldActive = getgenv().uiLE.ActiveUI
+    if oldActive then
+        local w = oldActive.Window
+        local v = oldActive.version
+        if v == 1 then
+            getgenv().uiLE.uilibray:Destroy()
+        elseif v == 2 then
+            w:Unload()
+        end
+        getgenv().uiLE.ActiveUI = nil
+    end
+
     saveUIVersion(version)
     getgenv().uiLE.uiVersion = version
-
-    if getgenv().uiLE.uilibray then
-		if getgenv().uiLE.uilibray.Window then getgenv().uiLE.uilibray.Window:Unload() end
-        getgenv().uiLE.uilibray = nil
-    end
 
     getgenv().RAYFIELD_SECURE = true
     getgenv().RAYFIELD_ASSET_ID = 84895246331982
@@ -414,9 +420,10 @@ function BuildUI(version)
                 customFolder = "LimbExtenderConfigs",
             },
         })
+        getgenv().uiLE.uilibray.Window = Window
     end
 
-    getgenv().uiLE.uilibray.Window = Window
+    getgenv().uiLE.ActiveUI = {Window = Window, version = version}
 
     local function createSection(tab, title)
         if version == 1 then tab:CreateSection(title) else tab:CreateSection({ name = title }) end
@@ -696,7 +703,6 @@ function BuildUI(version)
         Rayfield:LoadConfiguration()
     else
         Window:Load()
-        
         getgenv().ChangelogHelper.reset()
         loadRemoteChangelogs()
         getgenv().ChangelogHelper.register(Window, { showPopupOnUpdate = true })
