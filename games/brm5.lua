@@ -6,7 +6,8 @@ local localplayer = Players.LocalPlayer
 
 local getNil = function(name, class)
     for _, v in next, getnilinstances() do
-        if v.ClassName == class and v.Name == name then
+        if v.ClassName == class and v.Name == name then        
+            setthreadidentity(2)
             return v
         end
     end
