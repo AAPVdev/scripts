@@ -549,7 +549,6 @@ local DEFAULTS = {
 	CHAMS_OUTLINE_COLOR       = Color3.fromRGB(255, 255, 255),
 	CHAMS_FILL_TRANSPARENCY   = 0.5,
 	CHAMS_OUTLINE_TRANSPARENCY= 0.5,
-	CHAMS_PRIORITY            = 100,
 	DYNAMIC_SCALE_ENABLED     = true,
 	DYNAMIC_SCALE_RANGE_MULT  = 1.5,
 	DYNAMIC_SCALE_UPDATE_RATE = 15,
@@ -731,7 +730,7 @@ function LimbExtender:_applyLimbs(player, char, limb)
 		end
 	end
 	if self._settings.CHAMS and self._CHAMS then
-		self._CHAMS.addHighlight(char, self._chamsSourceKey, self:_buildChamsConfig(), self._settings.CHAMS_PRIORITY)
+		self._CHAMS.addHighlight(char, self._chamsSourceKey, self:_buildChamsConfig())
 	end
 end
 
@@ -786,7 +785,7 @@ function LimbExtender:_processDirtyWork()
 					if entry.Character then
 						local updated = chamsModule.updateHighlight(entry.Character, self._chamsSourceKey, config)
 						if not updated then
-							chamsModule.addHighlight(entry.Character, self._chamsSourceKey, config, s.CHAMS_PRIORITY)
+							chamsModule.addHighlight(entry.Character, self._chamsSourceKey, config)
 						end
 					end
 				end
