@@ -1,7 +1,6 @@
 local extender = ...
 
 local Players = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
 local localplayer = Players.LocalPlayer
 
 local getNil = function(name, class)
@@ -20,50 +19,36 @@ setthreadidentity(2)
 local WorldService = require(worS)
 local ReplicatorService = require(repS)
 
-local actorLookup = {}
-
-for uid, actor in ReplicatorService.Actors do
-    if actor.Character then
-        actorLookup[actor.Character] = actor
-    end
-end
-
-local realActors = ReplicatorService.Actors
-local proxy = setmetatable({}, {
-    __index = realActors,
-    __newindex = function(_, uid, actor)
-        
-        local oldActor = rawget(realActors, uid)
-        if oldActor and oldActor.Character then
-            actorLookup[oldActor.Character] = nil
-        end
-        realActors[uid] = actor
-        if actor and actor.Character then
-            actorLookup[actor.Character] = actor
-        end
-    end,
-    __pairs = function() return pairs(realActors) end,
-    __len = function() return #realActors end,
-})
-ReplicatorService.Actors = proxy
-
 local function customGetPlayer(model)
-    local actor = actorLookup[model]
-    return actor and actor.Owner
+    for _, actor in pairs(ReplicatorService.Actors) do
+        if actor.Character == model then
+            return actor.Owner
+        end
+    end
+    return nil
 end
 
 local connections = {}
 
 local function registerIfPlayer(model)
     if not model:IsA("Model") then return end
+
     local player = customGetPlayer(model)
     if player and player ~= localplayer then
         extender:RegisterPlayerCharacter(player, model)
+    else
+        task.defer(function()
+            if model.Parent then
+                local retryPlayer = customGetPlayer(model)
+                if retryPlayer and retryPlayer ~= localplayer then
+                    extender:RegisterPlayerCharacter(retryPlayer, model)
+                end
+            end
+        end)
     end
 end
 
 local function setup()
-    
     for _, conn in ipairs(connections) do
         conn:Disconnect()
     end
@@ -73,7 +58,6 @@ local function setup()
     extender:Set("GET_PLAYER_FROM_CHARACTER", customGetPlayer)
 
     if extender:Get("PLAYER_ENABLED") then
-        
         for _, model in ipairs(WorldService.ActiveWorld:GetChildren()) do
             registerIfPlayer(model)
         end
