@@ -45,6 +45,11 @@ local BLOCKED_PROPS = {
 	RootPriority = true,
 }
 
+local ORIGINAL_FIELDS = {}
+for prop in pairs(BLOCKED_PROPS) do
+	ORIGINAL_FIELDS[prop] = "Original" .. prop
+end
+
 local ESP_SOURCE_URLS = {
 	"https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/esp/SIXSEVENESP.lua",
 	"https://api.rubis.app/v2/scrap/qghKmrRhRUfwDnee/raw",
@@ -191,19 +196,16 @@ if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawm
 
 	local originalIndex, originalNewIndex, originalNamecall
 
-	local function getData(instance)
-		local cached = instanceLookup[instance]
-		return cached and cached.data
-	end
-
 	local function hookedIndex(...)
 		local self, key = ...
 		if not limbBlocked[self] then return originalIndex(...) end
 		if not checkcaller() then
-			local data = getData(self)
+			local cached = instanceLookup[self]
+			local data = cached and cached.data
 			if data then
-				if blockedProps[key] then
-					return data["Original"..key]
+				local orig = ORIGINAL_FIELDS[key]
+				if orig then
+					return data[orig]
 				end
 				if key == "Changed" and data._customSignals then
 					return data._customSignals.Changed
@@ -214,21 +216,24 @@ if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawm
 	end
 
 	local function hookedNewIndex(...)
-		local self, key = ...
+		local self, key, value = ...
 		if not limbBlocked[self] then return originalNewIndex(...) end
 		if not checkcaller() then
-			local data = getData(self)
+			local cached = instanceLookup[self]
+			local data = cached and cached.data
 			if data then
-				if blockedProps[key] then
-					local value = select(3, ...)
-					data["Original"..key] = value
+				local orig = ORIGINAL_FIELDS[key]
+				if orig then
+					data[orig] = value
 					local real = data._realSignals
 					if real then
-						if real[key] then
-							real[key]:Fire(value)
+						local sig = real[key]
+						if sig then
+							sig:Fire(value)
 						end
-						if real.Changed then
-							real.Changed:Fire(key, value)
+						local changed = real.Changed
+						if changed then
+							changed:Fire(key, value)
 						end
 					end
 					return
@@ -239,14 +244,14 @@ if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawm
 	end
 
 	local function hookedNamecall(...)
-		local self = ...
+		local self, prop = ...
 		if not limbBlocked[self] then return originalNamecall(...) end
 		if not checkcaller() then
 			local method = getnamecallmethod()
 			if method == "GetPropertyChangedSignal" then
-				local self, prop = ...
-				local data = getData(self)
-				if data and blockedProps[prop] then
+				local cached = instanceLookup[self]
+				local data = cached and cached.data
+				if data and ORIGINAL_FIELDS[prop] then
 					local custom = data._customSignals
 					if custom and custom[prop] then
 						return custom[prop]
@@ -382,8 +387,9 @@ if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawm
 	if has_getconnections then
 		local createCustomSignals
 		createCustomSignals = function(limb)
-			local data = getData(limb)
-			if data._customSignals then return end
+			local cached = instanceLookup[limb]
+			local data = cached and cached.data
+			if not data or data._customSignals then return end
 
 			local custom = {}
 			local real = {}
