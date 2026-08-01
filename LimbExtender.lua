@@ -511,7 +511,6 @@ local DEFAULTS = {
 	DYNAMIC_SCALE_ENABLED     = true,
 	DYNAMIC_SCALE_RANGE_MULT  = 1.5,
 	DYNAMIC_SCALE_UPDATE_RATE = 15,
-	DEBUG_MONITOR = false,
 }
 
 local function mergeSettings(user)
@@ -938,47 +937,6 @@ function LimbExtender:_updateLocalCharacter()
 	end
 end
 
-function LimbExtender:EnableDebugMonitor()
-	if self._debugActive then return end
-	self._debugActive = true
-	print("[LimbExtender] Debug monitor started")
-	task_spawn(function()
-		while self._debugActive do
-			local count = 0
-			for _ in pairs(self._playerCache) do
-				count = count + 1
-			end
-
-			local suppress = self._suppressOnLimbLost
-			local running = self._running
-
-			print(string.format(
-				"[LimbExtender DEBUG] Cache entries: %d | suppressOnLimbLost: %s | running: %s",
-				count, tostring(suppress), tostring(running)
-			))
-
-			if hooksInstalled then
-				local beCount = 0
-				for _, entry in pairs(self._playerCache) do
-					local signals = rawget(entry, "_realSignals")
-					if signals then
-						for _ in pairs(signals) do
-							beCount = beCount + 1
-						end
-					end
-				end
-				print("[LimbExtender DEBUG] Live BindableEvents: " .. beCount)
-			end
-
-			task.wait(10)
-		end
-	end)
-end
-
-function LimbExtender:DisableDebugMonitor()
-	self._debugActive = false
-end
-
 function LimbExtender.new(userSettings)
 	local self = setmetatable({
 		_settings            = mergeSettings(userSettings),
@@ -1005,7 +963,6 @@ function LimbExtender.new(userSettings)
 		_nextDynamicUpdate   = 0,
 		_localChar           = nil,
 		_localHRP            = nil,
-		_debugActive         = false,
 	}, LimbExtender)
 
 	limbData.targetLimbName = self._settings.TARGET_LIMB
@@ -1047,10 +1004,6 @@ function LimbExtender.new(userSettings)
 
 	if self._settings.DYNAMIC_SCALE_ENABLED then
 		self:SetDynamicScale(true)
-	end
-
-	if self._settings.DEBUG_MONITOR then
-		self:EnableDebugMonitor()
 	end
 
 	limbData.terminate = function() self:Destroy() end
@@ -1211,7 +1164,6 @@ function LimbExtender:UnregisterPlayerCharacter(player, model)
 end
 
 function LimbExtender:Destroy()
-	self:DisableDebugMonitor()
 	self:Stop()
 	self._destroyed = true
 	if self._ESP then self._ESP:Destroy(); self._ESP = nil end
