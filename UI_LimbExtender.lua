@@ -359,7 +359,7 @@ local function loadRemoteChangelogs()
     return false
 end
 
-function BuildUI(version)
+local function BuildUI(version)
     local oldActive = getgenv().uiLE.ActiveUI
     if oldActive then
         local w = oldActive.Window
