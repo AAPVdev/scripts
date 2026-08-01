@@ -6,7 +6,6 @@ end
 local cloneref = missing("function", cloneref, function(obj) return obj end)
 
 local Players = cloneref(game:GetService("Players"))
-local WS = cloneref(game:GetService("Workspace"))
 local localPlayer = Players.LocalPlayer
 
 local globalEnv = type(getgenv) == "function" and getgenv() or _G
@@ -156,12 +155,6 @@ local function buildLimbProps(limb, entry, settings)
 	return props, newVec, isHRP
 end
 
-local function write(limb, props)
-	for k, v in pairs(props) do
-		limb[k] = v
-	end
-end
-
 local hooksInstalled = false
 
 local has_checkcaller, has_getnamecallmethod, has_getconnections = false, false, false
@@ -187,12 +180,10 @@ end
 
 if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawmetatable and has_setreadonly)) and not hooksInstalled then
 
-	local checkcaller = checkcaller
 	local blockedProps = BLOCKED_PROPS
 	local blockedPropsOriginal = BLOCKED_PROPS
 	local instanceLookup = limbData.instanceLookup
 	local Instance_new = Instance.new
-	local pcall = pcall
 	local getnamecallmethod = has_getnamecallmethod and getnamecallmethod or nil
 	local getconnections = has_getconnections and getconnections or nil
 
@@ -263,23 +254,21 @@ if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawm
 	local function scrubUpvalues(fn)
 		if not (has_debug_upvalues and has_debug_setupvalue and has_newproxy) then return end
 		if type(fn) ~= "function" then return end
-		pcall(function()
-			local upvals = debug.getupvalues(fn)
-			for i, val in ipairs(upvals) do
-				if type(val) == "table" and val ~= blockedPropsOriginal then
-					local proxy = newproxy(true)
-					local proxyMt = getmetatable(proxy)
-					proxyMt.__index = val
-					proxyMt.__newindex = function(_, k, v) val[k] = v end
-					proxyMt.__pairs = function() return pairs(val) end
-					local valMt = getmetatable(val)
-					if valMt and valMt.__call then
-						proxyMt.__call = function(_, ...) return val(...) end
-					end
-					debug.setupvalue(fn, i, proxy)
+		local upvals = debug.getupvalues(fn)
+		for i, val in ipairs(upvals) do
+			if type(val) == "table" and val ~= blockedPropsOriginal then
+				local proxy = newproxy(true)
+				local proxyMt = getmetatable(proxy)
+				proxyMt.__index = val
+				proxyMt.__newindex = function(_, k, v) val[k] = v return end
+				proxyMt.__pairs = function() return pairs(val) end
+				local valMt = getmetatable(val)
+				if valMt and valMt.__call then
+					proxyMt.__call = function(_, ...) return val(...) end
 				end
+				debug.setupvalue(fn, i, proxy)
 			end
-		end)
+		end
 	end
 
 	local function isNewcclosureDetected()
@@ -287,19 +276,18 @@ if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawm
 			return nil
 		end
 
-		local function spawnProbe()
-			local overflow = nil
-			local finished = false
-
+		local function probeInSpawn()
+			local result = nil
+			local done = false
 			task.spawn(function()
 				local capturedFunction = nil
-
 				xpcall(function()
 					return game.AAAAAAA
 				end, function()
 					capturedFunction = debug.info(2, "f")
 				end)
 
+				local overflow = false
 				if capturedFunction then
 					local recursiveCaller
 					recursiveCaller = function(depth)
@@ -309,36 +297,39 @@ if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawm
 							capturedFunction(workspace, "Name")
 						end
 					end
-
-					local success, err = pcall(recursiveCaller, 1)
-					overflow = (not success) and type(err) == "string" and err:find("stack overflow")
+					local ok, err = pcall(recursiveCaller, 1)
+					overflow = not ok and type(err) == "string" and err:find("stack overflow")
 				else
 					overflow = true
 				end
 
-				finished = true
+				result = { captured = capturedFunction, overflow = overflow }
+				done = true
 			end)
-
-			repeat task.wait() until finished
-			return overflow
+			repeat task.wait() until done
+			return result
 		end
 
-		local baselineOverflow = spawnProbe()
-		if baselineOverflow == nil or baselineOverflow == true then
-			return nil
+		local base = probeInSpawn()
+		if base.overflow then
+			return false
 		end
 
 		local orig
 		orig = hookmetamethod(game, "__index", newcclosure(function(...)
 			return orig(...)
 		end))
-		local hookOverflow = spawnProbe()
+		local hookProbe = probeInSpawn()
 		hookmetamethod(game, "__index", orig)
 
-		return hookOverflow
+		if hookProbe.overflow then
+			return true
+		else
+			return false
+		end
 	end
 
-	local useNewcclosure = false
+	local useNewcclosure = true
 	if has_hookmetamethod and has_newcclosure then
 		local detected = isNewcclosureDetected()
 		useNewcclosure = (detected == false)
@@ -349,19 +340,15 @@ if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawm
 		local nidx = newcclosure(hookedNewIndex)
 		local nm = has_getnamecallmethod and newcclosure(hookedNamecall) or nil
 
-		scrubUpvalues(idx)
-		scrubUpvalues(nidx)
-		if nm then scrubUpvalues(nm) end
-		scrubUpvalues(getData)
-
 		originalIndex    = hookmetamethod(game, "__index",    idx)
 		originalNewIndex = hookmetamethod(game, "__newindex", nidx)
-		if has_getnamecallmethod then
+		if nm then
 			originalNamecall = hookmetamethod(game, "__namecall", nm)
 		end
+
 		hooksInstalled = true
 	elseif has_getrawmetatable and has_setreadonly then
-		local mt = getrawmetatable(WS)
+		local mt = getrawmetatable(game)
 		setreadonly(mt, false)
 
 		originalIndex    = mt.__index
@@ -524,7 +511,6 @@ local DEFAULTS = {
 	DYNAMIC_SCALE_ENABLED     = true,
 	DYNAMIC_SCALE_RANGE_MULT  = 1.5,
 	DYNAMIC_SCALE_UPDATE_RATE = 15,
-	DEBUG_MONITOR = false,
 }
 
 local function mergeSettings(user)
@@ -589,7 +575,14 @@ local function sharedApplyLimb(parent, cacheKey, char, limb)
 	end
 
 	local props, newVec, isHRP = buildLimbProps(limb, entry, parent._settings)
-	write(limb, props)
+	limb.Size         = props.Size
+	limb.Transparency = props.Transparency
+	limb.CanCollide   = props.CanCollide
+	limb.Massless     = props.Massless
+	if props.RootPriority ~= nil then
+		limb.RootPriority = props.RootPriority
+	end
+
 	applyEntryTargets(entry, props, newVec, isHRP, parent._settings)
 
 	setupLimbWatchdog(entry, limb, parent._settings)
@@ -617,13 +610,11 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 
 	if activeLimb and activeLimb.Parent then
 		if entry._humanoidStateConn then entry._humanoidStateConn:Disconnect() end
-		pcall(write, activeLimb, {
-			Size                     = entry.OriginalSize,
-			Transparency             = entry.OriginalTransparency,
-			CanCollide               = entry.OriginalCanCollide,
-			Massless                 = entry.OriginalMassless,
-			RootPriority             = entry.OriginalRootPriority,
-		})
+		activeLimb.Size         = entry.OriginalSize
+		activeLimb.Transparency = entry.OriginalTransparency
+		activeLimb.CanCollide   = entry.OriginalCanCollide
+		activeLimb.Massless     = entry.OriginalMassless
+		activeLimb.RootPriority = entry.OriginalRootPriority
 	end
 
 	if entry._realSignals then
@@ -650,7 +641,14 @@ local function reapplyCosmeticToEntry(entry, settings)
 	end
 
 	local props, newVec, isHRP = buildLimbProps(limb, entry, settings)
-	write(limb, props)
+	limb.Size         = props.Size
+	limb.Transparency = props.Transparency
+	limb.CanCollide   = props.CanCollide
+	limb.Massless     = props.Massless
+	if props.RootPriority ~= nil then
+		limb.RootPriority = props.RootPriority
+	end
+
 	applyEntryTargets(entry, props, newVec, isHRP, settings)
 
 	setupLimbWatchdog(entry, limb, settings)
@@ -874,7 +872,7 @@ function LimbExtender:SetDynamicScale(enabled, rangeMult)
 		for _, entry in pairs(self._playerCache) do
 			if entry.Limb and entry.BaseTargetSize then
 				entry.TargetSize = entry.BaseTargetSize
-				write(entry.Limb, { Size = entry.BaseTargetSize })
+				entry.Limb.Size = entry.BaseTargetSize
 			end
 		end
 	end
@@ -939,47 +937,6 @@ function LimbExtender:_updateLocalCharacter()
 	end
 end
 
-function LimbExtender:EnableDebugMonitor()
-	if self._debugActive then return end
-	self._debugActive = true
-	print("[LimbExtender] Debug monitor started")
-	task_spawn(function()
-		while self._debugActive do
-			local count = 0
-			for _ in pairs(self._playerCache) do
-				count = count + 1
-			end
-
-			local suppress = self._suppressOnLimbLost
-			local running = self._running
-
-			print(string.format(
-				"[LimbExtender DEBUG] Cache entries: %d | suppressOnLimbLost: %s | running: %s",
-				count, tostring(suppress), tostring(running)
-			))
-
-			if hooksInstalled then
-				local beCount = 0
-				for _, entry in pairs(self._playerCache) do
-					local signals = rawget(entry, "_realSignals")
-					if signals then
-						for _ in pairs(signals) do
-							beCount = beCount + 1
-						end
-					end
-				end
-				print("[LimbExtender DEBUG] Live BindableEvents: " .. beCount)
-			end
-
-			task.wait(10)
-		end
-	end)
-end
-
-function LimbExtender:DisableDebugMonitor()
-	self._debugActive = false
-end
-
 function LimbExtender.new(userSettings)
 	local self = setmetatable({
 		_settings            = mergeSettings(userSettings),
@@ -1006,7 +963,6 @@ function LimbExtender.new(userSettings)
 		_nextDynamicUpdate   = 0,
 		_localChar           = nil,
 		_localHRP            = nil,
-		_debugActive         = false,
 	}, LimbExtender)
 
 	limbData.targetLimbName = self._settings.TARGET_LIMB
@@ -1048,10 +1004,6 @@ function LimbExtender.new(userSettings)
 
 	if self._settings.DYNAMIC_SCALE_ENABLED then
 		self:SetDynamicScale(true)
-	end
-
-	if self._settings.DEBUG_MONITOR then
-		self:EnableDebugMonitor()
 	end
 
 	limbData.terminate = function() self:Destroy() end
@@ -1212,7 +1164,6 @@ function LimbExtender:UnregisterPlayerCharacter(player, model)
 end
 
 function LimbExtender:Destroy()
-	self:DisableDebugMonitor()
 	self:Stop()
 	self._destroyed = true
 	if self._ESP then self._ESP:Destroy(); self._ESP = nil end
