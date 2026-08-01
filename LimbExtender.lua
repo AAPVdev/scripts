@@ -26,6 +26,7 @@ local Vector3_new = Vector3.new
 limbData.playerCache    = limbData.playerCache    or {}
 limbData.instanceLookup = limbData.instanceLookup or setmetatable({}, { __mode = "k" })
 limbData.npcIdCounter   = limbData.npcIdCounter   or 0
+limbData.limbBlocked    = limbData.limbBlocked    or setmetatable({}, { __mode = "k" })  
 
 if type(limbData.terminate) == "function" then
 	limbData.terminate()
@@ -183,6 +184,7 @@ if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawm
 	local blockedProps = BLOCKED_PROPS
 	local blockedPropsOriginal = BLOCKED_PROPS
 	local instanceLookup = limbData.instanceLookup
+	local limbBlocked = limbData.limbBlocked  
 	local Instance_new = Instance.new
 	local getnamecallmethod = has_getnamecallmethod and getnamecallmethod or nil
 	local getconnections = has_getconnections and getconnections or nil
@@ -196,6 +198,7 @@ if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawm
 
 	local function hookedIndex(...)
 		local self, key = ...
+		if not limbBlocked[self] then return originalIndex(...) end
 		if not checkcaller() then
 			local data = getData(self)
 			if data then
@@ -212,6 +215,7 @@ if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawm
 
 	local function hookedNewIndex(...)
 		local self, key = ...
+		if not limbBlocked[self] then return originalNewIndex(...) end
 		if not checkcaller() then
 			local data = getData(self)
 			if data then
@@ -235,6 +239,8 @@ if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawm
 	end
 
 	local function hookedNamecall(...)
+		local self = ...
+		if not limbBlocked[self] then return originalNamecall(...) end
 		if not checkcaller() then
 			local method = getnamecallmethod()
 			if method == "GetPropertyChangedSignal" then
@@ -412,6 +418,8 @@ if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawm
 					migrateSignal(sig, custom[prop])
 				end
 			end
+
+			limbBlocked[limb] = true
 		end
 
 		limbData._createCustomSignals = createCustomSignals
@@ -422,6 +430,10 @@ local function createCustomSignals(limb)
 	if limbData._createCustomSignals then
 		limbData._createCustomSignals(limb)
 	end
+end
+
+local function removeCustomSignals(limb)
+	limbData.limbBlocked[limb] = nil
 end
 
 local PROPS_TO_WATCH = {
@@ -610,6 +622,7 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 
 	if activeLimb and activeLimb.Parent then
 		if entry._humanoidStateConn then entry._humanoidStateConn:Disconnect() end
+		removeCustomSignals(activeLimb)  
 		activeLimb.Size         = entry.OriginalSize
 		activeLimb.Transparency = entry.OriginalTransparency
 		activeLimb.CanCollide   = entry.OriginalCanCollide
