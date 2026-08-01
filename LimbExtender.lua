@@ -26,7 +26,7 @@ local Vector3_new = Vector3.new
 limbData.playerCache    = limbData.playerCache    or {}
 limbData.instanceLookup = limbData.instanceLookup or setmetatable({}, { __mode = "k" })
 limbData.npcIdCounter   = limbData.npcIdCounter   or 0
-limbData.limbBlocked    = limbData.limbBlocked    or setmetatable({}, { __mode = "k" })  
+limbData.limbBlocked    = limbData.limbBlocked    or setmetatable({}, { __mode = "k" })
 
 if type(limbData.terminate) == "function" then
 	limbData.terminate()
@@ -184,7 +184,7 @@ if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawm
 	local blockedProps = BLOCKED_PROPS
 	local blockedPropsOriginal = BLOCKED_PROPS
 	local instanceLookup = limbData.instanceLookup
-	local limbBlocked = limbData.limbBlocked  
+	local limbBlocked = limbData.limbBlocked
 	local Instance_new = Instance.new
 	local getnamecallmethod = has_getnamecallmethod and getnamecallmethod or nil
 	local getconnections = has_getconnections and getconnections or nil
@@ -575,7 +575,13 @@ local function applyEntryTargets(entry, props, newVec, isHRP, settings)
 		entry.TargetRootPriority = -127
 	end
 	local size = newVec
-	entry.LimbRadius = math.max(size.X, size.Y, size.Z) / 2
+	local radius = math.max(size.X, size.Y, size.Z) / 2
+	entry.LimbRadius = radius
+	local rangeMult = settings.DYNAMIC_SCALE_RANGE_MULT or 1.0
+	entry._maxDistSq = (radius * rangeMult + 5) ^ 2
+	entry._minDistSq = (radius * 0.1) ^ 2
+	local rangeSq = entry._maxDistSq - entry._minDistSq
+	entry._rangeInvSq = (rangeSq > 0) and (1 / rangeSq) or 0
 end
 
 local function sharedApplyLimb(parent, cacheKey, char, limb)
@@ -619,10 +625,13 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 	entry.TargetMassless                 = nil
 	entry.TargetRootPriority             = nil
 	entry.LimbRadius                     = nil
+	entry._maxDistSq = nil
+	entry._minDistSq = nil
+	entry._rangeInvSq = nil
 
 	if activeLimb and activeLimb.Parent then
 		if entry._humanoidStateConn then entry._humanoidStateConn:Disconnect() end
-		removeCustomSignals(activeLimb)  
+		removeCustomSignals(activeLimb)
 		activeLimb.Size         = entry.OriginalSize
 		activeLimb.Transparency = entry.OriginalTransparency
 		activeLimb.CanCollide   = entry.OriginalCanCollide
@@ -859,6 +868,15 @@ function LimbExtender:_reapplyWatchdogs()
 	end
 end
 
+local function recalcEntryDistFields(entry, rangeMult)
+	if not entry.LimbRadius then return end
+	local radius = entry.LimbRadius
+	entry._maxDistSq = (radius * rangeMult + 5) ^ 2
+	entry._minDistSq = (radius * 0.1) ^ 2
+	local rangeSq = entry._maxDistSq - entry._minDistSq
+	entry._rangeInvSq = (rangeSq > 0) and (1 / rangeSq) or 0
+end
+
 function LimbExtender:SetDynamicScale(enabled, rangeMult)
 	local s = self._settings
 	s.DYNAMIC_SCALE_ENABLED = enabled
@@ -871,6 +889,9 @@ function LimbExtender:SetDynamicScale(enabled, rangeMult)
 		self._dynamicScaleConn = nil
 	end
 
+	self._dynKeys = nil
+	self._dynNextIndex = 1
+
 	if enabled then
 		self._nextDynamicUpdate = 0
 		local interval = 1 / (s.DYNAMIC_SCALE_UPDATE_RATE or 15)
@@ -881,16 +902,67 @@ function LimbExtender:SetDynamicScale(enabled, rangeMult)
 				self:_updateDynamicScales()
 			end
 		end)
+		local currentRangeMult = s.DYNAMIC_SCALE_RANGE_MULT or 1.0
+		for _, entry in pairs(self._playerCache) do
+			recalcEntryDistFields(entry, currentRangeMult)
+		end
 	else
 		for _, entry in pairs(self._playerCache) do
 			if entry.Limb and entry.BaseTargetSize then
 				entry.TargetSize = entry.BaseTargetSize
 				entry.Limb.Size = entry.BaseTargetSize
 			end
+			entry._maxDistSq = nil
+			entry._minDistSq = nil
+			entry._rangeInvSq = nil
 		end
 	end
 
 	self:_reapplyWatchdogs()
+end
+
+function LimbExtender:_updateSingleDynamicScale(entry, localPos)
+	local limb = entry.Limb
+	if not limb or not limb.Parent or not entry.OriginalSize or not entry.BaseTargetSize then return end
+	local maxDistSq = entry._maxDistSq
+	if not maxDistSq then return end
+
+	local diff = limb.Position - localPos
+	local sqDist = diff:Dot(diff)
+
+	if sqDist > maxDistSq then
+		if entry.TargetSize ~= entry.BaseTargetSize then
+			entry.TargetSize = entry.BaseTargetSize
+			entry._watchingRevert = true
+			limb.Size = entry.BaseTargetSize
+			entry._watchingRevert = false
+		end
+		return
+	end
+
+	local minDistSq = entry._minDistSq
+	if minDistSq and maxDistSq == minDistSq then return end
+	local rangeInvSq = entry._rangeInvSq
+	if not rangeInvSq or rangeInvSq <= 0 then
+		local dynamicSize = entry.BaseTargetSize
+		if (limb.Size - dynamicSize):Dot(limb.Size - dynamicSize) > 0.0025 then
+			entry.TargetSize = dynamicSize
+			entry._watchingRevert = true
+			limb.Size = dynamicSize
+			entry._watchingRevert = false
+		end
+		return
+	end
+
+	local factor = math.sqrt(math.clamp((sqDist - minDistSq) * rangeInvSq, 0, 1))
+	local dynamicSize = entry.OriginalSize:Lerp(entry.BaseTargetSize, factor)
+
+	if (limb.Size - dynamicSize):Dot(limb.Size - dynamicSize) > 0.0025 then
+		entry.TargetSize = dynamicSize
+		entry._watchingRevert = true
+		limb.Size = dynamicSize
+		entry._watchingRevert = false
+	end
 end
 
 function LimbExtender:_updateDynamicScales()
@@ -899,44 +971,36 @@ function LimbExtender:_updateDynamicScales()
 	if not localHRP then self:_updateLocalCharacter(); return end
 
 	local localPos = localHRP.Position
-	local rangeMult = self._settings.DYNAMIC_SCALE_RANGE_MULT or 1.0
+	local cache = self._playerCache
+	local batchSize = 20
 
-	for _, entry in pairs(self._playerCache) do
-		local limb = entry.Limb
-		if not limb or not limb.Parent then continue end
-		if not entry.OriginalSize or not entry.BaseTargetSize or not entry.LimbRadius then continue end
-
-		local radius = entry.LimbRadius
-		local maxDist = radius * rangeMult
-		local minDist = radius * 0.1
-		local range = maxDist - minDist
-		if range <= 0 then continue end
-
-		local limbPos = limb.Position
-		local diff = limbPos - localPos
-		local sqDist = diff:Dot(diff)
-		local sqThreshold = (maxDist + 5) * (maxDist + 5)
-
-		if sqDist > sqThreshold then
-			if entry.TargetSize ~= entry.BaseTargetSize then
-				entry.TargetSize = entry.BaseTargetSize
-				entry._watchingRevert = true
-				limb.Size = entry.BaseTargetSize
-				entry._watchingRevert = false
-			end
-			continue
+	if not self._dynKeys then
+		self._dynKeys = {}
+		for k in pairs(cache) do
+			table_insert(self._dynKeys, k)
 		end
+		self._dynNextIndex = 1
+	end
 
-		local dist = math.sqrt(sqDist)
-		local factor = math.clamp((dist - minDist) / range, 0, 1)
-		local dynamicSize = entry.OriginalSize:Lerp(entry.BaseTargetSize, factor)
-
-		if (limb.Size - dynamicSize).Magnitude > 0.05 then
-			entry.TargetSize = dynamicSize
-			entry._watchingRevert = true
-			limb.Size = dynamicSize
-			entry._watchingRevert = false
+	local processed = 0
+	while processed < batchSize and self._dynNextIndex <= #self._dynKeys do
+		local key = self._dynKeys[self._dynNextIndex]
+		local entry = cache[key]
+		if entry then
+			self:_updateSingleDynamicScale(entry, localPos)
 		end
+		self._dynNextIndex = self._dynNextIndex + 1
+		processed = processed + 1
+	end
+
+	if self._dynNextIndex > #self._dynKeys then
+		self._dynKeys = nil
+		self._dynNextIndex = 1
+	end
+
+	if processed == 0 then
+		self._dynKeys = nil
+		self._dynNextIndex = 1
 	end
 end
 
@@ -976,6 +1040,8 @@ function LimbExtender.new(userSettings)
 		_nextDynamicUpdate   = 0,
 		_localChar           = nil,
 		_localHRP            = nil,
+		_dynKeys             = nil,
+		_dynNextIndex        = 1,
 	}, LimbExtender)
 
 	limbData.targetLimbName = self._settings.TARGET_LIMB
@@ -1082,6 +1148,9 @@ function LimbExtender:Stop()
 		self._dynamicScaleConn = nil
 	end
 
+	self._dynKeys = nil
+	self._dynNextIndex = 1
+
 	self._manager:Stop()
 	for cacheKey, entry in pairs(self._playerCache) do
 		sharedRestoreLimb(self, cacheKey, entry.Limb)
@@ -1131,6 +1200,12 @@ function LimbExtender:Set(key, value)
 		return
 	elseif key == "DYNAMIC_SCALE_RANGE_MULT" then
 		s.DYNAMIC_SCALE_RANGE_MULT = value
+		if s.DYNAMIC_SCALE_ENABLED then
+			local rangeMult = value or 1.0
+			for _, entry in pairs(self._playerCache) do
+				recalcEntryDistFields(entry, rangeMult)
+			end
+		end
 		return
 	elseif key == "DYNAMIC_SCALE_UPDATE_RATE" then
 		s.DYNAMIC_SCALE_UPDATE_RATE = value
