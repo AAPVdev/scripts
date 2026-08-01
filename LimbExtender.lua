@@ -155,12 +155,6 @@ local function buildLimbProps(limb, entry, settings)
 	return props, newVec, isHRP
 end
 
-local function write(limb, props)
-	for k, v in pairs(props) do
-		limb[k] = v
-	end
-end
-
 local hooksInstalled = false
 
 local has_checkcaller, has_getnamecallmethod, has_getconnections = false, false, false
@@ -266,7 +260,7 @@ if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawm
 				local proxy = newproxy(true)
 				local proxyMt = getmetatable(proxy)
 				proxyMt.__index = val
-				proxyMt.__newindex = function(_, k, v) val[k] = v end
+				proxyMt.__newindex = function(_, k, v) val[k] = v return end
 				proxyMt.__pairs = function() return pairs(val) end
 				local valMt = getmetatable(val)
 				if valMt and valMt.__call then
@@ -274,7 +268,7 @@ if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawm
 				end
 				debug.setupvalue(fn, i, proxy)
 			end
-		end)
+		end
 	end
 
 	local function isNewcclosureDetected()
@@ -282,19 +276,18 @@ if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawm
 			return nil
 		end
 
-		local function spawnProbe()
-			local overflow = nil
-			local finished = false
-
+		local function probeInSpawn()
+			local result = nil
+			local done = false
 			task.spawn(function()
 				local capturedFunction = nil
-
 				xpcall(function()
 					return game.AAAAAAA
 				end, function()
 					capturedFunction = debug.info(2, "f")
 				end)
 
+				local overflow = false
 				if capturedFunction then
 					local recursiveCaller
 					recursiveCaller = function(depth)
@@ -304,33 +297,36 @@ if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawm
 							capturedFunction(workspace, "Name")
 						end
 					end
-
-					local success, err = pcall(recursiveCaller, 1)
-					overflow = (not success) and type(err) == "string" and err:find("stack overflow")
+					local ok, err = pcall(recursiveCaller, 1)
+					overflow = not ok and type(err) == "string" and err:find("stack overflow")
 				else
 					overflow = true
 				end
 
-				finished = true
+				result = { captured = capturedFunction, overflow = overflow }
+				done = true
 			end)
-
-			repeat task.wait() until finished
-			return overflow
+			repeat task.wait() until done
+			return result
 		end
 
-		local baselineOverflow = spawnProbe()
-		if baselineOverflow == nil or baselineOverflow == true then
-			return nil
+		local base = probeInSpawn()
+		if base.overflow then
+			return false
 		end
 
 		local orig
 		orig = hookmetamethod(game, "__index", newcclosure(function(...)
 			return orig(...)
 		end))
-		local hookOverflow = spawnProbe()
+		local hookProbe = probeInSpawn()
 		hookmetamethod(game, "__index", orig)
 
-		return hookOverflow
+		if hookProbe.overflow then
+			return true
+		else
+			return false
+		end
 	end
 
 	local useNewcclosure = true
@@ -580,7 +576,14 @@ local function sharedApplyLimb(parent, cacheKey, char, limb)
 	end
 
 	local props, newVec, isHRP = buildLimbProps(limb, entry, parent._settings)
-	write(limb, props)
+	limb.Size         = props.Size
+	limb.Transparency = props.Transparency
+	limb.CanCollide   = props.CanCollide
+	limb.Massless     = props.Massless
+	if props.RootPriority ~= nil then
+		limb.RootPriority = props.RootPriority
+	end
+
 	applyEntryTargets(entry, props, newVec, isHRP, parent._settings)
 
 	setupLimbWatchdog(entry, limb, parent._settings)
@@ -608,13 +611,11 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 
 	if activeLimb and activeLimb.Parent then
 		if entry._humanoidStateConn then entry._humanoidStateConn:Disconnect() end
-		write({
-			Size                     = entry.OriginalSize,
-			Transparency             = entry.OriginalTransparency,
-			CanCollide               = entry.OriginalCanCollide,
-			Massless                 = entry.OriginalMassless,
-			RootPriority             = entry.OriginalRootPriority,
-		})
+		activeLimb.Size         = entry.OriginalSize
+		activeLimb.Transparency = entry.OriginalTransparency
+		activeLimb.CanCollide   = entry.OriginalCanCollide
+		activeLimb.Massless     = entry.OriginalMassless
+		activeLimb.RootPriority = entry.OriginalRootPriority
 	end
 
 	if entry._realSignals then
@@ -641,7 +642,14 @@ local function reapplyCosmeticToEntry(entry, settings)
 	end
 
 	local props, newVec, isHRP = buildLimbProps(limb, entry, settings)
-	write(limb, props)
+	limb.Size         = props.Size
+	limb.Transparency = props.Transparency
+	limb.CanCollide   = props.CanCollide
+	limb.Massless     = props.Massless
+	if props.RootPriority ~= nil then
+		limb.RootPriority = props.RootPriority
+	end
+
 	applyEntryTargets(entry, props, newVec, isHRP, settings)
 
 	setupLimbWatchdog(entry, limb, settings)
@@ -865,7 +873,7 @@ function LimbExtender:SetDynamicScale(enabled, rangeMult)
 		for _, entry in pairs(self._playerCache) do
 			if entry.Limb and entry.BaseTargetSize then
 				entry.TargetSize = entry.BaseTargetSize
-				write(entry.Limb, { Size = entry.BaseTargetSize })
+				entry.Limb.Size = entry.BaseTargetSize
 			end
 		end
 	end
