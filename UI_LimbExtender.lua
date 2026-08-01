@@ -33,7 +33,7 @@ local limbExtenderURLs = {
     "https://api.rubis.app/v2/scrap/BASPm347G6urjvnO/raw"
 }
 getgenv().uiLE.le = getgenv().uiLE.le or safeLoadString(limbExtenderURLs)
-if not getgenv().uiLE.le then getgenv().uiLE.loading = false; return end  -- Fixed: added semicolon
+if not getgenv().uiLE.le then getgenv().uiLE.loading = false; return end
 
 if getgenv().uiLE.gcontroller then
     getgenv().uiLE.gcontroller:Destroy()
@@ -289,8 +289,8 @@ getgenv().ChangelogHelper = getgenv().ChangelogHelper or (function()
         local function significant(oldV, newV)
             if not newV then return false end
             if not oldV then return true end
-            local o1,o2 = parseFullSemver(oldV)  -- Fixed: use parseFullSemver
-            local n1,n2 = parseFullSemver(newV)  -- Fixed: use parseFullSemver
+            local o1,o2 = parseFullSemver(oldV) 
+            local n1,n2 = parseFullSemver(newV) 
             if not (o1 and n1) then return true end
             if n1 > o1 then return true end
             if (n2 and o2) and n2 > o2 then return true end
@@ -366,7 +366,6 @@ function BuildUI(version)
 
     if getgenv().uiLE.uilibray then
 		if getgenv().uiLE.uilibray.Window then getgenv().uiLE.uilibray.Window:Unload() end
-        getgenv().uiLE.uilibray:Destroy()
         getgenv().uiLE.uilibray = nil
     end
 
@@ -375,7 +374,7 @@ function BuildUI(version)
 
     local libURL = version == 1 and "https://sirius.menu/rayfield" or "https://sirius.menu/gen2"
     getgenv().uiLE.uilibray = safeLoadString({libURL})
-    if not getgenv().uiLE.uilibray then getgenv().uiLE.loading = false; return end  -- Fixed: added semicolon
+    if not getgenv().uiLE.uilibray then getgenv().uiLE.loading = false; return end
 
     local Rayfield = getgenv().uiLE.uilibray
 
@@ -522,7 +521,7 @@ function BuildUI(version)
         if version == 1 then
             return tab:CreateButton({ Name = name, Callback = callback })
         else
-            return tab:CreateButton({ name = name, callback = callback })  -- Fixed: added return to avoid implicit nil return
+            return tab:CreateButton({ name = name, callback = callback })
         end
     end
 
@@ -586,7 +585,7 @@ function BuildUI(version)
         defaultTheme = "default"
     end
 
-    createDropdown(Tabs.General, "Current Theme", "CurrentTheme", themes, defaultTheme, false, function(selected)  -- Fixed: replaced currentTheme with defaultTheme
+    createDropdown(Tabs.General, "Current Theme", "CurrentTheme", themes, defaultTheme, false, function(selected)
         if selected then
             if version == 1 then Window.ModifyTheme(selected) else Window:ChangeTheme(selected) end
         end
