@@ -6,15 +6,19 @@ local localplayer = Players.LocalPlayer
 
 local getNil = function(name, class)
     for _, v in next, getnilinstances() do
-        if v.ClassName == class and v.Name == name then        
-            setthreadidentity(2)
+        if v.ClassName == class and v.Name == name then
             return v
         end
     end
-    return nil
 end
 
-local ReplicatorService = require(getNil("ReplicatorService", "ModuleScript"))
+local worS = getNil("WorldService", "ModuleScript")
+local repS = getNil("ReplicatorService", "ModuleScript")
+
+setthreadidentity(2)
+
+local WorldService = require(worS)
+local ReplicatorService = require(repS)
 
 local actorLookup = {}
 
@@ -69,34 +73,25 @@ local function setup()
     extender:Set("GET_PLAYER_FROM_CHARACTER", customGetPlayer)
 
     if extender:Get("PLAYER_ENABLED") then
-
-        local characterFolder
-        while not characterFolder do
-            for uid, actor in ReplicatorService.Actors do
-                if actor.Character and actor.Character.Parent then
-                    characterFolder = actor.Character.Parent
-                    break
-                end
-            end
-            task.wait(0.5)
-        end
         
-        for _, model in ipairs(characterFolder:GetChildren()) do
+        for _, model in ipairs(WorldService.ActiveWorld:GetChildren()) do
             registerIfPlayer(model)
         end
-        
-        characterFolder.ChildAdded:Connect(function(child)
+
+        local conn1 = WorldService.ActiveWorld.ChildAdded:Connect(function(child)
             registerIfPlayer(child)
         end)
-        
-        characterFolder.ChildRemoved:Connect(function(child)
+        table.insert(connections, conn1)
+
+        local conn2 = WorldService.ActiveWorld.ChildRemoved:Connect(function(child)
             if not child:IsA("Model") then return end
             local player = customGetPlayer(child)
             if player then
                 extender:UnregisterPlayerCharacter(player, child)
             end
         end)
-    end 
+        table.insert(connections, conn2)
+    end
 end
 
 setup()
