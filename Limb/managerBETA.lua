@@ -627,10 +627,6 @@ function PlayerData.new(parent, player)
 		self.conns:Connect(player.CharacterRemoving, function(char)
 			self:_onCharacterRemoving(char)
 		end, "CharacterRemoving")
-
-		if player.Character then
-			self:_onCharacterAdded(player.Character)
-		end
 	end
 
 	self.conns:Connect(player:GetPropertyChangedSignal("Character"), function()
@@ -1229,9 +1225,12 @@ function Manager:_startPlayerTracking()
 			local pd = PlayerData.new(self, p)
 			self._playerTable[p] = pd
 			pd:EvaluateFilter()
+			if pd._isTracked and p.Character then
+				pd:_onCharacterAdded(p.Character)
+			end
 		end
 	end, "PlayerAdded")
-
+	
 	self._connections:Connect(Players.PlayerRemoving, function(p)
 		local pd = self._playerTable[p]
 		if pd then
@@ -1239,10 +1238,10 @@ function Manager:_startPlayerTracking()
 			self._playerTable[p] = nil
 		end
 	end, "PlayerRemoving")
-
+	
 	local snapshot = Players:GetPlayers()
 	local gen = self._generation
-
+	
 	local BATCH = 15
 	for i = 1, #snapshot, BATCH do
 		if not self._running or self._destroyed or self._playerConnsStarted == false then return end
@@ -1254,6 +1253,9 @@ function Manager:_startPlayerTracking()
 					local pd = PlayerData.new(self, p)
 					self._playerTable[p] = pd
 					pd:EvaluateFilter()
+					if pd._isTracked and p.Character then
+						pd:_onCharacterAdded(p.Character)
+					end
 				end
 			end
 		end
