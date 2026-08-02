@@ -743,6 +743,21 @@ local function BuildUI(version)
         loadRemoteChangelogs()
         getgenv().ChangelogHelper.register(Window, { showPopupOnUpdate = true })
     end
+
+    if not isPC then
+        ctrl:Set("ESP", false)
+        ctrl:Set("ESP_BOX", false)
+        ctrl:Set("ESP_BOX3D", false)
+        ctrl:Set("ESP_TRACER", false)
+        ctrl:Set("ESP_SKELETON", false)
+        ctrl:Set("ESP_HEALTH", false)
+        ctrl:Set("ESP_LABEL", false)
+        ctrl:Set("ESP_OFFSCREEN_POINT", false)
+        ctrl:Set("ESP_OCCLUSION", false)
+        for _, tier in ipairs({"ESP_NEAR_FLAGS", "ESP_MEDIUM_FLAGS", "ESP_FAR_FLAGS"}) do
+            ctrl:Set(tier, {})
+        end
+    end
 end
 
 InitializeLimbScanning()
