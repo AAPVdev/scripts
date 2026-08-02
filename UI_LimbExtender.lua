@@ -29,7 +29,7 @@ local function safeLoadString(urls)
 end
 
 local limbExtenderURLs = {
-    "https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua",
+    "https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/Limb/LimbExtenderBETA.lua",
     "https://api.rubis.app/v2/scrap/DkwppyJ0KaQvou0r/raw"
 }
 getgenv().uiLE.le = getgenv().uiLE.le or safeLoadString(limbExtenderURLs)
@@ -60,6 +60,10 @@ local function setLodFlag(key, field, value)
 end
 
 getgenv().uiLE.targetLimbDropdown = nil
+getgenv().uiLE.whitelistTeamsDropdown = nil
+getgenv().uiLE.blacklistTeamsDropdown = nil
+getgenv().uiLE.whitelistPlayersDropdown = nil
+getgenv().uiLE.blacklistPlayersDropdown = nil
 
 local scannedLimbs = {}
 local limbPriority = {
@@ -133,6 +137,135 @@ local function InitializeLimbScanning()
     end
 end
 
+local scannedTeams = {}
+
+local function sortTeams()
+    table.sort(scannedTeams, function(a, b) return a:lower() < b:lower() end)
+end
+
+local function registerTeam(name)
+    if not name or table.find(scannedTeams, name) then return end
+    table.insert(scannedTeams, name)
+    sortTeams()
+    if getgenv().uiLE.whitelistTeamsDropdown then
+        getgenv().uiLE.whitelistTeamsDropdown:Refresh(scannedTeams)
+    end
+    if getgenv().uiLE.blacklistTeamsDropdown then
+        getgenv().uiLE.blacklistTeamsDropdown:Refresh(scannedTeams)
+    end
+end
+
+local function unregisterTeam(name)
+    local idx = table.find(scannedTeams, name)
+    if idx then
+        table.remove(scannedTeams, idx)
+        if getgenv().uiLE.whitelistTeamsDropdown then
+            getgenv().uiLE.whitelistTeamsDropdown:Refresh(scannedTeams)
+        end
+        if getgenv().uiLE.blacklistTeamsDropdown then
+            getgenv().uiLE.blacklistTeamsDropdown:Refresh(scannedTeams)
+        end
+    end
+end
+
+local function scanTeams()
+    table.clear(scannedTeams)
+    local teamsService = game:GetService("Teams")
+    for _, team in ipairs(teamsService:GetChildren()) do
+        if team:IsA("Team") then
+            registerTeam(team.Name)
+        end
+    end
+end
+
+local teamsConn
+local function InitializeTeamScanning()
+    if teamsConn then teamsConn:Disconnect() end
+    local teamsService = game:GetService("Teams")
+    scanTeams()
+    teamsConn = teamsService.ChildAdded:Connect(function(child)
+        if child:IsA("Team") then registerTeam(child.Name) end
+    end)
+    teamsService.ChildRemoved:Connect(function(child)
+        if child:IsA("Team") then unregisterTeam(child.Name) end
+    end)
+end
+
+local scannedPlayers = {}
+local nameToUserId = {}
+local userIdToName = {}
+
+local function sortPlayers()
+    table.sort(scannedPlayers, function(a, b) return a:lower() < b:lower() end)
+end
+
+local function registerPlayer(player)
+    if not player or not player:IsA("Player") then return end
+    local name = player.Name
+    if table.find(scannedPlayers, name) then return end
+    table.insert(scannedPlayers, name)
+    nameToUserId[name] = player.UserId
+    userIdToName[player.UserId] = name
+    sortPlayers()
+    if getgenv().uiLE.whitelistPlayersDropdown then
+        getgenv().uiLE.whitelistPlayersDropdown:Refresh(scannedPlayers)
+    end
+    if getgenv().uiLE.blacklistPlayersDropdown then
+        getgenv().uiLE.blacklistPlayersDropdown:Refresh(scannedPlayers)
+    end
+end
+
+local function unregisterPlayer(player)
+    if not player or not player:IsA("Player") then return end
+    local name = player.Name
+    local idx = table.find(scannedPlayers, name)
+    if idx then
+        table.remove(scannedPlayers, idx)
+        nameToUserId[name] = nil
+        userIdToName[player.UserId] = nil
+        if getgenv().uiLE.whitelistPlayersDropdown then
+            getgenv().uiLE.whitelistPlayersDropdown:Refresh(scannedPlayers)
+        end
+        if getgenv().uiLE.blacklistPlayersDropdown then
+            getgenv().uiLE.blacklistPlayersDropdown:Refresh(scannedPlayers)
+        end
+    end
+end
+
+local function scanPlayers()
+    table.clear(scannedPlayers)
+    table.clear(nameToUserId)
+    table.clear(userIdToName)
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            registerPlayer(player)
+        end
+    end
+end
+
+local playerAddedConn, playerRemovingConn
+local function InitializePlayerScanning()
+    if playerAddedConn then playerAddedConn:Disconnect() end
+    if playerRemovingConn then playerRemovingConn:Disconnect() end
+    scanPlayers()
+    playerAddedConn = Players.PlayerAdded:Connect(function(player)
+        if player ~= LocalPlayer then registerPlayer(player) end
+    end)
+    playerRemovingConn = Players.PlayerRemoving:Connect(function(player)
+        unregisterPlayer(player)
+    end)
+end
+
+local function userIdArrayToNames(userIdArray)
+    if type(userIdArray) ~= "table" then return {} end
+    local names = {}
+    for _, uid in ipairs(userIdArray) do
+        local name = userIdToName[uid]
+        if name then table.insert(names, name) end
+    end
+    return names
+end
+
 local function normalizeVersion(s)
     if not s then return nil end
     return tostring(s):gsub("^%s+", ""):gsub("%s+$", ""):gsub("^v", "")
@@ -147,9 +280,7 @@ local function loadConfig()
     local ok, data = pcall(function() return readfile(CONFIG_FILE) end)
     if not ok or not data then return {} end
     local ok2, tbl = pcall(function() return HttpService:JSONDecode(data) end)
-    if ok2 and type(tbl) == "table" then
-        return tbl
-    end
+    if ok2 and type(tbl) == "table" then return tbl end
     return {}
 end
 
@@ -505,7 +636,7 @@ local function BuildUI(version)
 
     local function createDropdown(tab, name, flag, options, defaultOption, multi, callback)
         if version == 1 then
-            local currentOption = defaultOption and {defaultOption} or {}
+            local currentOption = defaultOption and (multi and defaultOption or {defaultOption}) or {}
             return tab:CreateDropdown({
                 Name = name, Flag = flag, Options = options,
                 CurrentOption = currentOption, MultipleOptions = multi or false,
@@ -607,7 +738,80 @@ local function BuildUI(version)
     createSection(Tabs.Targeting, "Target Selection")
     createToggle(Tabs.Targeting, "Players", "PLAYER_ENABLED", true)
     createToggle(Tabs.Targeting, "NPCs", "NPC_ENABLED", false)
-    createToggle(Tabs.Targeting, "Team Check", "TEAM_CHECK", false)
+
+    local teamModeOptions = {"None", "Same Team", "Whitelist", "Blacklist"}
+    local teamModeValues = {"none", "same", "whitelist", "blacklist"}
+    local savedTeamMode = ctrl:Get("TEAM_MODE") or "none"
+    local defaultTeamOption = "None"
+    for i, v in ipairs(teamModeValues) do
+        if v == savedTeamMode then defaultTeamOption = teamModeOptions[i]; break end
+    end
+    createDropdown(Tabs.Targeting, "Team Filter", "TEAM_MODE", teamModeOptions, defaultTeamOption, false, function(selected)
+        local mode = "none"
+        for i, opt in ipairs(teamModeOptions) do
+            if opt == selected then mode = teamModeValues[i]; break end
+        end
+        ctrl:Set("TEAM_MODE", mode)
+    end)
+
+    createSection(Tabs.Targeting, "Team Lists")
+    local savedTeamWhitelist = ctrl:Get("TEAM_WHITELIST") or {}
+    local savedTeamBlacklist = ctrl:Get("TEAM_BLACKLIST") or {}
+    local teamOptions = #scannedTeams > 0 and table.clone(scannedTeams) or {"(no teams found)"}
+
+    local whitelistTeamsCallback = function(selected)
+        ctrl:Set("TEAM_WHITELIST", type(selected) == "table" and selected or {selected})
+    end
+    local whitelistTeamsDropdown = createDropdown(Tabs.Targeting, "Whitelist Teams", "TEAM_WHITELIST_DROPDOWN",
+        teamOptions, savedTeamWhitelist, true, whitelistTeamsCallback)
+    getgenv().uiLE.whitelistTeamsDropdown = whitelistTeamsDropdown
+    whitelistTeamsCallback(savedTeamWhitelist)
+
+    local blacklistTeamsCallback = function(selected)
+        ctrl:Set("TEAM_BLACKLIST", type(selected) == "table" and selected or {selected})
+    end
+    local blacklistTeamsDropdown = createDropdown(Tabs.Targeting, "Blacklist Teams", "TEAM_BLACKLIST_DROPDOWN",
+        teamOptions, savedTeamBlacklist, true, blacklistTeamsCallback)
+    getgenv().uiLE.blacklistTeamsDropdown = blacklistTeamsDropdown
+    blacklistTeamsCallback(savedTeamBlacklist)
+
+    createSection(Tabs.Targeting, "Player Lists")
+    local savedPlayerWhitelistUserIds = ctrl:Get("PLAYER_WHITELIST") or {}
+    local savedPlayerBlacklistUserIds = ctrl:Get("PLAYER_BLACKLIST") or {}
+    local savedPlayerWhitelistNames = userIdArrayToNames(savedPlayerWhitelistUserIds)
+    local savedPlayerBlacklistNames = userIdArrayToNames(savedPlayerBlacklistUserIds)
+    local playerOptions = #scannedPlayers > 0 and table.clone(scannedPlayers) or {"(no players online)"}
+
+    local whitelistPlayersCallback = function(selectedNames)
+        local userIds = {}
+        if type(selectedNames) == "table" then
+            for _, name in ipairs(selectedNames) do
+                local uid = nameToUserId[name]
+                if uid then table.insert(userIds, uid) end
+            end
+        end
+        ctrl:Set("PLAYER_WHITELIST", userIds)
+    end
+    local whitelistPlayersDropdown = createDropdown(Tabs.Targeting, "Whitelist Players", "PLAYER_WHITELIST_DROPDOWN",
+        playerOptions, savedPlayerWhitelistNames, true, whitelistPlayersCallback)
+    getgenv().uiLE.whitelistPlayersDropdown = whitelistPlayersDropdown
+    whitelistPlayersCallback(savedPlayerWhitelistNames)
+
+    local blacklistPlayersCallback = function(selectedNames)
+        local userIds = {}
+        if type(selectedNames) == "table" then
+            for _, name in ipairs(selectedNames) do
+                local uid = nameToUserId[name]
+                if uid then table.insert(userIds, uid) end
+            end
+        end
+        ctrl:Set("PLAYER_BLACKLIST", userIds)
+    end
+    local blacklistPlayersDropdown = createDropdown(Tabs.Targeting, "Blacklist Players", "PLAYER_BLACKLIST_DROPDOWN",
+        playerOptions, savedPlayerBlacklistNames, true, blacklistPlayersCallback)
+    getgenv().uiLE.blacklistPlayersDropdown = blacklistPlayersDropdown
+    blacklistPlayersCallback(savedPlayerBlacklistNames)
+
     createToggle(Tabs.Targeting, "ForceField Check", "FORCEFIELD_CHECK", false)
 
     createSection(Tabs.Targeting, "Limb Focus")
@@ -761,6 +965,8 @@ local function BuildUI(version)
 end
 
 InitializeLimbScanning()
+InitializeTeamScanning()
+InitializePlayerScanning()
 
 local initialVersion = loadUIVersion()
 BuildUI(initialVersion)
