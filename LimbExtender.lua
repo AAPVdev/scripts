@@ -26,6 +26,9 @@ local Vector3_new = Vector3.new
 limbData.playerCache    = limbData.playerCache    or {}
 limbData.instanceLookup = limbData.instanceLookup or setmetatable({}, { __mode = "k" })
 limbData.npcIdCounter   = limbData.npcIdCounter   or 0
+limbData.limbBlocked    = limbData.limbBlocked    or setmetatable({}, { __mode = "k" })
+limbData.chamsIdCounter = limbData.chamsIdCounter or 0
+limbData._hooksInstalled = limbData._hooksInstalled or false
 
 if type(limbData.terminate) == "function" then
 	limbData.terminate()
@@ -44,13 +47,22 @@ local BLOCKED_PROPS = {
 	RootPriority = true,
 }
 
+local ORIGINAL_FIELDS = {}
+for prop in pairs(BLOCKED_PROPS) do
+	ORIGINAL_FIELDS[prop] = "Original" .. prop
+end
+
 local ESP_SOURCE_URLS = {
 	"https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/esp/SIXSEVENESP.lua",
 	"https://api.rubis.app/v2/scrap/qghKmrRhRUfwDnee/raw",
 }
 
+local CHAMS_SOURCE_URLS = {
+	"https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/esp/chams.lua",
+}
+
 local MANAGER_SOURCE_URLS = {
-	"https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/Limb/managerBETA.lua",
+	"https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/manager/manager.lua",
 	"https://api.rubis.app/v2/scrap/rNPKyva99IGbf6tH/raw"
 }
 
@@ -108,6 +120,14 @@ local function ensureESPLoaded()
 	return limbData.ESP
 end
 
+local function ensureCHAMSLoaded()
+	if limbData.CHAMS then return limbData.CHAMS end
+	if not (has_loadstring and has_httpget) then return nil end
+	local mod = tryLoadModuleFromURLs(CHAMS_SOURCE_URLS)
+	if mod then limbData.CHAMS = mod end
+	return limbData.CHAMS
+end
+
 local function ensureMANAGERLoaded()
 	if limbData.manager then return limbData.manager end
 	if not (has_loadstring and has_httpget) then return nil end
@@ -154,11 +174,12 @@ local function buildLimbProps(limb, entry, settings)
 	return props, newVec, isHRP
 end
 
-local hooksInstalled = false
+local Executor = string.lower(identifyexecutor and identifyexecutor() or "")
 
 local has_checkcaller, has_getnamecallmethod, has_getconnections = false, false, false
 local has_hookmetamethod, has_newcclosure, has_getrawmetatable, has_setreadonly = false, false, false, false
 local has_debug_upvalues, has_debug_setupvalue, has_newproxy = false, false, false
+local has_othhook = false
 
 do
 	local function check(name)
@@ -175,31 +196,35 @@ do
 	has_debug_upvalues = check("debug.getupvalues")
 	has_debug_setupvalue = check("debug.setupvalue")
 	has_newproxy = check("newproxy")
+
+	if oth and type(oth) == "table" then
+		local ok, hookFn = pcall(function() return oth.hook end)
+		has_othhook = ok and type(hookFn) == "function"
+	end
 end
 
-if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawmetatable and has_setreadonly)) and not hooksInstalled then
+if not limbData._hooksInstalled then
 
 	local blockedProps = BLOCKED_PROPS
 	local blockedPropsOriginal = BLOCKED_PROPS
 	local instanceLookup = limbData.instanceLookup
+	local limbBlocked = limbData.limbBlocked
 	local Instance_new = Instance.new
 	local getnamecallmethod = has_getnamecallmethod and getnamecallmethod or nil
 	local getconnections = has_getconnections and getconnections or nil
 
 	local originalIndex, originalNewIndex, originalNamecall
 
-	local function getData(instance)
-		local cached = instanceLookup[instance]
-		return cached and cached.data
-	end
-
 	local function hookedIndex(...)
 		local self, key = ...
+		if not limbBlocked[self] then return originalIndex(...) end
 		if not checkcaller() then
-			local data = getData(self)
+			local cached = instanceLookup[self]
+			local data = cached and cached.data
 			if data then
-				if blockedProps[key] then
-					return data["Original"..key]
+				local orig = ORIGINAL_FIELDS[key]
+				if orig then
+					return data[orig]
 				end
 				if key == "Changed" and data._customSignals then
 					return data._customSignals.Changed
@@ -210,20 +235,24 @@ if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawm
 	end
 
 	local function hookedNewIndex(...)
-		local self, key = ...
+		local self, key, value = ...
+		if not limbBlocked[self] then return originalNewIndex(...) end
 		if not checkcaller() then
-			local data = getData(self)
+			local cached = instanceLookup[self]
+			local data = cached and cached.data
 			if data then
-				if blockedProps[key] then
-					local value = select(3, ...)
-					data["Original"..key] = value
+				local orig = ORIGINAL_FIELDS[key]
+				if orig then
+					data[orig] = value
 					local real = data._realSignals
 					if real then
-						if real[key] then
-							real[key]:Fire(value)
+						local sig = real[key]
+						if sig then
+							sig:Fire(value)
 						end
-						if real.Changed then
-							real.Changed:Fire(key, value)
+						local changed = real.Changed
+						if changed then
+							changed:Fire(key, value)
 						end
 					end
 					return
@@ -234,12 +263,14 @@ if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawm
 	end
 
 	local function hookedNamecall(...)
+		local self, prop = ...
+		if not limbBlocked[self] then return originalNamecall(...) end
 		if not checkcaller() then
 			local method = getnamecallmethod()
 			if method == "GetPropertyChangedSignal" then
-				local self, prop = ...
-				local data = getData(self)
-				if data and blockedProps[prop] then
+				local cached = instanceLookup[self]
+				local data = cached and cached.data
+				if data and ORIGINAL_FIELDS[prop] then
 					local custom = data._customSignals
 					if custom and custom[prop] then
 						return custom[prop]
@@ -270,71 +301,16 @@ if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawm
 		end
 	end
 
-	local function isNewcclosureDetected()
-		if not (has_hookmetamethod and has_newcclosure) then
-			return nil
+	if has_othhook and Executor ~= "potassium" then
+		local mt = getrawmetatable(game)
+		originalIndex    = oth.hook(mt.__index, hookedIndex)
+		originalNewIndex = oth.hook(mt.__newindex, hookedNewIndex)
+		if has_getnamecallmethod then
+			originalNamecall = oth.hook(mt.__namecall, hookedNamecall)
 		end
+		hooksInstalled = true
 
-		local function probeInSpawn()
-			local result = nil
-			local done = false
-			task.spawn(function()
-				local capturedFunction = nil
-				xpcall(function()
-					return game.AAAAAAA
-				end, function()
-					capturedFunction = debug.info(2, "f")
-				end)
-
-				local overflow = false
-				if capturedFunction then
-					local recursiveCaller
-					recursiveCaller = function(depth)
-						if depth < 19995 then
-							recursiveCaller(depth + 1)
-						else
-							capturedFunction(workspace, "Name")
-						end
-					end
-					local ok, err = pcall(recursiveCaller, 1)
-					overflow = not ok and type(err) == "string" and err:find("stack overflow")
-				else
-					overflow = true
-				end
-
-				result = { captured = capturedFunction, overflow = overflow }
-				done = true
-			end)
-			repeat task.wait() until done
-			return result
-		end
-
-		local base = probeInSpawn()
-		if base.overflow then
-			return false
-		end
-
-		local orig
-		orig = hookmetamethod(game, "__index", newcclosure(function(...)
-			return orig(...)
-		end))
-		local hookProbe = probeInSpawn()
-		hookmetamethod(game, "__index", orig)
-
-		if hookProbe.overflow then
-			return true
-		else
-			return false
-		end
-	end
-
-	local useNewcclosure = true
-	if has_hookmetamethod and has_newcclosure then
-		local detected = isNewcclosureDetected()
-		useNewcclosure = (detected == false)
-	end
-
-	if useNewcclosure then
+	elseif has_hookmetamethod and has_newcclosure then
 		local idx = newcclosure(hookedIndex)
 		local nidx = newcclosure(hookedNewIndex)
 		local nm = has_getnamecallmethod and newcclosure(hookedNamecall) or nil
@@ -372,11 +348,14 @@ if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawm
 		hooksInstalled = true
 	end
 
+	limbData._hooksInstalled = true
+
 	if has_getconnections then
 		local createCustomSignals
 		createCustomSignals = function(limb)
-			local data = getData(limb)
-			if data._customSignals then return end
+			local cached = instanceLookup[limb]
+			local data = cached and cached.data
+			if not data or data._customSignals then return end
 
 			local custom = {}
 			local real = {}
@@ -411,6 +390,8 @@ if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawm
 					migrateSignal(sig, custom[prop])
 				end
 			end
+
+			limbBlocked[limb] = true
 		end
 
 		limbData._createCustomSignals = createCustomSignals
@@ -421,6 +402,10 @@ local function createCustomSignals(limb)
 	if limbData._createCustomSignals then
 		limbData._createCustomSignals(limb)
 	end
+end
+
+local function removeCustomSignals(limb)
+	limbData.limbBlocked[limb] = nil
 end
 
 local PROPS_TO_WATCH = {
@@ -444,9 +429,6 @@ local function setupLimbWatchdog(entry, limb, settings)
 
 	for _, pair in ipairs(PROPS_TO_WATCH) do
 		local propName, targetField = pair[1], pair[2]
-		if propName == "Size" and settings.DYNAMIC_SCALE_ENABLED then
-			continue
-		end
 		local target = entry[targetField]
 		if target ~= nil then
 			local conn = limb:GetPropertyChangedSignal(propName):Connect(function()
@@ -466,59 +448,71 @@ end
 local LimbExtender = {}
 LimbExtender.__index = LimbExtender
 
-local DEFAULTS = {
-	TARGET_LIMB             = "Head",
-	LIMB_SIZE               = 15,
-	LIMB_TRANSPARENCY       = 0.7,
-	LIMB_CAN_COLLIDE        = false,
-	FORCEFIELD_CHECK        = false,
-	ALT_RESET_LIMB_ON_DEATH = false,
-	PLAYER_ENABLED          = true,
-	NPC_ENABLED             = true,
-	NPC_FILTER              = nil,
-	NPC_DIRECTORIES         = {},
-	CUSTOM_CHARACTER_SYSTEM   = false,
-	GET_PLAYER_FROM_CHARACTER = nil,
-	ESP                     = true,
-	ESP_COLOR               = Color3.fromRGB(255, 50, 50),
-	ESP_BOX3D_COLOR         = Color3.fromRGB(255, 50, 50),
-	ESP_HEALTH_COLOR        = Color3.fromRGB(9, 255, 0),
-	ESP_EMPTY_COLOR         = Color3.fromRGB(255, 0, 0),
-	ESP_SKELETON_COLOR      = Color3.fromRGB(255, 157, 0),
-	ESP_TEXT_COLOR          = Color3.fromRGB(255, 255, 255),
-	ESP_TEXT_SIZE           = 16,
-	ESP_OFFSCREEN_POINT     = true,
-	ESP_FILTER_LOCAL        = true,
-	ESP_MAX_DISTANCE        = 500,
-	ESP_NEAR_DISTANCE       = 100,
-	ESP_MEDIUM_DISTANCE     = 250,
-	ESP_OCCLUSION           = false,
-	ESP_OCCLUSION_FREQUENCY = 4,
-	ESP_BOX      = true,
-	ESP_BOX3D    = false,
-	ESP_TRACER   = true,
-	ESP_SKELETON = true,
-	ESP_HEALTH   = true,
-	ESP_LABEL    = true,
-	ESP_NEAR_FLAGS   = { Box = true,  Tracer = true, Skeleton = true,  Health = true,  Label = true,  Box3D = false },
-	ESP_MEDIUM_FLAGS = { Box = true,  Tracer = true, Skeleton = false, Health = true,  Label = true,  Box3D = false },
-	ESP_FAR_FLAGS    = { Box = true,  Tracer = true, Skeleton = false, Health = false, Label = false, Box3D = false },
-	ESP_TEXT_RESOLVER = nil,
-	ESP_CAN_DRAW      = nil,
-	ESP_TRACER_ORIGIN = nil,
-	DYNAMIC_SCALE_ENABLED     = true,
-	DYNAMIC_SCALE_RANGE_MULT  = 1.5,
-	DYNAMIC_SCALE_UPDATE_RATE = 15,
+local function nextChamsSourceKey()
+	limbData.chamsIdCounter = limbData.chamsIdCounter + 1
+	return "LimbExtender_" .. limbData.chamsIdCounter
+end
 
-	TEAM_MODE = "none",
-	TEAM_WHITELIST = nil,
-	TEAM_BLACKLIST = nil,
-	TEAM_CUSTOM_CHECK = nil,
-	PLAYER_WHITELIST = nil,
-	PLAYER_BLACKLIST = nil,
-	NAME_PATTERN = nil,
-	DISPLAY_NAME_PATTERN = nil,
-	PLAYER_FILTER = nil,
+local DEFAULTS = {
+	TARGET_LIMB             	= "Head",
+	LIMB_SIZE               	= 15,
+	LIMB_TRANSPARENCY       	= 0.7,
+	LIMB_CAN_COLLIDE        	= false,
+	FORCEFIELD_CHECK        	= false,
+	ALT_RESET_LIMB_ON_DEATH 	= false,
+	PLAYER_ENABLED          	= true,
+	NPC_ENABLED             	= true,
+	NPC_FILTER              	= nil,
+	NPC_DIRECTORIES         	= {},
+	CUSTOM_CHARACTER_SYSTEM   	= false,
+	GET_PLAYER_FROM_CHARACTER 	= nil,
+	ESP                     	= true,
+	ESP_COLOR               	= Color3.fromRGB(255, 50, 50),
+	ESP_BOX3D_COLOR         	= Color3.fromRGB(255, 50, 50),
+	ESP_HEALTH_COLOR        	= Color3.fromRGB(9, 255, 0),
+	ESP_EMPTY_COLOR         	= Color3.fromRGB(255, 0, 0),
+	ESP_SKELETON_COLOR      	= Color3.fromRGB(255, 157, 0),
+	ESP_TEXT_COLOR          	= Color3.fromRGB(255, 255, 255),
+	ESP_TEXT_SIZE           	= 16,
+	ESP_OFFSCREEN_POINT     	= true,
+	ESP_FILTER_LOCAL        	= true,
+	ESP_MAX_DISTANCE        	= 500,
+	ESP_NEAR_DISTANCE       	= 100,
+	ESP_MEDIUM_DISTANCE     	= 250,
+	ESP_OCCLUSION           	= false,
+	ESP_OCCLUSION_FREQUENCY 	= 4,
+	ESP_BOX     				= true,
+	ESP_BOX3D   				= false,
+	ESP_TRACER   				= true,
+	ESP_SKELETON 				= true,
+	ESP_HEALTH   				= true,
+	ESP_LABEL    				= true,
+	ESP_NEAR_FLAGS   			= { Box = true,  Tracer = true, Skeleton = true,  Health = true,  Label = true,  Box3D = false },
+	ESP_MEDIUM_FLAGS 			= { Box = true,  Tracer = true, Skeleton = false, Health = true,  Label = true,  Box3D = false },
+	ESP_FAR_FLAGS    			= { Box = true,  Tracer = true, Skeleton = false, Health = false, Label = false, Box3D = false },
+	ESP_TEXT_RESOLVER 			= nil,
+	ESP_CAN_DRAW      			= nil,
+	ESP_TRACER_ORIGIN 			= nil,
+	CHAMS                     	= false,
+	CHAMS_FILL_COLOR          	= Color3.fromRGB(255, 255, 0),
+	CHAMS_OUTLINE_COLOR       	= Color3.fromRGB(255, 255, 255),
+	CHAMS_FILL_TRANSPARENCY   	= 0.5,
+	CHAMS_OUTLINE_TRANSPARENCY	= 0.5,
+	CHAMS_OCCLUSION 		  	= false,
+	DYNAMIC_SCALE_ENABLED     	= true,
+	DYNAMIC_SCALE_RANGE_MULT  	= 1.5,
+	DYNAMIC_SCALE_UPDATE_RATE 	= 15,
+
+	-- New filtering keys
+	TEAM_MODE               = "none",
+	TEAM_WHITELIST          = nil,
+	TEAM_BLACKLIST          = nil,
+	TEAM_CUSTOM_CHECK       = nil,
+	PLAYER_WHITELIST        = nil,
+	PLAYER_BLACKLIST        = nil,
+	NAME_PATTERN            = nil,
+	DISPLAY_NAME_PATTERN    = nil,
+	PLAYER_FILTER           = nil,
 }
 
 local function mergeSettings(user)
@@ -571,7 +565,13 @@ local function applyEntryTargets(entry, props, newVec, isHRP, settings)
 		entry.TargetRootPriority = -127
 	end
 	local size = newVec
-	entry.LimbRadius = math.max(size.X, size.Y, size.Z) / 2
+	local radius = math.max(size.X, size.Y, size.Z) / 2
+	entry.LimbRadius = radius
+	local rangeMult = settings.DYNAMIC_SCALE_RANGE_MULT or 1.0
+	entry._maxDistSq = (radius * rangeMult + 5) ^ 2
+	entry._minDistSq = (radius * 0.1) ^ 2
+	local rangeSq = entry._maxDistSq - entry._minDistSq
+	entry._rangeInvSq = (rangeSq > 0) and (1 / rangeSq) or 0
 end
 
 local function sharedApplyLimb(parent, cacheKey, char, limb)
@@ -615,9 +615,13 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 	entry.TargetMassless                 = nil
 	entry.TargetRootPriority             = nil
 	entry.LimbRadius                     = nil
+	entry._maxDistSq = nil
+	entry._minDistSq = nil
+	entry._rangeInvSq = nil
 
 	if activeLimb and activeLimb.Parent then
 		if entry._humanoidStateConn then entry._humanoidStateConn:Disconnect() end
+		removeCustomSignals(activeLimb)
 		activeLimb.Size         = entry.OriginalSize
 		activeLimb.Transparency = entry.OriginalTransparency
 		activeLimb.CanCollide   = entry.OriginalCanCollide
@@ -686,6 +690,9 @@ function LimbExtender:_applyLimbs(player, char, limb)
 			end)
 		end
 	end
+	if self._settings.CHAMS and self._CHAMS then
+		self._CHAMS.addHighlight(char, self._chamsSourceKey, self:_buildChamsConfig())
+	end
 end
 
 function LimbExtender:_removeLimbs(player, char, limb)
@@ -693,6 +700,7 @@ function LimbExtender:_removeLimbs(player, char, limb)
 	local cacheKey = player and player.Name or self._npcIdMap[char]
 	sharedRestoreLimb(self, cacheKey, limb)
 	if self._ESP and char then self._ESP:Untrack(char) end
+	if self._CHAMS and char then self._CHAMS.removeHighlight(char, self._chamsSourceKey) end
 	if not player then self._npcIdMap[char] = nil end
 end
 
@@ -715,6 +723,7 @@ function LimbExtender:_processDirtyWork()
 							if entry.Character then self._ESP:Track(entry.Character) end
 						end
 					end
+
 				else
 					self._ESP:SetOptions(self:_buildESPConfig())
 				end
@@ -723,6 +732,35 @@ function LimbExtender:_processDirtyWork()
 			end
 		else
 			if self._ESP then self._ESP:Destroy(); self._ESP = nil end
+		end
+	end
+
+	if self._dirtyCHAMS then
+		self._dirtyCHAMS = false
+		if s.CHAMS then
+			local chamsModule = ensureCHAMSLoaded()
+			if chamsModule then
+				self._CHAMS = chamsModule
+				local config = self:_buildChamsConfig()
+				for _, entry in pairs(self._playerCache) do
+					if entry.Character then
+						local updated = chamsModule.updateHighlight(entry.Character, self._chamsSourceKey, config)
+						if not updated then
+							chamsModule.addHighlight(entry.Character, self._chamsSourceKey, config)
+						end
+					end
+				end
+			else
+				s.CHAMS = false
+			end
+		else
+			if self._CHAMS then
+				for _, entry in pairs(self._playerCache) do
+					if entry.Character then
+						self._CHAMS.removeHighlight(entry.Character, self._chamsSourceKey)
+					end
+				end
+			end
 		end
 	end
 
@@ -754,7 +792,7 @@ function LimbExtender:_processDirtyWork()
 		end
 	end
 
-	if self._dirtyRestart or self._dirtyCosmetic or self._dirtyESP then
+	if self._dirtyRestart or self._dirtyCosmetic or self._dirtyESP or self._dirtyCHAMS then
 		self._workScheduled = true
 		task_spawn(function() self:_processDirtyWork() end)
 	end
@@ -780,10 +818,16 @@ function LimbExtender:_doRestartBatched()
 				if self._ESP and entry.Character then
 					self._ESP:Untrack(entry.Character)
 				end
+				if self._CHAMS and entry.Character then
+					self._CHAMS.removeHighlight(entry.Character, self._chamsSourceKey)
+				end
 			elseif entry and entry.Character then
 				limbData.instanceLookup[entry.Character] = nil
 				if self._ESP then
 					self._ESP:Untrack(entry.Character)
+				end
+				if self._CHAMS then
+					self._CHAMS.removeHighlight(entry.Character, self._chamsSourceKey)
 				end
 				cache[keys[j]] = nil
 			end
@@ -854,6 +898,15 @@ function LimbExtender:_reapplyWatchdogs()
 	end
 end
 
+local function recalcEntryDistFields(entry, rangeMult)
+	if not entry.LimbRadius then return end
+	local radius = entry.LimbRadius
+	entry._maxDistSq = (radius * rangeMult + 5) ^ 2
+	entry._minDistSq = (radius * 0.1) ^ 2
+	local rangeSq = entry._maxDistSq - entry._minDistSq
+	entry._rangeInvSq = (rangeSq > 0) and (1 / rangeSq) or 0
+end
+
 function LimbExtender:SetDynamicScale(enabled, rangeMult)
 	local s = self._settings
 	s.DYNAMIC_SCALE_ENABLED = enabled
@@ -866,6 +919,9 @@ function LimbExtender:SetDynamicScale(enabled, rangeMult)
 		self._dynamicScaleConn = nil
 	end
 
+	self._dynKeys = nil
+	self._dynNextIndex = 1
+
 	if enabled then
 		self._nextDynamicUpdate = 0
 		local interval = 1 / (s.DYNAMIC_SCALE_UPDATE_RATE or 15)
@@ -876,16 +932,67 @@ function LimbExtender:SetDynamicScale(enabled, rangeMult)
 				self:_updateDynamicScales()
 			end
 		end)
+		local currentRangeMult = s.DYNAMIC_SCALE_RANGE_MULT or 1.0
+		for _, entry in pairs(self._playerCache) do
+			recalcEntryDistFields(entry, currentRangeMult)
+		end
 	else
 		for _, entry in pairs(self._playerCache) do
 			if entry.Limb and entry.BaseTargetSize then
 				entry.TargetSize = entry.BaseTargetSize
 				entry.Limb.Size = entry.BaseTargetSize
 			end
+			entry._maxDistSq = nil
+			entry._minDistSq = nil
+			entry._rangeInvSq = nil
 		end
 	end
 
 	self:_reapplyWatchdogs()
+end
+
+function LimbExtender:_updateSingleDynamicScale(entry, localPos)
+	local limb = entry.Limb
+	if not limb or not limb.Parent or not entry.OriginalSize or not entry.BaseTargetSize then return end
+	local maxDistSq = entry._maxDistSq
+	if not maxDistSq then return end
+
+	local diff = limb.Position - localPos
+	local sqDist = diff:Dot(diff)
+
+	if sqDist > maxDistSq then
+		if entry.TargetSize ~= entry.BaseTargetSize then
+			entry.TargetSize = entry.BaseTargetSize
+			entry._watchingRevert = true
+			limb.Size = entry.BaseTargetSize
+			entry._watchingRevert = false
+		end
+		return
+	end
+
+	local minDistSq = entry._minDistSq
+	if minDistSq and maxDistSq == minDistSq then return end
+	local rangeInvSq = entry._rangeInvSq
+	if not rangeInvSq or rangeInvSq <= 0 then
+		local dynamicSize = entry.BaseTargetSize
+		if (limb.Size - dynamicSize):Dot(limb.Size - dynamicSize) > 0.0025 then
+			entry.TargetSize = dynamicSize
+			entry._watchingRevert = true
+			limb.Size = dynamicSize
+			entry._watchingRevert = false
+		end
+		return
+	end
+
+	local factor = math.sqrt(math.clamp((sqDist - minDistSq) * rangeInvSq, 0, 1))
+	local dynamicSize = entry.OriginalSize:Lerp(entry.BaseTargetSize, factor)
+
+	if (limb.Size - dynamicSize):Dot(limb.Size - dynamicSize) > 0.0025 then
+		entry.TargetSize = dynamicSize
+		entry._watchingRevert = true
+		limb.Size = dynamicSize
+		entry._watchingRevert = false
+	end
 end
 
 function LimbExtender:_updateDynamicScales()
@@ -894,44 +1001,36 @@ function LimbExtender:_updateDynamicScales()
 	if not localHRP then self:_updateLocalCharacter(); return end
 
 	local localPos = localHRP.Position
-	local rangeMult = self._settings.DYNAMIC_SCALE_RANGE_MULT or 1.0
+	local cache = self._playerCache
+	local batchSize = 20
 
-	for _, entry in pairs(self._playerCache) do
-		local limb = entry.Limb
-		if not limb or not limb.Parent then continue end
-		if not entry.OriginalSize or not entry.BaseTargetSize or not entry.LimbRadius then continue end
-
-		local radius = entry.LimbRadius
-		local maxDist = radius * rangeMult
-		local minDist = radius * 0.1
-		local range = maxDist - minDist
-		if range <= 0 then continue end
-
-		local limbPos = limb.Position
-		local diff = limbPos - localPos
-		local sqDist = diff:Dot(diff)
-		local sqThreshold = (maxDist + 5) * (maxDist + 5)
-
-		if sqDist > sqThreshold then
-			if entry.TargetSize ~= entry.BaseTargetSize then
-				entry.TargetSize = entry.BaseTargetSize
-				entry._watchingRevert = true
-				limb.Size = entry.BaseTargetSize
-				entry._watchingRevert = false
-			end
-			continue
+	if not self._dynKeys then
+		self._dynKeys = {}
+		for k in pairs(cache) do
+			table_insert(self._dynKeys, k)
 		end
+		self._dynNextIndex = 1
+	end
 
-		local dist = math.sqrt(sqDist)
-		local factor = math.clamp((dist - minDist) / range, 0, 1)
-		local dynamicSize = entry.OriginalSize:Lerp(entry.BaseTargetSize, factor)
-
-		if (limb.Size - dynamicSize).Magnitude > 0.05 then
-			entry.TargetSize = dynamicSize
-			entry._watchingRevert = true
-			limb.Size = dynamicSize
-			entry._watchingRevert = false
+	local processed = 0
+	while processed < batchSize and self._dynNextIndex <= #self._dynKeys do
+		local key = self._dynKeys[self._dynNextIndex]
+		local entry = cache[key]
+		if entry then
+			self:_updateSingleDynamicScale(entry, localPos)
 		end
+		self._dynNextIndex = self._dynNextIndex + 1
+		processed = processed + 1
+	end
+
+	if self._dynNextIndex > #self._dynKeys then
+		self._dynKeys = nil
+		self._dynNextIndex = 1
+	end
+
+	if processed == 0 then
+		self._dynKeys = nil
+		self._dynNextIndex = 1
 	end
 end
 
@@ -951,6 +1050,7 @@ function LimbExtender.new(userSettings)
 		_playerCache         = limbData.playerCache,
 		_manager             = nil,
 		_ESP                 = nil,
+		_CHAMS               = nil,
 		_running             = false,
 		_destroyed           = false,
 		_npcIdMap            = {},
@@ -960,6 +1060,7 @@ function LimbExtender.new(userSettings)
 		_dirtyRestart        = false,
 		_dirtyCosmetic       = false,
 		_dirtyESP            = false,
+		_dirtyCHAMS          = false,
 		_suppressOnLimbLost  = false,
 		_workScheduled       = false,
 		_restartLock         = false,
@@ -971,6 +1072,10 @@ function LimbExtender.new(userSettings)
 		_nextDynamicUpdate   = 0,
 		_localChar           = nil,
 		_localHRP            = nil,
+		_dynKeys             = nil,
+		_dynNextIndex        = 1,
+		_chamsSourceKey      = nextChamsSourceKey(),
+		_charConn            = nil,
 	}, LimbExtender)
 
 	limbData.targetLimbName = self._settings.TARGET_LIMB
@@ -980,7 +1085,7 @@ function LimbExtender.new(userSettings)
 
 	local Manager = managerModule.Manager
 
-	local managerSettings = {
+	self._manager = Manager.new({
 		PLAYER_ENABLED          = self._settings.PLAYER_ENABLED,
 		NPC_ENABLED             = self._settings.NPC_ENABLED,
 		NPC_FILTER              = self._settings.NPC_FILTER,
@@ -999,9 +1104,7 @@ function LimbExtender.new(userSettings)
 		PLAYER_FILTER           = self._settings.PLAYER_FILTER,
 		ON_LIMB_READY           = function(player, model, limb) self:_applyLimbs(player, model, limb) end,
 		ON_LIMB_LOST            = function(player, model, limb) self:_removeLimbs(player, model, limb) end,
-	}
-
-	self._manager = Manager.new(managerSettings)
+	})
 
 	if self._settings.ESP then
 		local espModule = ensureESPLoaded()
@@ -1012,8 +1115,17 @@ function LimbExtender.new(userSettings)
 		end
 	end
 
+	if self._settings.CHAMS then
+		local chamsModule = ensureCHAMSLoaded()
+		if chamsModule then
+			self._CHAMS = chamsModule
+		else
+			self._settings.CHAMS = false
+		end
+	end
+
 	self:_updateLocalCharacter()
-	localPlayer:GetPropertyChangedSignal("Character"):Connect(function()
+	self._charConn = localPlayer:GetPropertyChangedSignal("Character"):Connect(function()
 		self:_updateLocalCharacter()
 	end)
 
@@ -1055,6 +1167,17 @@ function LimbExtender:_buildESPConfig()
 	}
 end
 
+function LimbExtender:_buildChamsConfig()
+	local s = self._settings
+	return {
+		FillColor = s.CHAMS_FILL_COLOR,
+		OutlineColor = s.CHAMS_OUTLINE_COLOR,
+		FillTransparency = s.CHAMS_FILL_TRANSPARENCY,
+		OutlineTransparency = s.CHAMS_OUTLINE_TRANSPARENCY,
+		DepthMode = s.CHAMS_OCCLUSION and "AlwaysOnTop" or "Occluded",
+	}
+end
+
 function LimbExtender:Start()
 	if self._destroyed or self._running then return end
 	self._running = true
@@ -1067,7 +1190,7 @@ function LimbExtender:Start()
 
 	self:_runGameScriptIfNeeded()
 
-	if self._dirtyRestart or self._dirtyCosmetic or self._dirtyESP then
+	if self._dirtyRestart or self._dirtyCosmetic or self._dirtyESP or self._dirtyCHAMS then
 		self._workScheduled = true
 		task_spawn(function() self:_processDirtyWork() end)
 	end
@@ -1084,8 +1207,19 @@ function LimbExtender:Stop()
 		self._dynamicScaleConn = nil
 	end
 
+	if self._charConn then
+		self._charConn:Disconnect()
+		self._charConn = nil
+	end
+
+	self._dynKeys = nil
+	self._dynNextIndex = 1
+
 	self._manager:Stop()
 	for cacheKey, entry in pairs(self._playerCache) do
+		if self._CHAMS and entry.Character then
+			self._CHAMS.removeHighlight(entry.Character, self._chamsSourceKey)
+		end
 		sharedRestoreLimb(self, cacheKey, entry.Limb)
 	end
 	table_clear(self._playerCache)
@@ -1145,6 +1279,12 @@ function LimbExtender:Set(key, value)
 		return
 	elseif key == "DYNAMIC_SCALE_RANGE_MULT" then
 		s.DYNAMIC_SCALE_RANGE_MULT = value
+		if s.DYNAMIC_SCALE_ENABLED then
+			local rangeMult = value or 1.0
+			for _, entry in pairs(self._playerCache) do
+				recalcEntryDistFields(entry, rangeMult)
+			end
+		end
 		return
 	elseif key == "DYNAMIC_SCALE_UPDATE_RATE" then
 		s.DYNAMIC_SCALE_UPDATE_RATE = value
@@ -1154,9 +1294,13 @@ function LimbExtender:Set(key, value)
 		return
 	end
 
+	local isCHAMSKey = key == "CHAMS" or (type(key) == "string" and key:sub(1,6) == "CHAMS_")
+
 	if RESTART_KEYS[key] then
 		if key == "TARGET_LIMB" then limbData.targetLimbName = value end
 		self._dirtyRestart = true
+	elseif isCHAMSKey then
+		self._dirtyCHAMS = true
 	else
 		self._dirtyCosmetic = true
 	end
@@ -1193,6 +1337,13 @@ end
 function LimbExtender:Destroy()
 	self:Stop()
 	self._destroyed = true
+	if self._CHAMS then
+		for _, entry in pairs(self._playerCache) do
+			if entry.Character then
+				self._CHAMS.removeHighlight(entry.Character, self._chamsSourceKey)
+			end
+		end
+	end
 	if self._ESP then self._ESP:Destroy(); self._ESP = nil end
 	limbData.terminate = nil
 end
