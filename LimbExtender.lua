@@ -359,7 +359,7 @@ if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawm
 		useNewcclosure = (detected == false)
 	end
 
-	if useNewcclosure then
+	if true then
 		local idx = newcclosure(hookedIndex)
 		local nidx = newcclosure(hookedNewIndex)
 		local nm = has_getnamecallmethod and newcclosure(hookedNamecall) or nil
