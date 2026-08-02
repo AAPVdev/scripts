@@ -653,17 +653,19 @@ function PlayerData:_updateTeamSignal()
 end
 
 function PlayerData:EvaluateFilter()
-	if self._destroyed then return end
-	local passes = self._parent:_evaluatePlayerFilter(self.player)
-	if passes and not self._isTracked then
-		self._isTracked = true
-		if self._character then
-			self:_setupCharacterTracking(self._character)
-		end
-	elseif not passes and self._isTracked then
-		self._isTracked = false
-		self:_teardownCharacterTracking()
-	end
+    if self._destroyed then return end
+    local passes = self._parent:_evaluatePlayerFilter(self.player)
+    if passes and not self._isTracked then
+        self._isTracked = true
+        if self._character then
+            self:_setupCharacterTracking(self._character)
+        elseif self.player.Character then
+            self:_onCharacterAdded(self.player.Character)
+        end
+    elseif not passes and self._isTracked then
+        self._isTracked = false
+        self:_teardownCharacterTracking()
+    end
 end
 
 function PlayerData:_setupCharacterTracking(char)
