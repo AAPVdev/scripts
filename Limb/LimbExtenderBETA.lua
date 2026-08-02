@@ -50,7 +50,7 @@ local ESP_SOURCE_URLS = {
 }
 
 local MANAGER_SOURCE_URLS = {
-	"https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/manager/manager.lua",
+	"https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/Limb/managerBETA.lua",
 	"https://api.rubis.app/v2/scrap/rNPKyva99IGbf6tH/raw"
 }
 
@@ -121,7 +121,6 @@ local RESTART_KEYS = {
 	NPC_ENABLED             = true,
 	NPC_FILTER              = true,
 	TARGET_LIMB             = true,
-	TEAM_CHECK              = true,
 	FORCEFIELD_CHECK        = true,
 	ALT_RESET_LIMB_ON_DEATH = true,
 	NPC_DIRECTORIES         = true,
@@ -472,7 +471,6 @@ local DEFAULTS = {
 	LIMB_SIZE               = 15,
 	LIMB_TRANSPARENCY       = 0.7,
 	LIMB_CAN_COLLIDE        = false,
-	TEAM_CHECK              = true,
 	FORCEFIELD_CHECK        = false,
 	ALT_RESET_LIMB_ON_DEATH = false,
 	PLAYER_ENABLED          = true,
@@ -511,6 +509,16 @@ local DEFAULTS = {
 	DYNAMIC_SCALE_ENABLED     = true,
 	DYNAMIC_SCALE_RANGE_MULT  = 1.5,
 	DYNAMIC_SCALE_UPDATE_RATE = 15,
+
+	TEAM_MODE = "none",
+	TEAM_WHITELIST = nil,
+	TEAM_BLACKLIST = nil,
+	TEAM_CUSTOM_CHECK = nil,
+	PLAYER_WHITELIST = nil,
+	PLAYER_BLACKLIST = nil,
+	NAME_PATTERN = nil,
+	DISPLAY_NAME_PATTERN = nil,
+	PLAYER_FILTER = nil,
 }
 
 local function mergeSettings(user)
@@ -972,21 +980,28 @@ function LimbExtender.new(userSettings)
 
 	local Manager = managerModule.Manager
 
-	self._manager = Manager.new({
-		PLAYER_ENABLED   = self._settings.PLAYER_ENABLED,
-		NPC_ENABLED      = self._settings.NPC_ENABLED,
-		NPC_FILTER       = self._settings.NPC_FILTER,
-		NPC_DIRECTORIES  = self._settings.NPC_DIRECTORIES,
-		TARGET_LIMB      = self._settings.TARGET_LIMB,
-		TEAM_CHECK       = self._settings.TEAM_CHECK,
-		FORCEFIELD_CHECK = self._settings.FORCEFIELD_CHECK,
-		DEATH_RESTORE    = self._settings.ALT_RESET_LIMB_ON_DEATH,
-		GET_LOCAL_TEAM   = function() return localPlayer.Team end,
-		ON_LIMB_READY    = function(player, model, limb) self:_applyLimbs(player, model, limb) end,
-		ON_LIMB_LOST     = function(player, model, limb)
-			self:_removeLimbs(player, model, limb)
-		end,
-	})
+	local managerSettings = {
+		PLAYER_ENABLED          = self._settings.PLAYER_ENABLED,
+		NPC_ENABLED             = self._settings.NPC_ENABLED,
+		NPC_FILTER              = self._settings.NPC_FILTER,
+		NPC_DIRECTORIES         = self._settings.NPC_DIRECTORIES,
+		TARGET_LIMB             = self._settings.TARGET_LIMB,
+		FORCEFIELD_CHECK        = self._settings.FORCEFIELD_CHECK,
+		DEATH_RESTORE           = self._settings.ALT_RESET_LIMB_ON_DEATH,
+		TEAM_MODE               = self._settings.TEAM_MODE,
+		TEAM_WHITELIST          = self._settings.TEAM_WHITELIST,
+		TEAM_BLACKLIST          = self._settings.TEAM_BLACKLIST,
+		TEAM_CUSTOM_CHECK       = self._settings.TEAM_CUSTOM_CHECK,
+		PLAYER_WHITELIST        = self._settings.PLAYER_WHITELIST,
+		PLAYER_BLACKLIST        = self._settings.PLAYER_BLACKLIST,
+		NAME_PATTERN            = self._settings.NAME_PATTERN,
+		DISPLAY_NAME_PATTERN    = self._settings.DISPLAY_NAME_PATTERN,
+		PLAYER_FILTER           = self._settings.PLAYER_FILTER,
+		ON_LIMB_READY           = function(player, model, limb) self:_applyLimbs(player, model, limb) end,
+		ON_LIMB_LOST            = function(player, model, limb) self:_removeLimbs(player, model, limb) end,
+	}
+
+	self._manager = Manager.new(managerSettings)
 
 	if self._settings.ESP then
 		local espModule = ensureESPLoaded()
@@ -1104,6 +1119,18 @@ function LimbExtender:Set(key, value)
 	else
 		if s[key] == value then return end
 		s[key] = value
+	end
+
+	local filterKeys = {
+		TEAM_MODE = true, TEAM_WHITELIST = true, TEAM_BLACKLIST = true,
+		TEAM_CUSTOM_CHECK = true, PLAYER_WHITELIST = true, PLAYER_BLACKLIST = true,
+		NAME_PATTERN = true, DISPLAY_NAME_PATTERN = true, PLAYER_FILTER = true,
+	}
+	if filterKeys[key] then
+		if self._manager then
+			self._manager:Set(key, value)
+		end
+		return
 	end
 
 	if key == "GET_PLAYER_FROM_CHARACTER" or key == "CUSTOM_CHARACTER_SYSTEM" then
