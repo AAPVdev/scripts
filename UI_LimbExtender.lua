@@ -627,10 +627,38 @@ local function BuildUI(version)
     createSection(Tabs.Appearance, "Chams")
     createToggle(Tabs.Appearance, "Chams Enabled", "CHAMS", false)
     createToggle(Tabs.Appearance, "Always On Top", "CHAMS_OCCLUSION", false)
-    createColorPicker(Tabs.Appearance, "Fill Color", "CHAMS_FILL_COLOR")
-    createColorPicker(Tabs.Appearance, "Outline Color", "CHAMS_OUTLINE_COLOR")
-    createSlider(Tabs.Appearance, "Fill Transparency", "CHAMS_FILL_TRANSPARENCY", {0, 1}, 0.05, "", 0.5)
-    createSlider(Tabs.Appearance, "Outline Transparency", "CHAMS_OUTLINE_TRANSPARENCY", {0, 1}, 0.05, "", 0.5)
+
+    if version == 1 then
+        createColorPicker(Tabs.Appearance, "Fill Color", "CHAMS_FILL_COLOR")
+        createColorPicker(Tabs.Appearance, "Outline Color", "CHAMS_OUTLINE_COLOR")
+        createSlider(Tabs.Appearance, "Fill Transparency", "CHAMS_FILL_TRANSPARENCY", {0, 1}, 0.05, "", 0.5)
+        createSlider(Tabs.Appearance, "Outline Transparency", "CHAMS_OUTLINE_TRANSPARENCY", {0, 1}, 0.05, "", 0.5)
+    else
+        local savedFillTrans = ctrl:Get("CHAMS_FILL_TRANSPARENCY")
+        local savedOutlineTrans = ctrl:Get("CHAMS_OUTLINE_TRANSPARENCY")
+        local defaultFillAlpha = 1 - (savedFillTrans ~= nil and savedFillTrans or 0.5)
+        local defaultOutlineAlpha = 1 - (savedOutlineTrans ~= nil and savedOutlineTrans or 0.5)
+
+        Tabs.Appearance:CreateColorPicker({
+            name = "Fill Color",
+            flag = "CHAMS_FILL_COLOR",
+            alpha = defaultFillAlpha,
+            callback = function(color, alpha)
+                ctrl:Set("CHAMS_FILL_COLOR", color)
+                ctrl:Set("CHAMS_FILL_TRANSPARENCY", 1 - alpha)
+            end,
+        })
+
+        Tabs.Appearance:CreateColorPicker({
+            name = "Outline Color",
+            flag = "CHAMS_OUTLINE_COLOR",
+            alpha = defaultOutlineAlpha,
+            callback = function(color, alpha)
+                ctrl:Set("CHAMS_OUTLINE_COLOR", color)
+                ctrl:Set("CHAMS_OUTLINE_TRANSPARENCY", 1 - alpha)
+            end,
+        })
+    end
 
     createSection(Tabs.Appearance, "Proximity Shrink")
     createToggle(Tabs.Appearance, "Shrink Enabled", "DYNAMIC_SCALE_ENABLED", false)
