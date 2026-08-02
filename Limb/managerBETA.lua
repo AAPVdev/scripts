@@ -9,10 +9,6 @@ local Players   = cloneref(game:GetService("Players"))
 local Workspace = cloneref(game:GetService("Workspace"))
 
 local localPlayer = Players.LocalPlayer
-if not localPlayer then
-	Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
-	localPlayer = Players.LocalPlayer
-end
 
 local table_clear  = table.clear
 local table_remove = table.remove
@@ -50,8 +46,7 @@ end
 
 function ConnectionManager:Connect(signal, fn, label)
 	if not signal or not fn then return nil end
-	local ok, conn = pcall(signal.Connect, signal, fn)
-	if not ok or not conn then return nil end
+	local conn = signal:Connect(fn)
 	self:_register(conn, label)
 	return conn
 end
@@ -88,21 +83,31 @@ local DEFAULTS = {
 	ON_NPC_REMOVING      = nil,
 
 	TARGET_LIMB          = nil,
-	TEAM_CHECK           = false,
 	FORCEFIELD_CHECK     = false,
 	STOP_TRACKING_ON_DEATH = true,
-	DEATH_DETECT_METHOD  = "Died",
-	GET_LOCAL_TEAM       = nil,
+	DEATH_DETECT_METHOD  = "Health",
 	ON_LIMB_READY        = nil,
 	ON_LIMB_LOST         = nil,
 
-	NPC_SPAWN_WAIT_TIMEOUT = 15,
+	NPC_SPAWN_WAIT_TIMEOUT = 5,
 
 	WARN_ON_CALLBACK_ERROR = true,
-
 	ON_CALLBACK_ERROR = nil,
 
 	REQUIRE_ANCHOR = true,
+
+	GET_PLAYER_FROM_CHARACTER = nil,
+	CUSTOM_CHARACTER_SYSTEM = false,
+
+	TEAM_MODE = "none",
+	TEAM_WHITELIST = nil,
+	TEAM_BLACKLIST = nil,
+	TEAM_CUSTOM_CHECK = nil,
+	PLAYER_WHITELIST = nil,
+	PLAYER_BLACKLIST = nil,
+	NAME_PATTERN = nil,
+	DISPLAY_NAME_PATTERN = nil,
+	PLAYER_FILTER = nil,
 }
 
 local function mergeSettings(user)
@@ -117,11 +122,17 @@ local function mergeSettings(user)
 		s.NPC_DIRECTORIES = {}
 	end
 
-	if not s.GET_LOCAL_TEAM then
-		s.GET_LOCAL_TEAM = function() return localPlayer.Team end
-	end
-
 	return s
+end
+
+local function getPlayerFromCharacter(settings, model)
+	local custom = settings.GET_PLAYER_FROM_CHARACTER
+	if custom then
+		local ok, result = pcall(custom, model)
+		if ok and result ~= nil then return result end
+		return nil
+	end
+	return Players:GetPlayerFromCharacter(model)
 end
 
 local function parseLimbPath(targetLimb)
@@ -173,13 +184,8 @@ local function resolvePathAsync(path, timeoutPerPart)
 		current = Workspace
 		table_remove(parts, 1)
 	else
-		local ok, service = pcall(game.GetService, game, parts[1])
-		if ok and service then
-			current = service
-			table_remove(parts, 1)
-		else
-			current = Workspace
-		end
+		current = game:GetService(parts[1])
+		table_remove(parts, 1)
 	end
 
 	for _, part in ipairs(parts) do
@@ -194,8 +200,7 @@ end
 
 local function isLiveInstance(inst)
 	if typeof(inst) ~= "Instance" then return false end
-	local ok, result = pcall(inst.IsDescendantOf, inst, game)
-	return ok and result
+	return inst:IsDescendantOf(game)
 end
 
 local StreamObserver = {}
@@ -302,10 +307,10 @@ function StreamObserver:_setActive(active)
 	local model = self._model
 	if active then
 		local cb = self._onAvailable
-		if type(cb) == "function" then pcall(cb, model) end
+		if type(cb) == "function" then cb(model) end
 	else
 		local cb = self._onUnavailable
-		if type(cb) == "function" then pcall(cb, model) end
+		if type(cb) == "function" then cb(model) end
 	end
 end
 
@@ -339,7 +344,7 @@ function StreamObserver:Destroy()
 	if self._active then
 		self._active = false
 		local cb = self._onUnavailable
-		if type(cb) == "function" then pcall(cb, self._model) end
+		if type(cb) == "function" then cb(self._model) end
 	end
 
 	self._anchorConns:Destroy()
@@ -455,29 +460,17 @@ function LimbObserver:_start()
 		self:_monitorDeathEarly()
 	end
 
-	if self._player and self._manager._settings.TEAM_CHECK then
-		local getTeam = self._manager._settings.GET_LOCAL_TEAM
-		if type(getTeam) == "function" then
-			local ok, myTeam = pcall(getTeam)
-			if ok and myTeam and self._player.Team == myTeam then return end
-		end
-	end
-
-	local function beginResolve()
-		self:_resolveStep(self._model, self._segments, 1)
-	end
-
-	local function watchForceField(ff)
-		self:_clearPathConns()
-		self._conns:Connect(ff.AncestryChanged, function()
-			if not ff:IsDescendantOf(self._model) then
-				self._conns:Disconnect("ForceFieldWatcher")
-				beginResolve()
-			end
-		end, "ForceFieldWatcher")
-	end
-
 	if self._manager._settings.FORCEFIELD_CHECK then
+		local function watchForceField(ff)
+			self:_clearPathConns()
+			self._conns:Connect(ff.AncestryChanged, function()
+				if not ff:IsDescendantOf(self._model) then
+					self._conns:Disconnect("ForceFieldWatcher")
+					self:_start()
+				end
+			end, "ForceFieldWatcher")
+		end
+
 		local existing = self._model:FindFirstChildOfClass("ForceField")
 		if existing then
 			watchForceField(existing)
@@ -488,9 +481,10 @@ function LimbObserver:_start()
 				watchForceField(child)
 			end
 		end, "ForceFieldAppeared")
+		return
 	end
 
-	beginResolve()
+	self:_resolveStep(self._model, self._segments, 1)
 end
 
 function LimbObserver:_monitorDeathEarly()
@@ -622,58 +616,97 @@ function PlayerData.new(parent, player)
 		_character         = nil,
 		_characterObserver = nil,
 		_limbObserver      = nil,
+		_isTracked         = false,
 	}, PlayerData)
 
-	self.conns:Connect(player.CharacterAdded, function(char)
-		self:_onCharacterAdded(char)
-	end, "CharacterAdded")
+	if not parent._settings.CUSTOM_CHARACTER_SYSTEM then
+		self.conns:Connect(player.CharacterAdded, function(char)
+			self:_onCharacterAdded(char)
+		end, "CharacterAdded")
 
-	self.conns:Connect(player.CharacterRemoving, function(char)
-		self:_onCharacterRemoving(char)
-	end, "CharacterRemoving")
+		self.conns:Connect(player.CharacterRemoving, function(char)
+			self:_onCharacterRemoving(char)
+		end, "CharacterRemoving")
+
+		if player.Character then
+			self:_onCharacterAdded(player.Character)
+		end
+	end
+
+	self.conns:Connect(player:GetPropertyChangedSignal("Character"), function()
+		local char = player.Character
+		if char and self._character ~= char and not self._destroyed then
+			self:_onCharacterAdded(char)
+		end
+	end, "CharacterChanged")
 
 	self:_updateTeamSignal()
-
-	if player.Character then
-		self:_onCharacterAdded(player.Character)
-	end
 
 	return self
 end
 
 function PlayerData:_updateTeamSignal()
 	local s = self._parent._settings
-	if s.TARGET_LIMB ~= nil and s.TEAM_CHECK then
+	if s.TEAM_MODE ~= "none" then
 		self.conns:Connect(self.player:GetPropertyChangedSignal("Team"), function()
-			if self._limbObserver then
-				self._limbObserver:Refresh()
-			end
+			self:EvaluateFilter()
 		end, "TeamChanged")
 	else
 		self.conns:Disconnect("TeamChanged")
 	end
 end
 
-function PlayerData:_setupLimbTracking(char)
-	if self._destroyed or not isLiveInstance(char) then return end
-	if self._limbObserver then
-		self._limbObserver:Destroy()
+function PlayerData:EvaluateFilter()
+	if self._destroyed then return end
+	local passes = self._parent:_evaluatePlayerFilter(self.player)
+	if passes and not self._isTracked then
+		self._isTracked = true
+		if self._character then
+			self:_setupCharacterTracking(self._character)
+		end
+	elseif not passes and self._isTracked then
+		self._isTracked = false
+		self:_teardownCharacterTracking()
 	end
-	self._limbObserver = LimbObserver.new(self._parent, char, self.player)
 end
 
-function PlayerData:_ensureLimbTracking()
-	if self._destroyed then return end
-	if self._limbObserver then
-		self._limbObserver:Refresh()
-		return
-	end
-	if self._characterObserver and self._characterObserver:IsActive() then
-		local char = self._character
-		if char and isLiveInstance(char) then
-			self:_setupLimbTracking(char)
+function PlayerData:_setupCharacterTracking(char)
+	if self._destroyed or not isLiveInstance(char) then return end
+	self:_teardownCharacterTracking()
+
+	self._character = char
+	local parent = self._parent
+
+	local function onAvailable(model)
+		if self._destroyed then return end
+		parent:_fireCallback("ON_CHARACTER_ADDED", parent._settings.ON_CHARACTER_ADDED, self.player, model)
+		if parent._settings.TARGET_LIMB then
+			self:_setupLimbTracking(model)
 		end
 	end
+
+	local function onUnavailable(model)
+		if self._destroyed then return end
+		parent:_fireCallback("ON_CHARACTER_REMOVING", parent._settings.ON_CHARACTER_REMOVING, self.player, model)
+		self:_teardownLimbTracking()
+	end
+
+	self._characterObserver = StreamObserver.new(char, onAvailable, onUnavailable, parent._settings.REQUIRE_ANCHOR)
+end
+
+function PlayerData:_teardownCharacterTracking()
+	if self._characterObserver then
+		self._characterObserver:Destroy()
+		self._characterObserver = nil
+	end
+	self:_teardownLimbTracking()
+	self._character = nil
+end
+
+function PlayerData:_setupLimbTracking(char)
+	if self._destroyed or not isLiveInstance(char) then return end
+	self:_teardownLimbTracking()
+	self._limbObserver = LimbObserver.new(self._parent, char, self.player)
 end
 
 function PlayerData:_teardownLimbTracking()
@@ -685,60 +718,19 @@ end
 
 function PlayerData:_onCharacterAdded(char)
 	if self._destroyed or typeof(char) ~= "Instance" or not char:IsA("Model") then return end
-
-	if self._characterObserver then
-		self._characterObserver:Destroy()
-		self._characterObserver = nil
-	end
-
-	self._character = char
-
-	local parent = self._parent
-	self._characterObserver = StreamObserver.new(char, function(model)
-		if self._destroyed then return end
-		parent:_fireCallback("ON_CHARACTER_ADDED", parent._settings.ON_CHARACTER_ADDED, self.player, model)
-		if parent._settings.TARGET_LIMB then
-			self:_setupLimbTracking(model)
-		end
-	end, function(model)
-		if self._destroyed then return end
-		parent:_fireCallback("ON_CHARACTER_REMOVING", parent._settings.ON_CHARACTER_REMOVING, self.player, model)
-		if self._limbObserver then
-			self._limbObserver:Destroy()
-			self._limbObserver = nil
-		end
-	end, parent._settings.REQUIRE_ANCHOR)
+	if not self._isTracked then return end
+	self:_setupCharacterTracking(char)
 end
 
 function PlayerData:_onCharacterRemoving(char)
 	if self._destroyed then return end
 	if self._character ~= char then return end
-
-	if self._characterObserver then
-		self._characterObserver:Destroy()
-		self._characterObserver = nil
-	end
-
-	if self._limbObserver then
-		self._limbObserver:Destroy()
-		self._limbObserver = nil
-	end
-
-	self._character = nil
+	self:_teardownCharacterTracking()
 end
 
 function PlayerData:Destroy()
 	self._destroyed = true
-
-	if self._characterObserver then
-		self._characterObserver:Destroy()
-		self._characterObserver = nil
-	end
-	if self._limbObserver then
-		self._limbObserver:Destroy()
-		self._limbObserver = nil
-	end
-
+	self:_teardownCharacterTracking()
 	self.conns:Destroy()
 end
 
@@ -758,6 +750,92 @@ function Manager:_fireCallback(name, cb, ...)
 		end
 	end
 	return ok
+end
+
+function Manager:_playerInList(list, player)
+	if type(list) ~= "table" then return false end
+	for _, entry in ipairs(list) do
+		if type(entry) == "number" then
+			if player.UserId == entry then return true end
+		elseif typeof(entry) == "Instance" and entry:IsA("Player") then
+			if player == entry then return true end
+		end
+	end
+	return false
+end
+
+function Manager:_evaluatePlayerFilter(player)
+	local s = self._settings
+
+	local whitelist = s.PLAYER_WHITELIST
+	if type(whitelist) == "table" and #whitelist > 0 then
+		if not self:_playerInList(whitelist, player) then
+			return false
+		end
+	end
+
+	local blacklist = s.PLAYER_BLACKLIST
+	if type(blacklist) == "table" and #blacklist > 0 then
+		if self:_playerInList(blacklist, player) then
+			return false
+		end
+	end
+
+	if s.NAME_PATTERN then
+		if not string.match(player.Name, s.NAME_PATTERN) then return false end
+	end
+	if s.DISPLAY_NAME_PATTERN then
+		if not string.match(player.DisplayName, s.DISPLAY_NAME_PATTERN) then return false end
+	end
+	if s.PLAYER_FILTER then
+		local ok, result = pcall(s.PLAYER_FILTER, player)
+		if not ok or not result then return false end
+	end
+
+	local mode = s.TEAM_MODE
+	if mode == "none" then
+		return true
+	end
+
+	local localTeam = localPlayer.Team
+	local otherTeam = player.Team
+
+	if mode == "same" then
+		return localTeam == otherTeam
+	elseif mode == "whitelist" then
+		local list = s.TEAM_WHITELIST
+		if type(list) == "table" then
+			for _, entry in ipairs(list) do
+				if type(entry) == "string" then
+					if otherTeam and otherTeam.Name == entry then return true end
+				elseif typeof(entry) == "Instance" and entry:IsA("Team") then
+					if otherTeam == entry then return true end
+				end
+			end
+		end
+		return false
+	elseif mode == "blacklist" then
+		local list = s.TEAM_BLACKLIST
+		if type(list) == "table" then
+			for _, entry in ipairs(list) do
+				if type(entry) == "string" then
+					if otherTeam and otherTeam.Name == entry then return false end
+				elseif typeof(entry) == "Instance" and entry:IsA("Team") then
+					if otherTeam == entry then return false end
+				end
+			end
+		end
+		return true
+	elseif mode == "custom" then
+		local customCheck = s.TEAM_CUSTOM_CHECK
+		if type(customCheck) == "function" then
+			local ok, result = pcall(customCheck, localTeam, otherTeam)
+			return ok and result
+		end
+		return false
+	end
+
+	return true
 end
 
 function Manager.new(userSettings)
@@ -783,6 +861,8 @@ function Manager.new(userSettings)
 		_dirUidMap    = {},
 		_stringDirMap = {},
 		_npcDirOwners = {},
+
+		_pendingPlayerRegistrations = {},
 	}, Manager)
 
 	return self
@@ -794,6 +874,15 @@ function Manager:_onLimbReady(player, model, limb)
 end
 
 function Manager:_onLimbLost(player, model, limb)
+	local obs = self._npcLimbObservers[model]
+	if obs then
+		obs:Destroy()
+		self._npcLimbObservers[model] = nil
+	end
+
+	self._deadModels = self._deadModels or {}
+	self._deadModels[model] = true
+
 	local cb = self._settings.ON_LIMB_LOST
 	self:_fireCallback("ON_LIMB_LOST", cb, player, model, limb)
 end
@@ -801,7 +890,7 @@ end
 function Manager:_isValidNPC(model)
 	if not model or not model:IsA("Model") then return false end
 	if not model:FindFirstChildOfClass("Humanoid") then return false end
-	if Players:GetPlayerFromCharacter(model) then return false end
+	if getPlayerFromCharacter(self._settings, model) then return false end
 
 	local filter = self._settings.NPC_FILTER
 	if type(filter) == "function" then
@@ -814,7 +903,7 @@ end
 function Manager:_checkNPCValidity(model)
 	if not model or not model:IsA("Model") then return false, false end
 	if not model:FindFirstChildOfClass("Humanoid") then return false, true end
-	if Players:GetPlayerFromCharacter(model) then return false, false end
+	if getPlayerFromCharacter(self._settings, model) then return false, false end
 
 	local filter = self._settings.NPC_FILTER
 	if type(filter) == "function" then
@@ -1004,7 +1093,7 @@ function Manager:_activateDirectory(dir, useDescendants)
 
 	local gen = self._generation
 	task_spawn(function()
-		local BATCH = 3
+		local BATCH = 15
 		for i = 1, #candidates, BATCH do
 			if not self._running or self._destroyed or self._generation ~= gen then
 				return
@@ -1022,10 +1111,14 @@ function Manager:_refreshAllLimbObservers()
 	local hasTarget = self._settings.TARGET_LIMB ~= nil
 
 	for _, pd in pairs(self._playerTable) do
-		if hasTarget then
-			pd:_ensureLimbTracking()
-		else
-			pd:_teardownLimbTracking()
+		if pd._isTracked then
+			if hasTarget then
+				if pd._character then
+					pd:_setupLimbTracking(pd._character)
+				end
+			else
+				pd:_teardownLimbTracking()
+			end
 		end
 	end
 
@@ -1060,7 +1153,7 @@ function Manager:_rescanNPCFilter()
 			end
 		end
 
-		local BATCH = 3
+		local BATCH = 15
 		for i = 1, #toRemove, BATCH do
 			if not self._running or self._destroyed or self._generation ~= gen then return end
 			local last = math_min(i + BATCH - 1, #toRemove)
@@ -1100,13 +1193,42 @@ function Manager:_rescanNPCFilter()
 	end)
 end
 
+function Manager:_rescanCustomPlayers()
+	if not self._running then return end
+	if not self._settings.CUSTOM_CHARACTER_SYSTEM then return end
+
+	local dirs = self._settings.NPC_DIRECTORIES
+	local hasUserDirs = type(dirs) == "table" and #dirs > 0
+	local entries = hasUserDirs and dirs or { Workspace }
+
+	local getPlayer = self._settings.GET_PLAYER_FROM_CHARACTER
+	if type(getPlayer) ~= "function" then return end
+
+	for _, entry in ipairs(entries) do
+		local instance = isLiveInstance(entry) and entry or self._stringDirMap[entry]
+		if instance and isLiveInstance(instance) then
+			local raw = (not hasUserDirs) and instance:GetDescendants() or instance:GetChildren()
+			for _, obj in ipairs(raw) do
+				if isNPCCandidate(obj) then
+					local player = getPlayer(obj)
+					if player then
+						self:RegisterPlayerCharacter(player, obj)
+					end
+				end
+			end
+		end
+	end
+end
+
 function Manager:_startPlayerTracking()
 	if self._destroyed or not self._running or self._playerConnsStarted then return end
 	self._playerConnsStarted = true
 
 	self._connections:Connect(Players.PlayerAdded, function(p)
 		if p ~= localPlayer and not self._playerTable[p] then
-			self._playerTable[p] = PlayerData.new(self, p)
+			local pd = PlayerData.new(self, p)
+			self._playerTable[p] = pd
+			pd:EvaluateFilter()
 		end
 	end, "PlayerAdded")
 
@@ -1119,49 +1241,24 @@ function Manager:_startPlayerTracking()
 	end, "PlayerRemoving")
 
 	local snapshot = Players:GetPlayers()
-	task_spawn(function()
-		local BATCH = 3
-		for i = 1, #snapshot, BATCH do
-			if not self._running or self._destroyed or not self._playerConnsStarted then return end
-			local last = math_min(i + BATCH - 1, #snapshot)
-			for j = i, last do
-				local p = snapshot[j]
-				if p ~= localPlayer and not self._playerTable[p] then
-					if isLiveInstance(p) then
-						self._playerTable[p] = PlayerData.new(self, p)
-					end
+	local gen = self._generation
+
+	local BATCH = 15
+	for i = 1, #snapshot, BATCH do
+		if not self._running or self._destroyed or self._playerConnsStarted == false then return end
+		local last = math_min(i + BATCH - 1, #snapshot)
+		for j = i, last do
+			local p = snapshot[j]
+			if p ~= localPlayer and not self._playerTable[p] then
+				if isLiveInstance(p) then
+					local pd = PlayerData.new(self, p)
+					self._playerTable[p] = pd
+					pd:EvaluateFilter()
 				end
 			end
-			task.wait()
 		end
-	end)
-end
-
-function Manager:_stopPlayerTracking()
-	if not self._playerConnsStarted then return end
-	self._playerConnsStarted = false
-
-	if self._connections then
-		self._connections:Disconnect("PlayerAdded")
-		self._connections:Disconnect("PlayerRemoving")
+		task.wait()
 	end
-
-	local BATCH = 3
-	local toDestroy = {}
-	for _, pd in pairs(self._playerTable) do
-		toDestroy[#toDestroy + 1] = pd
-	end
-	table_clear(self._playerTable)
-
-	task_spawn(function()
-		for i = 1, #toDestroy, BATCH do
-			local last = math_min(i + BATCH - 1, #toDestroy)
-			for j = i, last do
-				toDestroy[j]:Destroy()
-			end
-			task.wait()
-		end
-	end)
 end
 
 function Manager:_startNPCTracking()
@@ -1174,36 +1271,62 @@ function Manager:_startNPCTracking()
 	local entries = hasUserDirs and dirs or { Workspace }
 
 	local gen = self._generation
-	task_spawn(function()
-		for _, entry in ipairs(entries) do
-			if not self._running or self._destroyed or self._generation ~= gen then return end
+	for _, entry in ipairs(entries) do
+		if not self._running or self._destroyed or self._generation ~= gen then return end
 
-			if isLiveInstance(entry) then
-				self:_activateDirectory(entry, not hasUserDirs)
-			elseif type(entry) == "string" then
-				local resolved = resolvePathAsync(entry)
-				if resolved and self._running and self._npcConnsStarted
-					and not self._destroyed and self._generation == gen then
-					self._stringDirMap[entry] = resolved
-					self:_activateDirectory(resolved, not hasUserDirs)
-				end
+		if isLiveInstance(entry) then
+			self:_activateDirectory(entry, not hasUserDirs)
+		elseif type(entry) == "string" then
+			local resolved = resolvePathAsync(entry)
+			if resolved and self._running and self._npcConnsStarted
+				and not self._destroyed and self._generation == gen then
+				self._stringDirMap[entry] = resolved
+				self:_activateDirectory(resolved, not hasUserDirs)
 			end
-			task.wait()
 		end
-	end)
+		task.wait()
+	end
+end
+
+function Manager:_stopPlayerTracking()
+	if not self._playerConnsStarted then return end
+	self._playerConnsStarted = false
+
+	if self._connections then
+		self._connections:Disconnect("PlayerAdded")
+		self._connections:Disconnect("PlayerRemoving")
+	end
+
+	local BATCH = 15
+	local toDestroy = {}
+	for _, pd in pairs(self._playerTable) do
+		toDestroy[#toDestroy + 1] = pd
+	end
+	table_clear(self._playerTable)
+
+	local gen = self._generation 
+
+	for i = 1, #toDestroy, BATCH do
+		if self._destroyed or self._generation ~= gen then return end
+		local last = math_min(i + BATCH - 1, #toDestroy)
+		for j = i, last do
+			toDestroy[j]:Destroy()
+		end
+		task.wait()
+	end
 end
 
 function Manager:_stopNPCTracking()
 	if not self._npcConnsStarted then return end
 	self._npcConnsStarted = false
 	self._generation = self._generation + 1
-
+	
 	if self._npcConnections then
 		self._npcConnections:Destroy()
 		self._npcConnections = nil
 	end
 
-	local BATCH = 3
+	local BATCH = 15
 
 	local npcObservers = {}
 	for _, observer in pairs(self._npcSet) do
@@ -1226,22 +1349,24 @@ function Manager:_stopNPCTracking()
 	table_clear(self._stringDirMap)
 	table_clear(self._npcDirOwners)
 
-	task_spawn(function()
-		for i = 1, #npcObservers, BATCH do
-			local last = math_min(i + BATCH - 1, #npcObservers)
-			for j = i, last do
-				npcObservers[j]:Destroy()
-			end
-			task.wait()
+	local gen = self._generation
+
+	for i = 1, #npcObservers, BATCH do
+		if self._destroyed or self._generation ~= gen then return end
+		local last = math_min(i + BATCH - 1, #npcObservers)
+		for j = i, last do
+			npcObservers[j]:Destroy()
 		end
-		for i = 1, #limbObservers, BATCH do
-			local last = math_min(i + BATCH - 1, #limbObservers)
-			for j = i, last do
-				limbObservers[j]:Destroy()
-			end
-			task.wait()
+		task.wait()
+	end
+	for i = 1, #limbObservers, BATCH do
+		if self._destroyed or self._generation ~= gen then return end
+		local last = math_min(i + BATCH - 1, #limbObservers)
+		for j = i, last do
+			limbObservers[j]:Destroy()
 		end
-	end)
+		task.wait()
+	end
 end
 
 function Manager:Start()
@@ -1256,6 +1381,11 @@ function Manager:Start()
 	if self._settings.NPC_ENABLED then
 		self:_startNPCTracking()
 	end
+
+	for _, entry in ipairs(self._pendingPlayerRegistrations) do
+		self:RegisterPlayerCharacter(entry.player, entry.model)
+	end
+	table_clear(self._pendingPlayerRegistrations)
 end
 
 function Manager:Stop()
@@ -1371,16 +1501,28 @@ function Manager:Set(key, value)
 	if self._settings[key] == value then return end
 	self._settings[key] = value
 
-	if key == "TARGET_LIMB" or key == "TEAM_CHECK" or key == "FORCEFIELD_CHECK"
-		or key == "STOP_TRACKING_ON_DEATH" or key == "GET_LOCAL_TEAM" or key == "DEATH_DETECT_METHOD" then
+	if key == "GET_PLAYER_FROM_CHARACTER" then
+		if self._running and self._npcConnsStarted then
+			self:_rescanNPCFilter()
+		end
+		return
+	end
+
+	if key == "TARGET_LIMB" or key == "FORCEFIELD_CHECK"
+		or key == "STOP_TRACKING_ON_DEATH" or key == "DEATH_DETECT_METHOD" then
 		if self._running then
 			self:_refreshAllLimbObservers()
 		end
 	end
 
-	if (key == "TARGET_LIMB" or key == "TEAM_CHECK") and self._running then
-		for _, pd in pairs(self._playerTable) do
-			pd:_updateTeamSignal()
+	if key == "TEAM_MODE" or key == "TEAM_WHITELIST" or key == "TEAM_BLACKLIST"
+		or key == "TEAM_CUSTOM_CHECK" or key == "NAME_PATTERN"
+		or key == "DISPLAY_NAME_PATTERN" or key == "PLAYER_FILTER"
+		or key == "PLAYER_WHITELIST" or key == "PLAYER_BLACKLIST" then
+		if self._running then
+			for _, pd in pairs(self._playerTable) do
+				pd:EvaluateFilter()
+			end
 		end
 	end
 
@@ -1391,7 +1533,15 @@ function Manager:Set(key, value)
 	if key == "PLAYER_ENABLED" and self._running then
 		if value then
 			self:_startPlayerTracking()
+			if self._settings.CUSTOM_CHARACTER_SYSTEM then
+				self:_rescanCustomPlayers()
+			end
 		else
+			for player, pd in pairs(self._playerTable) do
+				if pd._character then
+					pd:_onCharacterRemoving(pd._character)
+				end
+			end
 			self:_stopPlayerTracking()
 		end
 	end
@@ -1412,6 +1562,35 @@ end
 
 function Manager:Get(key)
 	return self._settings[key]
+end
+
+function Manager:RegisterPlayerCharacter(player, model)
+	if self._destroyed then return end
+	if not player or not model then return end
+	if not model:IsA("Model") then return end
+
+	if not self._settings.PLAYER_ENABLED then return end
+
+	if not self._running then
+		table_insert(self._pendingPlayerRegistrations, { player = player, model = model })
+		return
+	end
+
+	local pd = self._playerTable[player]
+	if not pd then
+		pd = PlayerData.new(self, player)
+		self._playerTable[player] = pd
+		pd:EvaluateFilter()
+	end
+	pd:_onCharacterAdded(model)
+end
+
+function Manager:UnregisterPlayerCharacter(player, model)
+	if self._destroyed then return end
+	local pd = self._playerTable[player]
+	if pd then
+		pd:_onCharacterRemoving(model)
+	end
 end
 
 function Manager:Destroy()
