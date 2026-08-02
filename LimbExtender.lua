@@ -28,6 +28,7 @@ limbData.instanceLookup = limbData.instanceLookup or setmetatable({}, { __mode =
 limbData.npcIdCounter   = limbData.npcIdCounter   or 0
 limbData.limbBlocked    = limbData.limbBlocked    or setmetatable({}, { __mode = "k" })
 limbData.chamsIdCounter = limbData.chamsIdCounter or 0
+limbData._hooksInstalled = limbData._hooksInstalled or false
 
 if type(limbData.terminate) == "function" then
 	limbData.terminate()
@@ -174,12 +175,12 @@ local function buildLimbProps(limb, entry, settings)
 	return props, newVec, isHRP
 end
 
-local hooksInstalled = false
+local hooksInstalled = limbData._hooksInstalled
 
 local has_checkcaller, has_getnamecallmethod, has_getconnections = false, false, false
 local has_hookmetamethod, has_newcclosure, has_getrawmetatable, has_setreadonly = false, false, false, false
 local has_debug_upvalues, has_debug_setupvalue, has_newproxy = false, false, false
-local has_othhook = false  
+local has_othhook = false
 
 do
 	local function check(name)
@@ -203,7 +204,7 @@ do
 	end
 end
 
-if has_checkcaller and (has_othhook or (has_hookmetamethod and has_newcclosure) or (has_getrawmetatable and has_setreadonly)) and not hooksInstalled then
+if not hooksInstalled then
 
 	local blockedProps = BLOCKED_PROPS
 	local blockedPropsOriginal = BLOCKED_PROPS
@@ -347,6 +348,8 @@ if has_checkcaller and (has_othhook or (has_hookmetamethod and has_newcclosure) 
 
 		hooksInstalled = true
 	end
+
+	limbData._hooksInstalled = true
 
 	if has_getconnections then
 		local createCustomSignals
@@ -1063,6 +1066,7 @@ function LimbExtender.new(userSettings)
 		_dynKeys             = nil,
 		_dynNextIndex        = 1,
 		_chamsSourceKey      = nextChamsSourceKey(),
+		_charConn            = nil,
 	}, LimbExtender)
 
 	limbData.targetLimbName = self._settings.TARGET_LIMB
@@ -1107,7 +1111,7 @@ function LimbExtender.new(userSettings)
 	end
 
 	self:_updateLocalCharacter()
-	localPlayer:GetPropertyChangedSignal("Character"):Connect(function()
+	self._charConn = localPlayer:GetPropertyChangedSignal("Character"):Connect(function()
 		self:_updateLocalCharacter()
 	end)
 
@@ -1187,6 +1191,11 @@ function LimbExtender:Stop()
 	if self._dynamicScaleConn then
 		self._dynamicScaleConn:Disconnect()
 		self._dynamicScaleConn = nil
+	end
+
+	if self._charConn then
+		self._charConn:Disconnect()
+		self._charConn = nil
 	end
 
 	self._dynKeys = nil
