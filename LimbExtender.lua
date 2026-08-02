@@ -179,6 +179,7 @@ local hooksInstalled = false
 local has_checkcaller, has_getnamecallmethod, has_getconnections = false, false, false
 local has_hookmetamethod, has_newcclosure, has_getrawmetatable, has_setreadonly = false, false, false, false
 local has_debug_upvalues, has_debug_setupvalue, has_newproxy = false, false, false
+local has_othhook = false  
 
 do
 	local function check(name)
@@ -195,9 +196,14 @@ do
 	has_debug_upvalues = check("debug.getupvalues")
 	has_debug_setupvalue = check("debug.setupvalue")
 	has_newproxy = check("newproxy")
+
+	if oth and type(oth) == "table" then
+		local ok, hookFn = pcall(function() return oth.hook end)
+		has_othhook = ok and type(hookFn) == "function"
+	end
 end
 
-if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawmetatable and has_setreadonly)) and not hooksInstalled then
+if has_checkcaller and (has_othhook or (has_hookmetamethod and has_newcclosure) or (has_getrawmetatable and has_setreadonly)) and not hooksInstalled then
 
 	local blockedProps = BLOCKED_PROPS
 	local blockedPropsOriginal = BLOCKED_PROPS
@@ -295,71 +301,16 @@ if has_checkcaller and ((has_hookmetamethod and has_newcclosure) or (has_getrawm
 		end
 	end
 
-	local function isNewcclosureDetected()
-		if not (has_hookmetamethod and has_newcclosure) then
-			return nil
+	if has_othhook then
+		local mt = getrawmetatable(game)
+		originalIndex    = oth.hook(mt.__index, hookedIndex)
+		originalNewIndex = oth.hook(mt.__newindex, hookedNewIndex)
+		if has_getnamecallmethod then
+			originalNamecall = oth.hook(mt.__namecall, hookedNamecall)
 		end
+		hooksInstalled = true
 
-		local function probeInSpawn()
-			local result = nil
-			local done = false
-			task.spawn(function()
-				local capturedFunction = nil
-				xpcall(function()
-					return game.AAAAAAA
-				end, function()
-					capturedFunction = debug.info(2, "f")
-				end)
-
-				local overflow = false
-				if capturedFunction then
-					local recursiveCaller
-					recursiveCaller = function(depth)
-						if depth < 19995 then
-							recursiveCaller(depth + 1)
-						else
-							capturedFunction(workspace, "Name")
-						end
-					end
-					local ok, err = pcall(recursiveCaller, 1)
-					overflow = not ok and type(err) == "string" and err:find("stack overflow")
-				else
-					overflow = true
-				end
-
-				result = { captured = capturedFunction, overflow = overflow }
-				done = true
-			end)
-			repeat task.wait() until done
-			return result
-		end
-
-		local base = probeInSpawn()
-		if base.overflow then
-			return false
-		end
-
-		local orig
-		orig = hookmetamethod(game, "__index", newcclosure(function(...)
-			return orig(...)
-		end))
-		local hookProbe = probeInSpawn()
-		hookmetamethod(game, "__index", orig)
-
-		if hookProbe.overflow then
-			return true
-		else
-			return false
-		end
-	end
-
-	local useNewcclosure = true
-	if has_hookmetamethod and has_newcclosure then
-		local detected = isNewcclosureDetected()
-		useNewcclosure = (detected == false)
-	end
-
-	if true then
+	elseif has_hookmetamethod and has_newcclosure then
 		local idx = newcclosure(hookedIndex)
 		local nidx = newcclosure(hookedNewIndex)
 		local nm = has_getnamecallmethod and newcclosure(hookedNamecall) or nil
