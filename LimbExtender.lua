@@ -476,9 +476,6 @@ local function setupLimbWatchdog(entry, limb, settings)
 
 	for _, pair in ipairs(PROPS_TO_WATCH) do
 		local propName, targetField = pair[1], pair[2]
-		if propName == "Size" and settings.DYNAMIC_SCALE_ENABLED then
-			continue
-		end
 		local target = entry[targetField]
 		if target ~= nil then
 			local conn = limb:GetPropertyChangedSignal(propName):Connect(function()
