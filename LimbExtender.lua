@@ -175,7 +175,7 @@ local function buildLimbProps(limb, entry, settings)
 	return props, newVec, isHRP
 end
 
-local hooksInstalled = limbData._hooksInstalled
+local Executor = string.lower(identifyexecutor and identifyexecutor() or "") -- POTASSIUM'S HOOK.OTH IS BROKEN 😡
 
 local has_checkcaller, has_getnamecallmethod, has_getconnections = false, false, false
 local has_hookmetamethod, has_newcclosure, has_getrawmetatable, has_setreadonly = false, false, false, false
@@ -204,7 +204,7 @@ do
 	end
 end
 
-if not hooksInstalled then
+if not limbData._hooksInstalled then
 
 	local blockedProps = BLOCKED_PROPS
 	local blockedPropsOriginal = BLOCKED_PROPS
@@ -302,7 +302,7 @@ if not hooksInstalled then
 		end
 	end
 
-	if has_othhook then
+	if has_othhook and not Executor == "potassium" then
 		local mt = getrawmetatable(game)
 		originalIndex    = oth.hook(mt.__index, hookedIndex)
 		originalNewIndex = oth.hook(mt.__newindex, hookedNewIndex)
