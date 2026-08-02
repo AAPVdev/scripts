@@ -302,7 +302,7 @@ if not limbData._hooksInstalled then
 		end
 	end
 
-	if has_othhook and not Executor == "potassium" then
+	if has_othhook and Executor ~= "potassium" then
 		local mt = getrawmetatable(game)
 		originalIndex    = oth.hook(mt.__index, hookedIndex)
 		originalNewIndex = oth.hook(mt.__newindex, hookedNewIndex)
