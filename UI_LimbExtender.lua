@@ -755,6 +755,15 @@ local function BuildUI(version)
         ctrl:Set("TEAM_MODE", mode)
     end)
 
+    createSection(Tabs.Targeting, "Limb Focus")
+    local existingLimbs = #scannedLimbs > 0 and table.clone(scannedLimbs) or {"Head"}
+    local targetLimbDropdown = createDropdown(Tabs.Targeting, "Target Limb", "TARGET_LIMB",
+        existingLimbs, ctrl:Get("TARGET_LIMB") or "Head", false, function(selected)
+            if type(selected) == "table" then selected = selected[1] end
+            ctrl:Set("TARGET_LIMB", selected)
+        end)
+    getgenv().uiLE.targetLimbDropdown = targetLimbDropdown
+
     createSection(Tabs.Targeting, "Team Lists")
     local savedTeamWhitelist = ctrl:Get("TEAM_WHITELIST") or {}
     local savedTeamBlacklist = ctrl:Get("TEAM_BLACKLIST") or {}
@@ -812,15 +821,6 @@ local function BuildUI(version)
         playerOptions, savedPlayerBlacklistNames, true, blacklistPlayersCallback)
     getgenv().uiLE.blacklistPlayersDropdown = blacklistPlayersDropdown
     blacklistPlayersCallback(savedPlayerBlacklistNames)
-
-    createSection(Tabs.Targeting, "Limb Focus")
-    local existingLimbs = #scannedLimbs > 0 and table.clone(scannedLimbs) or {"Head"}
-    local targetLimbDropdown = createDropdown(Tabs.Targeting, "Target Limb", "TARGET_LIMB",
-        existingLimbs, ctrl:Get("TARGET_LIMB") or "Head", false, function(selected)
-            if type(selected) == "table" then selected = selected[1] end
-            ctrl:Set("TARGET_LIMB", selected)
-        end)
-    getgenv().uiLE.targetLimbDropdown = targetLimbDropdown
 
     createSection(Tabs.Appearance, "Limb Properties")
     createToggle(Tabs.Appearance, "Limb Collisions", "LIMB_CAN_COLLIDE", false)
