@@ -738,6 +738,7 @@ local function BuildUI(version)
     createSection(Tabs.Targeting, "Target Selection")
     createToggle(Tabs.Targeting, "Players", "PLAYER_ENABLED", true)
     createToggle(Tabs.Targeting, "NPCs", "NPC_ENABLED", false)
+    createToggle(Tabs.Targeting, "ForceField Check", "FORCEFIELD_CHECK", false)
 
     local teamModeOptions = {"None", "Different Team", "Whitelist", "Blacklist"}
     local teamModeValues = {"none", "different", "whitelist", "blacklist"}
@@ -811,8 +812,6 @@ local function BuildUI(version)
         playerOptions, savedPlayerBlacklistNames, true, blacklistPlayersCallback)
     getgenv().uiLE.blacklistPlayersDropdown = blacklistPlayersDropdown
     blacklistPlayersCallback(savedPlayerBlacklistNames)
-
-    createToggle(Tabs.Targeting, "ForceField Check", "FORCEFIELD_CHECK", false)
 
     createSection(Tabs.Targeting, "Limb Focus")
     local existingLimbs = #scannedLimbs > 0 and table.clone(scannedLimbs) or {"Head"}
