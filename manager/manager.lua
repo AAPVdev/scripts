@@ -806,11 +806,11 @@ function Manager:_evaluatePlayerFilter(player)
 	if mode == "same" then
 		return localTeam == otherTeam
 	elseif mode == "different" then
-	    if localTeam then
-	        return otherTeam ~= localTeam
-	    else
-	        return true
-	    end
+		if localTeam then
+			return otherTeam ~= localTeam
+		else
+			return true
+		end
 	elseif mode == "whitelist" then
 		local list = s.TEAM_WHITELIST
 		if type(list) == "table" then
@@ -1251,6 +1251,13 @@ function Manager:_startPlayerTracking()
 			self._playerTable[p] = nil
 		end
 	end, "PlayerRemoving")
+
+	self._connections:Connect(localPlayer:GetPropertyChangedSignal("Team"), function()
+		if not self._running then return end
+		for _, pd in pairs(self._playerTable) do
+			pd:EvaluateFilter()
+		end
+	end, "LocalTeamChanged")
 
 	local snapshot = Players:GetPlayers()
 	local gen = self._generation
