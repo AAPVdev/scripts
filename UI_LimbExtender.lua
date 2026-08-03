@@ -739,8 +739,8 @@ local function BuildUI(version)
     createToggle(Tabs.Targeting, "Players", "PLAYER_ENABLED", true)
     createToggle(Tabs.Targeting, "NPCs", "NPC_ENABLED", false)
 
-    local teamModeOptions = {"None", "Same Team", "Whitelist", "Blacklist"}
-    local teamModeValues = {"none", "same", "whitelist", "blacklist"}
+    local teamModeOptions = {"None", "Different Team", "Whitelist", "Blacklist"}
+    local teamModeValues = {"none", "different", "whitelist", "blacklist"}
     local savedTeamMode = ctrl:Get("TEAM_MODE") or "none"
     local defaultTeamOption = "None"
     for i, v in ipairs(teamModeValues) do
