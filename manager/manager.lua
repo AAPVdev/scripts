@@ -92,6 +92,7 @@ local DEFAULTS = {
 	NPC_SPAWN_WAIT_TIMEOUT = 5,
 
 	WARN_ON_CALLBACK_ERROR = true,
+
 	ON_CALLBACK_ERROR = nil,
 
 	REQUIRE_ANCHOR = true,
@@ -108,6 +109,7 @@ local DEFAULTS = {
 	NAME_PATTERN = nil,
 	DISPLAY_NAME_PATTERN = nil,
 	PLAYER_FILTER = nil,
+	REFRESH_ON_TEAM_CHANGE = true,
 }
 
 local function mergeSettings(user)
@@ -460,17 +462,21 @@ function LimbObserver:_start()
 		self:_monitorDeathEarly()
 	end
 
-	if self._manager._settings.FORCEFIELD_CHECK then
-		local function watchForceField(ff)
-			self:_clearPathConns()
-			self._conns:Connect(ff.AncestryChanged, function()
-				if not ff:IsDescendantOf(self._model) then
-					self._conns:Disconnect("ForceFieldWatcher")
-					self:_start()
-				end
-			end, "ForceFieldWatcher")
-		end
+	local function beginResolve()
+		self:_resolveStep(self._model, self._segments, 1)
+	end
 
+	local function watchForceField(ff)
+		self:_clearPathConns()
+		self._conns:Connect(ff.AncestryChanged, function()
+			if not ff:IsDescendantOf(self._model) then
+				self._conns:Disconnect("ForceFieldWatcher")
+				beginResolve()
+			end
+		end, "ForceFieldWatcher")
+	end
+
+	if self._manager._settings.FORCEFIELD_CHECK then
 		local existing = self._model:FindFirstChildOfClass("ForceField")
 		if existing then
 			watchForceField(existing)
@@ -481,10 +487,9 @@ function LimbObserver:_start()
 				watchForceField(child)
 			end
 		end, "ForceFieldAppeared")
-		return
 	end
 
-	self:_resolveStep(self._model, self._segments, 1)
+	beginResolve()
 end
 
 function LimbObserver:_monitorDeathEarly()
@@ -653,19 +658,19 @@ function PlayerData:_updateTeamSignal()
 end
 
 function PlayerData:EvaluateFilter()
-    if self._destroyed then return end
-    local passes = self._parent:_evaluatePlayerFilter(self.player)
-    if passes and not self._isTracked then
-        self._isTracked = true
-        if self._character then
-            self:_setupCharacterTracking(self._character)
-        elseif self.player.Character then
-            self:_onCharacterAdded(self.player.Character)
-        end
-    elseif not passes and self._isTracked then
-        self._isTracked = false
-        self:_teardownCharacterTracking()
-    end
+	if self._destroyed then return end
+	local passes = self._parent:_evaluatePlayerFilter(self.player)
+	if passes and not self._isTracked then
+		self._isTracked = true
+		if self._character then
+			self:_setupCharacterTracking(self._character)
+		elseif self.player.Character then
+			self:_onCharacterAdded(self.player.Character)
+		end
+	elseif not passes and self._isTracked then
+		self._isTracked = false
+		self:_teardownCharacterTracking()
+	end
 end
 
 function PlayerData:_setupCharacterTracking(char)
@@ -800,6 +805,8 @@ function Manager:_evaluatePlayerFilter(player)
 
 	if mode == "same" then
 		return localTeam == otherTeam
+	elseif mode == "different" then
+		return localTeam ~= otherTeam
 	elseif mode == "whitelist" then
 		local list = s.TEAM_WHITELIST
 		if type(list) == "table" then
@@ -1091,7 +1098,7 @@ function Manager:_activateDirectory(dir, useDescendants)
 
 	local gen = self._generation
 	task_spawn(function()
-		local BATCH = 30
+		local BATCH = 15
 		for i = 1, #candidates, BATCH do
 			if not self._running or self._destroyed or self._generation ~= gen then
 				return
@@ -1151,7 +1158,7 @@ function Manager:_rescanNPCFilter()
 			end
 		end
 
-		local BATCH = 30
+		local BATCH = 15
 		for i = 1, #toRemove, BATCH do
 			if not self._running or self._destroyed or self._generation ~= gen then return end
 			local last = math_min(i + BATCH - 1, #toRemove)
@@ -1232,7 +1239,7 @@ function Manager:_startPlayerTracking()
 			end
 		end
 	end, "PlayerAdded")
-	
+
 	self._connections:Connect(Players.PlayerRemoving, function(p)
 		local pd = self._playerTable[p]
 		if pd then
@@ -1240,11 +1247,11 @@ function Manager:_startPlayerTracking()
 			self._playerTable[p] = nil
 		end
 	end, "PlayerRemoving")
-	
+
 	local snapshot = Players:GetPlayers()
 	local gen = self._generation
-	
-	local BATCH = 30
+
+	local BATCH = 15
 	for i = 1, #snapshot, BATCH do
 		if not self._running or self._destroyed or self._playerConnsStarted == false then return end
 		local last = math_min(i + BATCH - 1, #snapshot)
@@ -1301,7 +1308,7 @@ function Manager:_stopPlayerTracking()
 		self._connections:Disconnect("PlayerRemoving")
 	end
 
-	local BATCH = 30
+	local BATCH = 15
 	local toDestroy = {}
 	for _, pd in pairs(self._playerTable) do
 		toDestroy[#toDestroy + 1] = pd
@@ -1330,7 +1337,7 @@ function Manager:_stopNPCTracking()
 		self._npcConnections = nil
 	end
 
-	local BATCH = 30
+	local BATCH = 15
 
 	local npcObservers = {}
 	for _, observer in pairs(self._npcSet) do
