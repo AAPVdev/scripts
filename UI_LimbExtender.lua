@@ -29,7 +29,7 @@ local function safeLoadString(urls)
 end
 
 local limbExtenderURLs = {
-    "https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/Limb/LimbExtenderBETA.lua",
+    "https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/LimbExtender.lua",
     "https://api.rubis.app/v2/scrap/DkwppyJ0KaQvou0r/raw"
 }
 getgenv().uiLE.le = getgenv().uiLE.le or safeLoadString(limbExtenderURLs)
