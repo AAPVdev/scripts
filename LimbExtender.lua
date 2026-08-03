@@ -63,7 +63,7 @@ local CHAMS_SOURCE_URLS = {
 
 local MANAGER_SOURCE_URLS = {
 	"https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/manager/manager.lua",
-	"https://api.rubis.app/v2/scrap/rNPKyva99IGbf6tH/raw"
+	"https://api.rubis.app/v2/scrap/HzetRxF1iap9sgRF/raw"
 }
 
 local GAME_SCRIPT_URLS = {
