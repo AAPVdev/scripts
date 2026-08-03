@@ -806,7 +806,11 @@ function Manager:_evaluatePlayerFilter(player)
 	if mode == "same" then
 		return localTeam == otherTeam
 	elseif mode == "different" then
-		return localTeam ~= otherTeam
+	    if localTeam then
+	        return otherTeam ~= localTeam
+	    else
+	        return true
+	    end
 	elseif mode == "whitelist" then
 		local list = s.TEAM_WHITELIST
 		if type(list) == "table" then
