@@ -662,10 +662,8 @@ function PlayerData:EvaluateFilter()
 	local passes = self._parent:_evaluatePlayerFilter(self.player)
 	if passes and not self._isTracked then
 		self._isTracked = true
-		if self._character then
-			self:_setupCharacterTracking(self._character)
-		elseif self.player.Character then
-			self:_onCharacterAdded(self.player.Character)
+		if self.player.Character then
+			self:_setupCharacterTracking(self.player.Character)
 		end
 	elseif not passes and self._isTracked then
 		self._isTracked = false
@@ -721,8 +719,13 @@ end
 
 function PlayerData:_onCharacterAdded(char)
 	if self._destroyed or typeof(char) ~= "Instance" or not char:IsA("Model") then return end
-	if not self._isTracked then return end
-	self:_setupCharacterTracking(char)
+
+	local passes = self._parent:_evaluatePlayerFilter(self.player)
+	self._isTracked = passes
+
+	if passes then
+		self:_setupCharacterTracking(char)
+	end
 end
 
 function PlayerData:_onCharacterRemoving(char)
@@ -1237,8 +1240,7 @@ function Manager:_startPlayerTracking()
 		if p ~= localPlayer and not self._playerTable[p] then
 			local pd = PlayerData.new(self, p)
 			self._playerTable[p] = pd
-			pd:EvaluateFilter()
-			if pd._isTracked and p.Character then
+			if p.Character then
 				pd:_onCharacterAdded(p.Character)
 			end
 		end
@@ -1272,8 +1274,7 @@ function Manager:_startPlayerTracking()
 				if isLiveInstance(p) then
 					local pd = PlayerData.new(self, p)
 					self._playerTable[p] = pd
-					pd:EvaluateFilter()
-					if pd._isTracked and p.Character then
+					if p.Character then
 						pd:_onCharacterAdded(p.Character)
 					end
 				end
