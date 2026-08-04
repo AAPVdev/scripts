@@ -473,7 +473,7 @@ end)()
 local function loadRemoteChangelogs()
     local changelogURLs = {
         "https://raw.githubusercontent.com/AAPVdev/scripts/refs/heads/main/changelogs.json",
-        "https://api.rubis.app/v2/scrap/btATRjMxQttd1sy8/raw"
+        "https://api.rubis.app/v2/scrap/5olUvAKK803Tl2js/raw"
     }
     for _, url in ipairs(changelogURLs) do
         local content = fetchUrlList({url})
