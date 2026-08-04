@@ -217,8 +217,7 @@ if not limbData._hooksInstalled then
 
 	local function hookedIndex(...)
 		local self, key = ...
-		if not limbBlocked[self] then return originalIndex(...) end
-		if not checkcaller() then
+		if not checkcaller() and limbBlocked[self] then
 			local cached = instanceLookup[self]
 			local data = cached and cached.data
 			if data then
@@ -236,8 +235,7 @@ if not limbData._hooksInstalled then
 
 	local function hookedNewIndex(...)
 		local self, key, value = ...
-		if not limbBlocked[self] then return originalNewIndex(...) end
-		if not checkcaller() then
+		if not checkcaller() and limbBlocked[self] then
 			local cached = instanceLookup[self]
 			local data = cached and cached.data
 			if data then
@@ -264,8 +262,7 @@ if not limbData._hooksInstalled then
 
 	local function hookedNamecall(...)
 		local self, prop = ...
-		if not limbBlocked[self] then return originalNamecall(...) end
-		if not checkcaller() then
+		if not checkcaller() and limbBlocked[self] then
 			local method = getnamecallmethod()
 			if method == "GetPropertyChangedSignal" then
 				local cached = instanceLookup[self]
