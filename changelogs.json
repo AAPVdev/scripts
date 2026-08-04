@@ -1,5 +1,24 @@
 [
     {
+        "version": "1.2.1",
+        "date": "Aug. 4, 2026",
+        "highlights": ["Tracking Reliability"],
+        "sections": [
+            {
+                "title": "Critical Fixes",
+                "items": [
+                    "Fixed a race condition where players would not be tracked until a restart when using team‑based filters.",
+                ]
+            },
+            {
+                "title": "Intelligent Re‑evaluation",
+                "items": [
+                    "Filter decisions are now made only when a character is actually available, preventing premature blocking of players."
+                ]
+            }
+        ]
+    }
+    {
         "version": "1.2.0",
         "date": "Aug. 4, 2026",
         "highlights": ["Advanced Player & Team Filtering", "Chams Settings"],
