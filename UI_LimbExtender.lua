@@ -825,7 +825,7 @@ local function BuildUI(version)
     createSection(Tabs.Appearance, "Limb Properties")
     createToggle(Tabs.Appearance, "Limb Collisions", "LIMB_CAN_COLLIDE", false)
     createSlider(Tabs.Appearance, "Limb Transparency", "LIMB_TRANSPARENCY", {0, 1}, 0.1, "", 0)
-    createSlider(Tabs.Appearance, "Limb Size", "LIMB_SIZE", {5, 50}, 0.5, "", 5)
+    createSlider(Tabs.Appearance, "Limb Size", "LIMB_SIZE", {1, 30}, 0.5, "", 1)
 
     createSection(Tabs.Appearance, "Chams")
     createToggle(Tabs.Appearance, "Chams Enabled", "CHAMS", false)
