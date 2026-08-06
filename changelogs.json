@@ -7,7 +7,7 @@
             {
                 "title": "Critical Fixes",
                 "items": [
-                    "Fixed a race condition where players would not be tracked until a restart when using team‑based filters.",
+                    "Fixed a race condition where players would not be tracked until a restart when using team‑based filters."
                 ]
             },
             {
