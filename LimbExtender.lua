@@ -943,6 +943,8 @@ function LimbExtender:SetDynamicScale(enabled, rangeMult)
 	self:_reapplyWatchdogs()
 end
 
+local tolerance = 0.1
+
 function LimbExtender:_updateSingleDynamicScale(entry, localPos)
 	local limb = entry.Limb
 	if not limb or not limb.Parent or not entry.OriginalSize or not entry.BaseTargetSize then return end
@@ -967,7 +969,7 @@ function LimbExtender:_updateSingleDynamicScale(entry, localPos)
 	local rangeInvSq = entry._rangeInvSq
 	if not rangeInvSq or rangeInvSq <= 0 then
 		local dynamicSize = entry.BaseTargetSize
-		if (limb.Size - dynamicSize):Dot(limb.Size - dynamicSize) > 0.0025 then
+		if (limb.Size - dynamicSize):Dot(limb.Size - dynamicSize) > tolerance then
 			entry.TargetSize = dynamicSize
 			entry._watchingRevert = true
 			limb.Size = dynamicSize
@@ -979,7 +981,7 @@ function LimbExtender:_updateSingleDynamicScale(entry, localPos)
 	local factor = math.sqrt(math.clamp((sqDist - minDistSq) * rangeInvSq, 0, 1))
 	local dynamicSize = entry.OriginalSize:Lerp(entry.BaseTargetSize, factor)
 
-	if (limb.Size - dynamicSize):Dot(limb.Size - dynamicSize) > 0.0025 then
+	if (limb.Size - dynamicSize):Dot(limb.Size - dynamicSize) > tolerance then
 		entry.TargetSize = dynamicSize
 		entry._watchingRevert = true
 		limb.Size = dynamicSize
