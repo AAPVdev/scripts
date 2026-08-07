@@ -670,6 +670,7 @@ function LimbExtender:_applyLimbs(player, char, limb)
 		cacheKey = self._npcIdMap[char]
 	end
 	sharedApplyLimb(self, cacheKey, char, limb)
+	self._dynKeys = nil
 	if self._settings.ESP and self._ESP then
 		local tracked = self._ESP:Track(char)
 		if not tracked then
@@ -691,6 +692,7 @@ function LimbExtender:_removeLimbs(player, char, limb)
 	if self._suppressOnLimbLost then return end
 	local cacheKey = player and player.Name or self._npcIdMap[char]
 	sharedRestoreLimb(self, cacheKey, limb)
+	self._dynKeys = nil
 	if self._ESP and char then self._ESP:Untrack(char) end
 	if self._CHAMS and char then self._CHAMS.removeHighlight(char, self._chamsSourceKey) end
 	if not player then self._npcIdMap[char] = nil end
