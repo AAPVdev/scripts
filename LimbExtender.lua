@@ -424,6 +424,7 @@ local function setupLimbWatchdog(entry, limb, settings)
 		local target = entry[targetField]
 		if target ~= nil then
 			local conn = limb:GetPropertyChangedSignal(propName):Connect(function()
+				if entry._dynamicUpdateActive then return end
 				if entry._watchingRevert then return end
 				local current = limb[propName]
 				if current ~= target then
@@ -493,9 +494,8 @@ local DEFAULTS = {
 	CHAMS_OCCLUSION 		  	= false,
 	DYNAMIC_SCALE_ENABLED     	= true,
 	DYNAMIC_SCALE_RANGE_MULT  	= 1.5,
-	DYNAMIC_SCALE_UPDATE_RATE 	= 15,
+	DYNAMIC_SCALE_UPDATE_RATE 	= 8,
 
-	-- New filtering keys
 	TEAM_MODE               = "none",
 	TEAM_WHITELIST          = nil,
 	TEAM_BLACKLIST          = nil,
@@ -916,7 +916,7 @@ function LimbExtender:SetDynamicScale(enabled, rangeMult)
 
 	if enabled then
 		self._nextDynamicUpdate = 0
-		local interval = 1 / (s.DYNAMIC_SCALE_UPDATE_RATE or 15)
+		local interval = 1 / (s.DYNAMIC_SCALE_UPDATE_RATE or 8)
 		self._dynamicScaleConn = game:GetService("RunService").Heartbeat:Connect(function(deltaTime)
 			self._nextDynamicUpdate = self._nextDynamicUpdate + deltaTime
 			if self._nextDynamicUpdate >= interval then
@@ -943,7 +943,7 @@ function LimbExtender:SetDynamicScale(enabled, rangeMult)
 	self:_reapplyWatchdogs()
 end
 
-local tolerance = 0.1
+local SIZE_CHANGE_THRESHOLD_SQ = 0.25
 
 function LimbExtender:_updateSingleDynamicScale(entry, localPos)
 	local limb = entry.Limb
@@ -954,39 +954,28 @@ function LimbExtender:_updateSingleDynamicScale(entry, localPos)
 	local diff = limb.Position - localPos
 	local sqDist = diff:Dot(diff)
 
+	local targetSize
 	if sqDist > maxDistSq then
-		if entry.TargetSize ~= entry.BaseTargetSize then
-			entry.TargetSize = entry.BaseTargetSize
-			entry._watchingRevert = true
-			limb.Size = entry.BaseTargetSize
-			entry._watchingRevert = false
+		targetSize = entry.BaseTargetSize
+	else
+		local minDistSq = entry._minDistSq
+		local rangeInvSq = entry._rangeInvSq
+		if not rangeInvSq or rangeInvSq <= 0 then
+			targetSize = entry.BaseTargetSize
+		else
+			local factor = math.sqrt(math.clamp((sqDist - minDistSq) * rangeInvSq, 0, 1))
+			targetSize = entry.OriginalSize:Lerp(entry.BaseTargetSize, factor)
 		end
+	end
+
+	local delta = limb.Size - targetSize
+	if delta:Dot(delta) <= SIZE_CHANGE_THRESHOLD_SQ then
 		return
 	end
 
-	local minDistSq = entry._minDistSq
-	if minDistSq and maxDistSq == minDistSq then return end
-	local rangeInvSq = entry._rangeInvSq
-	if not rangeInvSq or rangeInvSq <= 0 then
-		local dynamicSize = entry.BaseTargetSize
-		if (limb.Size - dynamicSize):Dot(limb.Size - dynamicSize) > tolerance then
-			entry.TargetSize = dynamicSize
-			entry._watchingRevert = true
-			limb.Size = dynamicSize
-			entry._watchingRevert = false
-		end
-		return
-	end
-
-	local factor = math.sqrt(math.clamp((sqDist - minDistSq) * rangeInvSq, 0, 1))
-	local dynamicSize = entry.OriginalSize:Lerp(entry.BaseTargetSize, factor)
-
-	if (limb.Size - dynamicSize):Dot(limb.Size - dynamicSize) > tolerance then
-		entry.TargetSize = dynamicSize
-		entry._watchingRevert = true
-		limb.Size = dynamicSize
-		entry._watchingRevert = false
-	end
+	entry._dynamicUpdateActive = true
+	limb.Size = targetSize
+	entry._dynamicUpdateActive = false
 end
 
 function LimbExtender:_updateDynamicScales()
