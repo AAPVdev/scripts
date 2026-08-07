@@ -671,7 +671,6 @@ function LimbExtender:_applyLimbs(player, char, limb)
 		cacheKey = self._npcIdMap[char]
 	end
 	sharedApplyLimb(self, cacheKey, char, limb)
-	self._dynKeys = nil
 	if self._settings.ESP and self._ESP then
 		local tracked = self._ESP:Track(char)
 		if not tracked then
@@ -693,7 +692,6 @@ function LimbExtender:_removeLimbs(player, char, limb)
 	if self._suppressOnLimbLost then return end
 	local cacheKey = player and player.Name or self._npcIdMap[char]
 	sharedRestoreLimb(self, cacheKey, limb)
-	self._dynKeys = nil
 	if self._ESP and char then self._ESP:Untrack(char) end
 	if self._CHAMS and char then self._CHAMS.removeHighlight(char, self._chamsSourceKey) end
 	if not player then self._npcIdMap[char] = nil end
@@ -832,7 +830,6 @@ function LimbExtender:_doRestartBatched()
 
 	self._suppressOnLimbLost = false
 	table_clear(cache)
-	self._dynKeys = nil
 
 	if self._ESP then self._ESP:Stop() end
 	if not self._running then return end
@@ -915,9 +912,6 @@ function LimbExtender:SetDynamicScale(enabled, rangeMult)
 		self._dynamicScaleConn = nil
 	end
 
-	self._dynKeys = nil
-	self._dynNextIndex = 1
-
 	if enabled then
 		self._nextDynamicUpdate = 0
 		local interval = 1 / (s.DYNAMIC_SCALE_UPDATE_RATE or 8)
@@ -988,36 +982,8 @@ function LimbExtender:_updateDynamicScales()
 	if not localHRP then self:_updateLocalCharacter(); return end
 
 	local localPos = localHRP.Position
-	local cache = self._playerCache
-	local batchSize = 20
-
-	if not self._dynKeys then
-		self._dynKeys = {}
-		for k in pairs(cache) do
-			table_insert(self._dynKeys, k)
-		end
-		self._dynNextIndex = 1
-	end
-
-	local processed = 0
-	while processed < batchSize and self._dynNextIndex <= #self._dynKeys do
-		local key = self._dynKeys[self._dynNextIndex]
-		local entry = cache[key]
-		if entry then
-			self:_updateSingleDynamicScale(entry, localPos)
-		end
-		self._dynNextIndex = self._dynNextIndex + 1
-		processed = processed + 1
-	end
-
-	if self._dynNextIndex > #self._dynKeys then
-		self._dynKeys = nil
-		self._dynNextIndex = 1
-	end
-
-	if processed == 0 then
-		self._dynKeys = nil
-		self._dynNextIndex = 1
+	for _, entry in pairs(self._playerCache) do
+		self:_updateSingleDynamicScale(entry, localPos)
 	end
 end
 
@@ -1059,8 +1025,6 @@ function LimbExtender.new(userSettings)
 		_nextDynamicUpdate   = 0,
 		_localChar           = nil,
 		_localHRP            = nil,
-		_dynKeys             = nil,
-		_dynNextIndex        = 1,
 		_chamsSourceKey      = nextChamsSourceKey(),
 		_charConn            = nil,
 	}, LimbExtender)
@@ -1198,9 +1162,6 @@ function LimbExtender:Stop()
 		self._charConn:Disconnect()
 		self._charConn = nil
 	end
-
-	self._dynKeys = nil
-	self._dynNextIndex = 1
 
 	self._manager:Stop()
 	for cacheKey, entry in pairs(self._playerCache) do
