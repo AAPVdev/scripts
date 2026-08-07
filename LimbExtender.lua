@@ -177,7 +177,7 @@ end
 local Executor = string.lower(identifyexecutor and identifyexecutor() or "")
 
 local has_checkcaller, has_getnamecallmethod, has_getconnections = false, false, false
-local has_hookmetamethod, has_newcclosure, has_getrawmetatable, has_setreadonly = false, false, false, false
+local has_hookmetamethod, has_getrawmetatable, has_setreadonly = false, false, false, false
 local has_debug_upvalues, has_debug_setupvalue, has_newproxy = false, false, false
 local has_othhook = false
 
@@ -190,7 +190,6 @@ do
 	has_getnamecallmethod = check("getnamecallmethod")
 	has_getconnections = check("getconnections")
 	has_hookmetamethod = check("hookmetamethod")
-	has_newcclosure = check("newcclosure")
 	has_getrawmetatable = check("getrawmetatable")
 	has_setreadonly = check("setreadonly")
 	has_debug_upvalues = check("debug.getupvalues")
@@ -298,24 +297,20 @@ if not limbData._hooksInstalled then
 		end
 	end
 
-	if has_othhook and Executor ~= "potassium" then
-		local mt = getrawmetatable(game)
-		originalIndex    = oth.hook(mt.__index, hookedIndex)
-		originalNewIndex = oth.hook(mt.__newindex, hookedNewIndex)
-		if has_getnamecallmethod then
-			originalNamecall = oth.hook(mt.__namecall, hookedNamecall)
+	if has_hookmetamethod then
+		local nm = has_getnamecallmethod or nil
+
+		if has_othhook and Executor ~= "potassium" then
+			local mt = getrawmetatable(game)
+			originalIndex = oth.hook(mt.__index, hookedIndex)
+		else
+			originalIndex = hookmetamethod(game, "__index",    hookedIndex)
 		end
-		hooksInstalled = true
-
-	elseif has_hookmetamethod and has_newcclosure then
-		local idx = newcclosure(hookedIndex)
-		local nidx = newcclosure(hookedNewIndex)
-		local nm = has_getnamecallmethod and newcclosure(hookedNamecall) or nil
-
-		originalIndex    = hookmetamethod(game, "__index",    idx)
-		originalNewIndex = hookmetamethod(game, "__newindex", nidx)
+		
+		originalNewIndex = hookmetamethod(game, "__newindex", hookedNewIndex)
+		
 		if nm then
-			originalNamecall = hookmetamethod(game, "__namecall", nm)
+			originalNamecall = hookmetamethod(game, "__namecall", hookedNamecall)
 		end
 
 		hooksInstalled = true
