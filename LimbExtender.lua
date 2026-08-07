@@ -202,6 +202,8 @@ do
 	end
 end
 
+local hooksInstalled = false
+
 if not limbData._hooksInstalled then
 
 	local blockedProps = BLOCKED_PROPS
@@ -335,14 +337,13 @@ if not limbData._hooksInstalled then
 		if has_getnamecallmethod then
 			scrubUpvalues(hookedNamecall)
 		end
-		scrubUpvalues(getData)
 
 		hooksInstalled = true
 	end
 
-	limbData._hooksInstalled = true
+	limbData._hooksInstalled = hooksInstalled
 
-	if has_getconnections then
+	if has_getconnections and hooksInstalled then
 		local createCustomSignals
 		createCustomSignals = function(limb)
 			local cached = instanceLookup[limb]
@@ -570,7 +571,7 @@ local function sharedApplyLimb(parent, cacheKey, char, limb)
 	sharedSaveData(parent, cacheKey, char, limb)
 	local entry = parent._playerCache[cacheKey]
 	if not entry then return end
-	if hooksInstalled then
+	if limbData._hooksInstalled then
 		createCustomSignals(limb)
 	end
 
@@ -831,6 +832,7 @@ function LimbExtender:_doRestartBatched()
 
 	self._suppressOnLimbLost = false
 	table_clear(cache)
+	self._dynKeys = nil
 
 	if self._ESP then self._ESP:Stop() end
 	if not self._running then return end
