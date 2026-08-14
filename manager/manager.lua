@@ -465,27 +465,52 @@ function LimbObserver:_start()
 		self:_resolveStep(self._model, self._segments, 1)
 	end
 
-	local function watchForceField(ff)
-		self:_clearPathConns()
-		self._conns:Connect(ff.AncestryChanged, function()
-			if not ff:IsDescendantOf(self._model) then
-				self._conns:Disconnect("ForceFieldWatcher")
-				beginResolve()
-			end
-		end, "ForceFieldWatcher")
-	end
-
+	-- FIX: previously this watched only a single ForceField instance (the
+	-- one present at start, or the most recently added one). If a second
+	-- ForceField appeared while the first was still active and the FIRST
+	-- one was then removed, beginResolve() fired even though the character
+	-- still had an active ForceField from the second one. This now counts
+	-- all ForceField children and only resolves once the count reaches
+	-- zero, re-pausing if a new one appears mid-resolution.
 	if self._manager._settings.FORCEFIELD_CHECK then
-		local existing = self._model:FindFirstChildOfClass("ForceField")
-		if existing then
-			watchForceField(existing)
-			return
-		end
-		self._conns:Connect(self._model.ChildAdded, function(child)
+		local ffCount = 0
+		for _, child in ipairs(self._model:GetChildren()) do
 			if child:IsA("ForceField") then
-				watchForceField(child)
+				ffCount = ffCount + 1
 			end
+		end
+
+		local resolving = false
+
+		local function evaluate()
+			if self._destroyed or self._ready then return end
+			if ffCount <= 0 then
+				if not resolving then
+					resolving = true
+					beginResolve()
+				end
+			else
+				if resolving then
+					resolving = false
+					self:_clearPathConns()
+				end
+			end
+		end
+
+		self._conns:Connect(self._model.ChildAdded, function(child)
+			if not child:IsA("ForceField") then return end
+			ffCount = ffCount + 1
+			evaluate()
 		end, "ForceFieldAppeared")
+
+		self._conns:Connect(self._model.ChildRemoved, function(child)
+			if not child:IsA("ForceField") then return end
+			ffCount = math.max(0, ffCount - 1)
+			evaluate()
+		end, "ForceFieldWatcher")
+
+		evaluate()
+		return
 	end
 
 	beginResolve()
@@ -721,6 +746,18 @@ end
 
 function PlayerData:_onCharacterAdded(char)
 	if self._destroyed or typeof(char) ~= "Instance" or not char:IsA("Model") then return end
+
+	-- FIX: player.CharacterAdded and player:GetPropertyChangedSignal("Character")
+	-- both fire for the same spawn (the latter is connected unconditionally
+	-- so CUSTOM_CHARACTER_SYSTEM setups relying on it still get notified).
+	-- Without this guard, the second call tore down the character/limb
+	-- tracking that the first call had JUST built and rebuilt it from
+	-- scratch, firing a spurious ON_CHARACTER_REMOVING immediately followed
+	-- by a duplicate ON_CHARACTER_ADDED for the same character on every
+	-- single spawn, and needlessly recreating the limb observer.
+	if self._character == char and self._characterObserver then
+		return
+	end
 
 	-- FIX: if we're already tracking a different character for this player
 	-- (e.g. a caller re-invokes RegisterPlayerCharacter with a new model
