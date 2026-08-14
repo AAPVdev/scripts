@@ -109,7 +109,6 @@ local DEFAULTS = {
 	NAME_PATTERN = nil,
 	DISPLAY_NAME_PATTERN = nil,
 	PLAYER_FILTER = nil,
-	REFRESH_ON_TEAM_CHANGE = true,
 }
 
 local function mergeSettings(user)
@@ -646,6 +645,9 @@ function PlayerData.new(parent, player)
 	return self
 end
 
+-- FIX: this is now re-invoked whenever TEAM_MODE changes at runtime (see
+-- Manager:Set below) instead of only being evaluated once at PlayerData
+-- construction time.
 function PlayerData:_updateTeamSignal()
 	local s = self._parent._settings
 	if s.TEAM_MODE ~= "none" then
@@ -719,6 +721,17 @@ end
 
 function PlayerData:_onCharacterAdded(char)
 	if self._destroyed or typeof(char) ~= "Instance" or not char:IsA("Model") then return end
+
+	-- FIX: if we're already tracking a different character for this player
+	-- (e.g. a caller re-invokes RegisterPlayerCharacter with a new model
+	-- under CUSTOM_CHARACTER_SYSTEM) and the filter now fails for the new
+	-- one, the old character's observer/limb-observer must still be torn
+	-- down. Previously teardown only happened inside the "passes" branch,
+	-- so a failing filter on a character swap silently leaked the old
+	-- tracking state.
+	if self._character and self._character ~= char then
+		self:_teardownCharacterTracking()
+	end
 
 	local passes = self._parent:_evaluatePlayerFilter(self.player)
 	self._isTracked = passes
@@ -891,9 +904,6 @@ function Manager:_onLimbLost(player, model, limb)
 		obs:Destroy()
 		self._npcLimbObservers[model] = nil
 	end
-
-	self._deadModels = self._deadModels or {}
-	self._deadModels[model] = true
 
 	local cb = self._settings.ON_LIMB_LOST
 	self:_fireCallback("ON_LIMB_LOST", cb, player, model, limb)
@@ -1318,6 +1328,7 @@ function Manager:_stopPlayerTracking()
 	if self._connections then
 		self._connections:Disconnect("PlayerAdded")
 		self._connections:Disconnect("PlayerRemoving")
+		self._connections:Disconnect("LocalTeamChanged")
 	end
 
 	local BATCH = 30
@@ -1461,11 +1472,26 @@ function Manager:AddDirectory(dir)
 			local gen = self._generation
 			task_spawn(function()
 				local resolved = resolvePathAsync(dir)
-				if resolved and self._running and self._npcConnsStarted
-					and not self._destroyed and self._generation == gen then
-					self._stringDirMap[dir] = resolved
-					self:_activateDirectory(resolved, false)
+				if not (resolved and self._running and self._npcConnsStarted
+					and not self._destroyed and self._generation == gen) then
+					return
 				end
+
+				-- FIX: if RemoveDirectory(dir) was called while this path was
+				-- still resolving, dir will no longer be in NPC_DIRECTORIES.
+				-- Without this check the removal was silently undone once
+				-- resolution finished.
+				local stillPresent = false
+				for _, d in ipairs(self._settings.NPC_DIRECTORIES) do
+					if d == dir then
+						stillPresent = true
+						break
+					end
+				end
+				if not stillPresent then return end
+
+				self._stringDirMap[dir] = resolved
+				self:_activateDirectory(resolved, false)
 			end)
 		end
 	end
@@ -1535,6 +1561,20 @@ function Manager:Set(key, value)
 		or key == "STOP_TRACKING_ON_DEATH" or key == "DEATH_DETECT_METHOD" then
 		if self._running then
 			self:_refreshAllLimbObservers()
+		end
+	end
+
+	-- FIX: TEAM_MODE changes whether each player's Team-changed connection
+	-- should be wired, so re-run _updateTeamSignal() for every tracked
+	-- player before re-evaluating. Previously the connection was only ever
+	-- set up once at PlayerData construction time, so toggling TEAM_MODE
+	-- at runtime left already-tracked players stuck listening (or not
+	-- listening) based on stale settings.
+	if key == "TEAM_MODE" then
+		if self._running then
+			for _, pd in pairs(self._playerTable) do
+				pd:_updateTeamSignal()
+			end
 		end
 	end
 
