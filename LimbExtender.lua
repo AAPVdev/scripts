@@ -6,7 +6,7 @@ end
 local cloneref = missing("function", cloneref, function(obj) return obj end)
 
 local Players = cloneref(game:GetService("Players"))
-local localPlayer = Players.LocalPlayera
+local localPlayer = Players.LocalPlayer
 
 local globalEnv = type(getgenv) == "function" and getgenv() or _G
 local limbData = globalEnv.limbExtenderData or {}
@@ -545,7 +545,6 @@ local function sharedSaveData(parent, cacheKey, char, limb)
 	entry.OriginalAssemblyCOM  = limb.AssemblyCenterOfMass
 	entry.OriginalRootPriority = limb.RootPriority or 0
 	if not entry.TrueSize then entry.TrueSize = entry.OriginalSize end
-
 	entry._cachedOriginalSize = entry.TrueSize or entry.OriginalSize
 	limbData.instanceLookup[limb] = { data = entry, type = "Part" }
 	limbData.instanceLookup[char] = { data = entry, type = "Model" }
@@ -681,7 +680,6 @@ function LimbExtender:_applyLimbs(player, char, limb)
 	if self._settings.ESP and self._ESP then
 		local tracked = self._ESP:Track(char)
 		if not tracked then
-
 			task_spawn(function()
 				local attempts = 0
 				while self._running and self._ESP
@@ -771,7 +769,6 @@ function LimbExtender:_processDirtyWork()
 			end
 		end
 	end
-
 	while (self._dirtyRestart or self._dirtyCosmetic) and self._running do
 		if self._dirtyRestart and not self._restartLock then
 			self._restartLock = true
@@ -852,8 +849,6 @@ function LimbExtender:_doRestartBatched()
 		end
 	end
 
-	self._generation = self._generation + 1
-	self._managerGeneration = self._generation
 	self._manager:Start()
 	if self._ESP then self._ESP:Start() end
 	self:_runGameScriptIfNeeded()
@@ -1037,8 +1032,6 @@ function LimbExtender.new(userSettings)
 		_workScheduled       = false,
 		_processingWork      = false,
 		_restartLock         = false,
-		_generation          = 0,
-		_managerGeneration   = 0,
 		_gameScriptFetched   = false,
 		_customSetup         = nil,
 		_dynamicScaleConn    = nil,
@@ -1063,7 +1056,6 @@ function LimbExtender.new(userSettings)
 		NPC_DIRECTORIES         = self._settings.NPC_DIRECTORIES,
 		TARGET_LIMB             = self._settings.TARGET_LIMB,
 		FORCEFIELD_CHECK        = self._settings.FORCEFIELD_CHECK,
-
 		STOP_TRACKING_ON_DEATH  = self._settings.ALT_RESET_LIMB_ON_DEATH,
 		TEAM_MODE               = self._settings.TEAM_MODE,
 		TEAM_WHITELIST          = self._settings.TEAM_WHITELIST,
