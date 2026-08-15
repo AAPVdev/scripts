@@ -6,7 +6,7 @@ end
 local cloneref = missing("function", cloneref, function(obj) return obj end)
 
 local Players = cloneref(game:GetService("Players"))
-local localPlayer = Players.LocalPlayer
+local localPlayer = Players.LocalPlayera
 
 local globalEnv = type(getgenv) == "function" and getgenv() or _G
 local limbData = globalEnv.limbExtenderData or {}
@@ -545,9 +545,7 @@ local function sharedSaveData(parent, cacheKey, char, limb)
 	entry.OriginalAssemblyCOM  = limb.AssemblyCenterOfMass
 	entry.OriginalRootPriority = limb.RootPriority or 0
 	if not entry.TrueSize then entry.TrueSize = entry.OriginalSize end
-	-- OPTIM: cache the effective original size used every heartbeat in
-	-- _updateSingleDynamicScale, avoiding the repeated "TrueSize or OriginalSize"
-	-- evaluation in the hot path.
+
 	entry._cachedOriginalSize = entry.TrueSize or entry.OriginalSize
 	limbData.instanceLookup[limb] = { data = entry, type = "Part" }
 	limbData.instanceLookup[char] = { data = entry, type = "Model" }
@@ -683,8 +681,7 @@ function LimbExtender:_applyLimbs(player, char, limb)
 	if self._settings.ESP and self._ESP then
 		local tracked = self._ESP:Track(char)
 		if not tracked then
-			-- FIX: guard self._ESP and self._running inside the retry loop;
-			-- Stop() can nil self._ESP or clear _running mid-retry.
+
 			task_spawn(function()
 				local attempts = 0
 				while self._running and self._ESP
@@ -711,10 +708,6 @@ function LimbExtender:_removeLimbs(player, char, limb)
 end
 
 function LimbExtender:_processDirtyWork()
-	-- OPTIM: prevent a second _processDirtyWork from spawning while this one
-	-- is yielding inside _doRestartBatched or _doCosmeticUpdateBatched.
-	-- Previously _workScheduled was set to false at the top of this function,
-	-- meaning Set() could spawn another instance during any yield point.
 	if self._processingWork then return end
 	self._processingWork = true
 	self._workScheduled = false
@@ -779,11 +772,6 @@ function LimbExtender:_processDirtyWork()
 		end
 	end
 
-	-- OPTIM: guard the loop on _running so Stop() causes a clean exit at
-	-- the next iteration boundary rather than running to natural completion.
-	-- FIX: wrap _doRestartBatched in pcall so that any error inside it
-	-- doesn't leave _restartLock permanently true and deadlock all future
-	-- restarts.
 	while (self._dirtyRestart or self._dirtyCosmetic) and self._running do
 		if self._dirtyRestart and not self._restartLock then
 			self._restartLock = true
@@ -851,20 +839,12 @@ function LimbExtender:_doRestartBatched()
 
 	self._suppressOnLimbLost = false
 
-	-- FIX: _suppressOnLimbLost prevented _removeLimbs from cleaning up
-	-- _npcIdMap entries during the stop. Any NPC removed from the game
-	-- during the restart window would leave a stale char -> key mapping
-	-- here indefinitely, pinning the Model instance against GC. Clear it
-	-- so fresh IDs are assigned after the manager restarts.
 	table_clear(self._npcIdMap)
 	table_clear(cache)
 
 	if self._ESP then self._ESP:Stop() end
 	if not self._running then return end
 
-	-- Apply any settings that changed via Set() before restarting the manager.
-	-- Uses _applyRestartKey so ALT_RESET_LIMB_ON_DEATH maps to the correct
-	-- manager key (STOP_TRACKING_ON_DEATH) rather than the old dead DEATH_RESTORE.
 	local s = self._settings
 	for key in pairs(RESTART_KEYS) do
 		if s[key] ~= nil then
@@ -891,8 +871,6 @@ function LimbExtender:_doCosmeticUpdateBatched()
 
 	local BATCH = 10
 	for i = 1, #entries, BATCH do
-		-- OPTIM: also guard on _running so a Stop() during a cosmetic update
-		-- aborts it cleanly (previously only _dirtyRestart was checked here).
 		if self._dirtyRestart or not self._running then return end
 		local last = math_min(i + BATCH - 1, #entries)
 		for j = i, last do
@@ -992,8 +970,6 @@ function LimbExtender:_updateSingleDynamicScale(entry, localPos)
 	local diff = limb.Position - localPos
 	local sqDist = diff:Dot(diff)
 
-	-- OPTIM: use cached value set in sharedSaveData instead of evaluating
-	-- "TrueSize or OriginalSize" on every heartbeat frame for every entry.
 	local originalSize = entry._cachedOriginalSize
 	local targetSize
 
@@ -1059,7 +1035,7 @@ function LimbExtender.new(userSettings)
 		_dirtyCHAMS          = false,
 		_suppressOnLimbLost  = false,
 		_workScheduled       = false,
-		_processingWork      = false,  -- OPTIM: replaces the _workScheduled race window
+		_processingWork      = false,
 		_restartLock         = false,
 		_generation          = 0,
 		_managerGeneration   = 0,
@@ -1087,9 +1063,7 @@ function LimbExtender.new(userSettings)
 		NPC_DIRECTORIES         = self._settings.NPC_DIRECTORIES,
 		TARGET_LIMB             = self._settings.TARGET_LIMB,
 		FORCEFIELD_CHECK        = self._settings.FORCEFIELD_CHECK,
-		-- FIX: was "DEATH_RESTORE" which doesn't exist in the manager.
-		-- ALT_RESET_LIMB_ON_DEATH silently did nothing. Correct key is
-		-- STOP_TRACKING_ON_DEATH.
+
 		STOP_TRACKING_ON_DEATH  = self._settings.ALT_RESET_LIMB_ON_DEATH,
 		TEAM_MODE               = self._settings.TEAM_MODE,
 		TEAM_WHITELIST          = self._settings.TEAM_WHITELIST,
@@ -1180,10 +1154,6 @@ function LimbExtender:Start()
 	if self._destroyed or self._running then return end
 	self._running = true
 
-	-- FIX: Stop() disconnects and nils _charConn. Start() never reconnected
-	-- it, so after any Stop/Start cycle, _updateLocalCharacter() would never
-	-- fire again on character changes, leaving _localHRP permanently stale
-	-- and breaking dynamic scaling position tracking.
 	if not self._charConn then
 		self:_updateLocalCharacter()
 		self._charConn = localPlayer:GetPropertyChangedSignal("Character"):Connect(function()
@@ -1327,8 +1297,6 @@ function LimbExtender:Set(key, value)
 end
 
 function LimbExtender:_applyRestartKey(key, value)
-	-- FIX: ALT_RESET_LIMB_ON_DEATH previously mapped to "DEATH_RESTORE"
-	-- which doesn't exist in the manager. Correct key is STOP_TRACKING_ON_DEATH.
 	if key == "ALT_RESET_LIMB_ON_DEATH" then
 		self._manager:Set("STOP_TRACKING_ON_DEATH", value)
 	elseif key == "NPC_DIRECTORIES" then
