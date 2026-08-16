@@ -465,13 +465,6 @@ function LimbObserver:_start()
 		self:_resolveStep(self._model, self._segments, 1)
 	end
 
-	-- FIX: previously this watched only a single ForceField instance (the
-	-- one present at start, or the most recently added one). If a second
-	-- ForceField appeared while the first was still active and the FIRST
-	-- one was then removed, beginResolve() fired even though the character
-	-- still had an active ForceField from the second one. This now counts
-	-- all ForceField children and only resolves once the count reaches
-	-- zero, re-pausing if a new one appears mid-resolution.
 	if self._manager._settings.FORCEFIELD_CHECK then
 		local ffCount = 0
 		for _, child in ipairs(self._model:GetChildren()) do
@@ -657,12 +650,6 @@ function PlayerData.new(parent, player)
 			self:_onCharacterRemoving(char)
 		end, "CharacterRemoving")
 
-		-- FIX: CharacterChanged was previously connected unconditionally,
-		-- even when CUSTOM_CHARACTER_SYSTEM = true. When the game sets
-		-- player.Character (real spawn), this fired _onCharacterAdded with
-		-- the game character, silently tearing down and replacing any custom
-		-- character that was registered. Now guarded alongside the other
-		-- native character signals.
 		self.conns:Connect(player:GetPropertyChangedSignal("Character"), function()
 			local char = player.Character
 			if char and self._character ~= char and not self._destroyed then
@@ -676,9 +663,6 @@ function PlayerData.new(parent, player)
 	return self
 end
 
--- FIX: this is now re-invoked whenever TEAM_MODE changes at runtime (see
--- Manager:Set below) instead of only being evaluated once at PlayerData
--- construction time.
 function PlayerData:_updateTeamSignal()
 	local s = self._parent._settings
 	if s.TEAM_MODE ~= "none" then
@@ -695,11 +679,6 @@ function PlayerData:EvaluateFilter()
 	local passes = self._parent:_evaluatePlayerFilter(self.player)
 	if passes and not self._isTracked then
 		self._isTracked = true
-		-- FIX: was using self.player.Character unconditionally. For
-		-- CUSTOM_CHARACTER_SYSTEM, that's the game's native character, not
-		-- the registered custom one. Use self._character (set by the last
-		-- _onCharacterAdded / _setupCharacterTracking call) so the correct
-		-- model is re-tracked when a filter flips back to passing.
 		local charToTrack = self._parent._settings.CUSTOM_CHARACTER_SYSTEM
 			and self._character
 			or self.player.Character
@@ -761,25 +740,10 @@ end
 function PlayerData:_onCharacterAdded(char)
 	if self._destroyed or typeof(char) ~= "Instance" or not char:IsA("Model") then return end
 
-	-- FIX: player.CharacterAdded and player:GetPropertyChangedSignal("Character")
-	-- both fire for the same spawn (the latter is connected unconditionally
-	-- so CUSTOM_CHARACTER_SYSTEM setups relying on it still get notified).
-	-- Without this guard, the second call tore down the character/limb
-	-- tracking that the first call had JUST built and rebuilt it from
-	-- scratch, firing a spurious ON_CHARACTER_REMOVING immediately followed
-	-- by a duplicate ON_CHARACTER_ADDED for the same character on every
-	-- single spawn, and needlessly recreating the limb observer.
 	if self._character == char and self._characterObserver then
 		return
 	end
 
-	-- FIX: if we're already tracking a different character for this player
-	-- (e.g. a caller re-invokes RegisterPlayerCharacter with a new model
-	-- under CUSTOM_CHARACTER_SYSTEM) and the filter now fails for the new
-	-- one, the old character's observer/limb-observer must still be torn
-	-- down. Previously teardown only happened inside the "passes" branch,
-	-- so a failing filter on a character swap silently leaked the old
-	-- tracking state.
 	if self._character and self._character ~= char then
 		self:_teardownCharacterTracking()
 	end
@@ -829,9 +793,6 @@ function Manager:_playerInList(list, player)
 			if player.UserId == entry then return true end
 		elseif typeof(entry) == "Instance" and entry:IsA("Player") then
 			if player == entry then return true end
-		-- FIX: string usernames were silently ignored — only UserId numbers
-		-- and Player instances were matched. A common mistake is passing
-		-- "PlayerName" expecting it to work; now it does.
 		elseif type(entry) == "string" then
 			if player.Name == entry then return true end
 		end
@@ -856,16 +817,9 @@ function Manager:_evaluatePlayerFilter(player)
 		end
 	end
 
-	-- FIX: string.match throws on invalid Lua patterns (e.g. "[unclosed" or
-	-- "(broken"). Previously this propagated uncaught through EvaluateFilter /
-	-- _onCharacterAdded and was silently swallowed by the signal handler,
-	-- leaving the player stuck in whatever tracked state they had before.
-	-- Now wrapped in pcall — a bad pattern is treated as non-matching with a
-	-- warning so the issue is immediately visible.
 	if s.NAME_PATTERN then
 		local ok, matched = pcall(string.match, player.Name, s.NAME_PATTERN)
 		if not ok then
-			warn(("[NPCTracker] Invalid NAME_PATTERN %q: %s"):format(tostring(s.NAME_PATTERN), tostring(matched)))
 			return false
 		end
 		if not matched then return false end
@@ -873,7 +827,6 @@ function Manager:_evaluatePlayerFilter(player)
 	if s.DISPLAY_NAME_PATTERN then
 		local ok, matched = pcall(string.match, player.DisplayName, s.DISPLAY_NAME_PATTERN)
 		if not ok then
-			warn(("[NPCTracker] Invalid DISPLAY_NAME_PATTERN %q: %s"):format(tostring(s.DISPLAY_NAME_PATTERN), tostring(matched)))
 			return false
 		end
 		if not matched then return false end
@@ -892,10 +845,6 @@ function Manager:_evaluatePlayerFilter(player)
 	local otherTeam = player.Team
 
 	if mode == "same" then
-		-- FIX: nil == nil is true in Lua, so when localPlayer has no team,
-		-- every other teamless player passed this check. Teamless players
-		-- cannot meaningfully be "on the same team", so require both to
-		-- actually have a team.
 		if localTeam == nil or otherTeam == nil then return false end
 		return localTeam == otherTeam
 	elseif mode == "different" then
@@ -906,10 +855,7 @@ function Manager:_evaluatePlayerFilter(player)
 		end
 	elseif mode == "whitelist" then
 		local list = s.TEAM_WHITELIST
-		-- FIX: nil TEAM_WHITELIST with mode "whitelist" silently excluded
-		-- everyone. Warn so the misconfiguration is immediately visible.
 		if type(list) ~= "table" or #list == 0 then
-			warn("[NPCTracker] TEAM_MODE is \"whitelist\" but TEAM_WHITELIST is empty or nil — no players will be tracked")
 			return false
 		end
 		for _, entry in ipairs(list) do
@@ -922,10 +868,7 @@ function Manager:_evaluatePlayerFilter(player)
 		return false
 	elseif mode == "blacklist" then
 		local list = s.TEAM_BLACKLIST
-		-- FIX: nil TEAM_BLACKLIST with mode "blacklist" silently passed
-		-- everyone. Warn so the misconfiguration is immediately visible.
 		if type(list) ~= "table" or #list == 0 then
-			warn("[NPCTracker] TEAM_MODE is \"blacklist\" but TEAM_BLACKLIST is empty or nil — all players will be tracked")
 			return true
 		end
 		for _, entry in ipairs(list) do
@@ -984,25 +927,6 @@ function Manager:_onLimbReady(player, model, limb)
 end
 
 function Manager:_onLimbLost(player, model, limb)
-	-- FIX: do NOT destroy _npcLimbObservers[model] here. There are two
-	-- callers:
-	--
-	-- 1. LimbObserver:_limbRemoved() — the limb temporarily disappeared.
-	--    After this callback, _limbRemoved() calls self:_start() to restart
-	--    tracking. Destroying the observer here sets _destroyed = true, so
-	--    _start() hits the guard and returns immediately. The NPC becomes
-	--    permanently untracked for the rest of the session even though the
-	--    model is still alive.
-	--
-	-- 2. LimbObserver:Destroy() — called from the StreamObserver's
-	--    onUnavailable when the NPC model actually leaves. The StreamObserver
-	--    already called limbObs:Destroy() AND set _npcLimbObservers[model] = nil
-	--    before Destroy() runs, so _npcLimbObservers[model] is already nil by
-	--    the time this callback fires. The block was a no-op here anyway.
-	--
-	-- Actual NPC limb observer cleanup on model removal is handled correctly
-	-- by the StreamObserver's onUnavailable callback in _finishRegisterNPC.
-
 	local cb = self._settings.ON_LIMB_LOST
 	self:_fireCallback("ON_LIMB_LOST", cb, player, model, limb)
 end
@@ -1575,11 +1499,6 @@ function Manager:AddDirectory(dir)
 					and not self._destroyed and self._generation == gen) then
 					return
 				end
-
-				-- FIX: if RemoveDirectory(dir) was called while this path was
-				-- still resolving, dir will no longer be in NPC_DIRECTORIES.
-				-- Without this check the removal was silently undone once
-				-- resolution finished.
 				local stillPresent = false
 				for _, d in ipairs(self._settings.NPC_DIRECTORIES) do
 					if d == dir then
@@ -1645,9 +1564,6 @@ function Manager:GetDirectories()
 	return table_clone(dirs)
 end
 
--- These settings hold tables. A reference equality check would silently
--- ignore in-place mutations (e.g. table.insert into the same whitelist
--- object and then calling Set again). Always process updates for these keys.
 local FILTER_TABLE_KEYS = {
 	TEAM_WHITELIST   = true,
 	TEAM_BLACKLIST   = true,
@@ -1656,10 +1572,6 @@ local FILTER_TABLE_KEYS = {
 }
 
 function Manager:Set(key, value)
-	-- FIX: table-type filter keys use reference equality here, so passing
-	-- the same (mutated) table object as the current value caused an early
-	-- return and EvaluateFilter was never called. Those keys now bypass the
-	-- equality check so in-place mutations are always picked up.
 	if not FILTER_TABLE_KEYS[key] and self._settings[key] == value then return end
 	self._settings[key] = value
 
@@ -1676,13 +1588,6 @@ function Manager:Set(key, value)
 			self:_refreshAllLimbObservers()
 		end
 	end
-
-	-- FIX: TEAM_MODE changes whether each player's Team-changed connection
-	-- should be wired, so re-run _updateTeamSignal() for every tracked
-	-- player before re-evaluating. Previously the connection was only ever
-	-- set up once at PlayerData construction time, so toggling TEAM_MODE
-	-- at runtime left already-tracked players stuck listening (or not
-	-- listening) based on stale settings.
 	if key == "TEAM_MODE" then
 		if self._running then
 			for _, pd in pairs(self._playerTable) do
