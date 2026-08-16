@@ -363,6 +363,7 @@ if not limbData._hooksInstalled then
 
 			data._customSignals = custom
 			data._realSignals = real
+			data._disabledConns = {}
 
 			local function migrateSignal(realSignal, newSignal)
 				local connections = getconnections(realSignal)
@@ -372,6 +373,7 @@ if not limbData._hooksInstalled then
 						newSignal:Connect(func)
 					end
 					conn:Disable()
+					table_insert(data._disabledConns, conn)
 				end
 			end
 
@@ -398,6 +400,16 @@ local function createCustomSignals(limb)
 end
 
 local function removeCustomSignals(limb)
+	local cached = limbData.instanceLookup[limb]
+	if cached and cached.data then
+		local disabledConns = cached.data._disabledConns
+		if disabledConns then
+			for _, conn in ipairs(disabledConns) do
+				pcall(function() conn:Disconnect() end)
+			end
+			cached.data._disabledConns = nil
+		end
+	end
 	limbData.limbBlocked[limb] = nil
 end
 
@@ -635,6 +647,13 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 		entry._realSignals = nil
 	end
 
+	if entry._disabledConns then
+		for _, conn in ipairs(entry._disabledConns) do
+			pcall(function() conn:Disconnect() end)
+		end
+		entry._disabledConns = nil
+	end
+
 	if entry.Limb then limbData.instanceLookup[entry.Limb] = nil end
 	if activeLimb and activeLimb ~= entry.Limb then limbData.instanceLookup[activeLimb] = nil end
 	if entry.Character then limbData.instanceLookup[entry.Character] = nil end
@@ -769,6 +788,7 @@ function LimbExtender:_processDirtyWork()
 			end
 		end
 	end
+	
 	while (self._dirtyRestart or self._dirtyCosmetic) and self._running do
 		if self._dirtyRestart and not self._restartLock then
 			self._restartLock = true
@@ -964,7 +984,7 @@ function LimbExtender:_updateSingleDynamicScale(entry, localPos)
 
 	local diff = limb.Position - localPos
 	local sqDist = diff:Dot(diff)
-
+	
 	local originalSize = entry._cachedOriginalSize
 	local targetSize
 
@@ -1056,6 +1076,7 @@ function LimbExtender.new(userSettings)
 		NPC_DIRECTORIES         = self._settings.NPC_DIRECTORIES,
 		TARGET_LIMB             = self._settings.TARGET_LIMB,
 		FORCEFIELD_CHECK        = self._settings.FORCEFIELD_CHECK,
+			
 		STOP_TRACKING_ON_DEATH  = self._settings.ALT_RESET_LIMB_ON_DEATH,
 		TEAM_MODE               = self._settings.TEAM_MODE,
 		TEAM_WHITELIST          = self._settings.TEAM_WHITELIST,
