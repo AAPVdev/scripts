@@ -682,11 +682,6 @@ function PlayerData:EvaluateFilter()
 			and self._character
 			or self.player.Character
 		if charToTrack then
-			-- Only flip the flag once tracking is actually set up. If there's
-			-- no character yet, leave _isTracked false so a later
-			-- EvaluateFilter call (or _onCharacterAdded once the character
-			-- spawns) still does real work instead of silently no-opping
-			-- against a stale "tracked" flag.
 			self._isTracked = true
 			self:_setupCharacterTracking(charToTrack)
 		end
@@ -853,10 +848,11 @@ function Manager:_evaluatePlayerFilter(player)
 		if localTeam == nil or otherTeam == nil then return false end
 		return localTeam == otherTeam
 	elseif mode == "different" then
-		-- Symmetric with "same": if either side has no team, we can't
-		-- meaningfully call them "different", so don't guess.
-		if localTeam == nil or otherTeam == nil then return false end
-		return otherTeam ~= localTeam
+		if localTeam then
+			return otherTeam ~= localTeam
+		else
+			return true
+		end
 	elseif mode == "whitelist" then
 		local list = s.TEAM_WHITELIST
 		if type(list) ~= "table" or #list == 0 then
