@@ -712,7 +712,22 @@ function PlayerData:_setupCharacterTracking(char)
 		self:_teardownLimbTracking()
 	end
 
-	self._characterObserver = StreamObserver.new(char, onAvailable, onUnavailable, parent._settings.REQUIRE_ANCHOR)
+	local requireAnchor = parent._settings.REQUIRE_ANCHOR
+	local ok, observerOrErr = pcall(StreamObserver.new, char, onAvailable, onUnavailable, requireAnchor)
+	if ok then
+		self._characterObserver = observerOrErr
+	else
+		warn(("[NPCTracker] Failed to create StreamObserver for %s: %s"):format(self.player.Name, tostring(observerOrErr)))
+		task.defer(function()
+			if self._destroyed or self._character ~= char then return end
+			local ok2, observerOrErr2 = pcall(StreamObserver.new, char, onAvailable, onUnavailable, requireAnchor)
+			if ok2 then
+				self._characterObserver = observerOrErr2
+			else
+				warn(("[NPCTracker] Retry failed to create StreamObserver for %s: %s"):format(self.player.Name, tostring(observerOrErr2)))
+			end
+		end)
+	end
 end
 
 function PlayerData:_teardownCharacterTracking()
@@ -981,28 +996,45 @@ function Manager:_finishRegisterNPC(model, dir)
 	if self._npcSet[model] then return end
 
 	local requireAnchor = self._settings.REQUIRE_ANCHOR
-	local observer = StreamObserver.new(model,
-		function(npcModel)
-			if self._destroyed then return end
-			self:_fireCallback("ON_NPC_ADDED", self._settings.ON_NPC_ADDED, npcModel)
-			if self._settings.TARGET_LIMB and not self._npcLimbObservers[npcModel] then
-				self._npcLimbObservers[npcModel] = LimbObserver.new(self, npcModel, nil)
+
+	local function onAvailable(npcModel)
+		if self._destroyed then return end
+		self:_fireCallback("ON_NPC_ADDED", self._settings.ON_NPC_ADDED, npcModel)
+		if self._settings.TARGET_LIMB and not self._npcLimbObservers[npcModel] then
+			self._npcLimbObservers[npcModel] = LimbObserver.new(self, npcModel, nil)
+		end
+	end
+
+	local function onUnavailable(npcModel)
+		if self._destroyed then return end
+		self:_fireCallback("ON_NPC_REMOVING", self._settings.ON_NPC_REMOVING, npcModel)
+		local limbObs = self._npcLimbObservers[npcModel]
+		if limbObs then
+			limbObs:Destroy()
+			self._npcLimbObservers[npcModel] = nil
+		end
+	end
+
+	local ok, observerOrErr = pcall(StreamObserver.new, model, onAvailable, onUnavailable, requireAnchor)
+	if ok then
+		self._npcSet[model] = observerOrErr
+		if dir then
+			self._npcDirOwners[model] = dir
+		end
+	else
+		warn(("[NPCTracker] Failed to create StreamObserver for NPC %s: %s"):format(model.Name, tostring(observerOrErr)))
+		task_defer(function()
+			if self._destroyed or self._npcSet[model] or not isLiveInstance(model) then return end
+			local ok2, observerOrErr2 = pcall(StreamObserver.new, model, onAvailable, onUnavailable, requireAnchor)
+			if ok2 then
+				self._npcSet[model] = observerOrErr2
+				if dir then
+					self._npcDirOwners[model] = dir
+				end
+			else
+				warn(("[NPCTracker] Retry failed to create StreamObserver for NPC %s: %s"):format(model.Name, tostring(observerOrErr2)))
 			end
-		end,
-		function(npcModel)
-			if self._destroyed then return end
-			self:_fireCallback("ON_NPC_REMOVING", self._settings.ON_NPC_REMOVING, npcModel)
-			local limbObs = self._npcLimbObservers[npcModel]
-			if limbObs then
-				limbObs:Destroy()
-				self._npcLimbObservers[npcModel] = nil
-			end
-		end,
-		requireAnchor
-	)
-	self._npcSet[model] = observer
-	if dir then
-		self._npcDirOwners[model] = dir
+		end)
 	end
 end
 
