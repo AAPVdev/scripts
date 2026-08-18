@@ -1,12 +1,5 @@
-local function missing(t, f, fallback)
-	if type(f) == t then return f end
-	return fallback
-end
-
-local cloneref = missing("function", cloneref, function(obj) return obj end)
-
-local Players   = cloneref(game:GetService("Players"))
-local Workspace = cloneref(game:GetService("Workspace"))
+local Players   = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
 
 local localPlayer = Players.LocalPlayer
 
@@ -909,6 +902,7 @@ function Manager.new(userSettings)
 		_running   = false,
 		_destroyed = false,
 		_generation = 0,
+		_playerGeneration = 0,
 
 		_dirIdCounter = 0,
 		_dirUidMap    = {},
@@ -1268,6 +1262,8 @@ function Manager:_startPlayerTracking()
 	if self._destroyed or not self._running or self._playerConnsStarted then return end
 	self._playerConnsStarted = true
 
+	local pgen = self._playerGeneration
+
 	self._connections:Connect(Players.PlayerAdded, function(p)
 		if p ~= localPlayer and not self._playerTable[p] then
 			local pd = PlayerData.new(self, p)
@@ -1315,6 +1311,21 @@ function Manager:_startPlayerTracking()
 		end
 		task.wait()
 	end
+
+	if self._settings.TEAM_MODE ~= "none" then
+		task_spawn(function()
+			for _attempt = 1, 5 do
+				task.wait(2)
+				if self._destroyed or not self._running or not self._playerConnsStarted
+					or self._playerGeneration ~= pgen then
+					return
+				end
+				for _, pd in pairs(self._playerTable) do
+					pd:EvaluateFilter()
+				end
+			end
+		end)
+	end
 end
 
 function Manager:_startNPCTracking()
@@ -1347,6 +1358,7 @@ end
 function Manager:_stopPlayerTracking()
 	if not self._playerConnsStarted then return end
 	self._playerConnsStarted = false
+	self._playerGeneration = self._playerGeneration + 1
 
 	if self._connections then
 		self._connections:Disconnect("PlayerAdded")
