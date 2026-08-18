@@ -638,7 +638,9 @@ function PlayerData.new(parent, player)
 		_character         = nil,
 		_characterObserver = nil,
 		_limbObserver      = nil,
-		_isTracked         = false,
+		_ready             = false,
+		_eligible          = false,
+		_tracked           = false,
 	}, PlayerData)
 
 	if not parent._settings.CUSTOM_CHARACTER_SYSTEM then
@@ -659,6 +661,11 @@ function PlayerData.new(parent, player)
 	end
 
 	self:_updateTeamSignal()
+	self:EvaluateFilter()
+
+	if not parent._settings.CUSTOM_CHARACTER_SYSTEM and player.Character then
+		self:_onCharacterAdded(player.Character)
+	end
 
 	return self
 end
@@ -676,51 +683,64 @@ end
 
 function PlayerData:EvaluateFilter()
 	if self._destroyed then return end
-	local passes = self._parent:_evaluatePlayerFilter(self.player)
-	if passes and not self._isTracked then
-		local charToTrack = self._parent._settings.CUSTOM_CHARACTER_SYSTEM
-			and self._character
-			or self.player.Character
-		if charToTrack then
-			self._isTracked = true
-			self:_setupCharacterTracking(charToTrack)
+	self._eligible = self._parent:_evaluatePlayerFilter(self.player)
+	self:_updateTrackedState()
+end
+
+function PlayerData:_updateTrackedState()
+	if self._destroyed then return end
+	local parent = self._parent
+	local shouldTrack = self._ready and self._eligible
+
+	if shouldTrack and not self._tracked then
+		self._tracked = true
+		parent:_fireCallback("ON_CHARACTER_ADDED", parent._settings.ON_CHARACTER_ADDED, self.player, self._character)
+		if parent._settings.TARGET_LIMB then
+			self:_setupLimbTracking(self._character)
 		end
-	elseif not passes and self._isTracked then
-		self._isTracked = false
-		self:_teardownCharacterTracking()
+	elseif not shouldTrack and self._tracked then
+		self._tracked = false
+		parent:_fireCallback("ON_CHARACTER_REMOVING", parent._settings.ON_CHARACTER_REMOVING, self.player, self._character)
+		self:_teardownLimbTracking()
 	end
 end
 
-function PlayerData:_setupCharacterTracking(char)
-	if self._destroyed or not isLiveInstance(char) then return end
-	self:_teardownCharacterTracking()
+function PlayerData:_onCharacterAdded(char)
+	if self._destroyed or typeof(char) ~= "Instance" or not char:IsA("Model") then return end
+
+	if self._character == char and self._characterObserver then
+		return
+	end
+
+	if self._character and self._character ~= char then
+		self:_teardownCharacterObserver()
+	end
 
 	self._character = char
+
 	local parent = self._parent
-
-	local function onAvailable(model)
-		if self._destroyed then return end
-		parent:_fireCallback("ON_CHARACTER_ADDED", parent._settings.ON_CHARACTER_ADDED, self.player, model)
-		if parent._settings.TARGET_LIMB then
-			self:_setupLimbTracking(model)
-		end
-	end
-
-	local function onUnavailable(model)
-		if self._destroyed then return end
-		parent:_fireCallback("ON_CHARACTER_REMOVING", parent._settings.ON_CHARACTER_REMOVING, self.player, model)
-		self:_teardownLimbTracking()
-	end
-
 	local requireAnchor = parent._settings.REQUIRE_ANCHOR
-	local ok, observerOrErr = pcall(StreamObserver.new, char, onAvailable, onUnavailable, requireAnchor)
+
+	local function onReady()
+		if self._destroyed or self._character ~= char then return end
+		self._ready = true
+		self:_updateTrackedState()
+	end
+
+	local function onUnready()
+		if self._destroyed or self._character ~= char then return end
+		self._ready = false
+		self:_updateTrackedState()
+	end
+
+	local ok, observerOrErr = pcall(StreamObserver.new, char, onReady, onUnready, requireAnchor)
 	if ok then
 		self._characterObserver = observerOrErr
 	else
 		warn(("[NPCTracker] Failed to create StreamObserver for %s: %s"):format(self.player.Name, tostring(observerOrErr)))
 		task.defer(function()
 			if self._destroyed or self._character ~= char then return end
-			local ok2, observerOrErr2 = pcall(StreamObserver.new, char, onAvailable, onUnavailable, requireAnchor)
+			local ok2, observerOrErr2 = pcall(StreamObserver.new, char, onReady, onUnready, requireAnchor)
 			if ok2 then
 				self._characterObserver = observerOrErr2
 			else
@@ -730,13 +750,12 @@ function PlayerData:_setupCharacterTracking(char)
 	end
 end
 
-function PlayerData:_teardownCharacterTracking()
+function PlayerData:_teardownCharacterObserver()
 	if self._characterObserver then
 		self._characterObserver:Destroy()
 		self._characterObserver = nil
 	end
-	self:_teardownLimbTracking()
-	self._character = nil
+	self._ready = false
 end
 
 function PlayerData:_setupLimbTracking(char)
@@ -752,34 +771,18 @@ function PlayerData:_teardownLimbTracking()
 	end
 end
 
-function PlayerData:_onCharacterAdded(char)
-	if self._destroyed or typeof(char) ~= "Instance" or not char:IsA("Model") then return end
-
-	if self._character == char and self._characterObserver then
-		return
-	end
-
-	if self._character and self._character ~= char then
-		self:_teardownCharacterTracking()
-	end
-
-	local passes = self._parent:_evaluatePlayerFilter(self.player)
-	self._isTracked = passes
-
-	if passes then
-		self:_setupCharacterTracking(char)
-	end
-end
-
 function PlayerData:_onCharacterRemoving(char)
 	if self._destroyed then return end
 	if self._character ~= char then return end
-	self:_teardownCharacterTracking()
+	self:_teardownCharacterObserver()
+	self._character = nil
+	self:_updateTrackedState()
 end
 
 function PlayerData:Destroy()
 	self._destroyed = true
-	self:_teardownCharacterTracking()
+	self:_teardownCharacterObserver()
+	self:_teardownLimbTracking()
 	self.conns:Destroy()
 end
 
@@ -1188,7 +1191,7 @@ function Manager:_refreshAllLimbObservers()
 	local hasTarget = self._settings.TARGET_LIMB ~= nil
 
 	for _, pd in pairs(self._playerTable) do
-		if pd._isTracked then
+		if pd._tracked then
 			if hasTarget then
 				if pd._character then
 					pd:_setupLimbTracking(pd._character)
@@ -1311,9 +1314,8 @@ function Manager:_rescanPlayers()
 			if pd then
 				if p.Character then
 					pd:_onCharacterAdded(p.Character)
-				else
-					pd:EvaluateFilter()
 				end
+				pd:EvaluateFilter()
 			end
 		end
 	end
