@@ -265,7 +265,7 @@ function StreamObserver:_bindModelSignals()
 		self._ancestryBound = true
 	end
 
-	if self._childSignalsBound or not isLiveInstance(model) then return end
+	if self._childSignalsBound then return end
 
 	self._modelConns:Connect(model.ChildAdded, function(child)
 		if self._destroyed then return end
@@ -1265,6 +1265,28 @@ function Manager:_rescanCustomPlayers()
 	end
 end
 
+function Manager:_rescanPlayers()
+	if self._destroyed or not self._running or not self._playerConnsStarted then return end
+
+	local snapshot = Players:GetPlayers()
+	for _, p in ipairs(snapshot) do
+		if p ~= localPlayer then
+			local pd = self._playerTable[p]
+			if not pd and isLiveInstance(p) then
+				pd = PlayerData.new(self, p)
+				self._playerTable[p] = pd
+			end
+			if pd then
+				if p.Character then
+					pd:_onCharacterAdded(p.Character)
+				else
+					pd:EvaluateFilter()
+				end
+			end
+		end
+	end
+end
+
 function Manager:_startPlayerTracking()
 	if self._destroyed or not self._running or self._playerConnsStarted then return end
 	self._playerConnsStarted = true
@@ -1319,20 +1341,16 @@ function Manager:_startPlayerTracking()
 		task.wait()
 	end
 
-	if self._settings.TEAM_MODE ~= "none" then
-		task_spawn(function()
-			for _attempt = 1, 5 do
-				task.wait(2)
-				if self._destroyed or not self._running or not self._playerConnsStarted
-					or self._playerGeneration ~= pgen then
-					return
-				end
-				for _, pd in pairs(self._playerTable) do
-					pd:EvaluateFilter()
-				end
+	task_spawn(function()
+		for _attempt = 1, 5 do
+			task.wait(2)
+			if self._destroyed or not self._running or not self._playerConnsStarted
+				or self._playerGeneration ~= pgen then
+				return
 			end
-		end)
-	end
+			self:_rescanPlayers()
+		end
+	end)
 end
 
 function Manager:_startNPCTracking()
@@ -1360,6 +1378,18 @@ function Manager:_startNPCTracking()
 		end
 		task.wait()
 	end
+
+	task_spawn(function()
+		local gen = self._generation
+		for _attempt = 1, 5 do
+			task.wait(2)
+			if self._destroyed or not self._running or not self._npcConnsStarted
+				or self._generation ~= gen then
+				return
+			end
+			self:_rescanNPCFilter()
+		end
+	end)
 end
 
 function Manager:_stopPlayerTracking()
