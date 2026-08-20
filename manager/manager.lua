@@ -786,6 +786,125 @@ function PlayerData:Destroy()
 	self.conns:Destroy()
 end
 
+local NPCData = {}
+NPCData.__index = NPCData
+
+function NPCData.new(manager, model, dir)
+	local self = setmetatable({
+		_manager      = manager,
+		model         = model,
+		_dir          = dir,
+		_destroyed    = false,
+		_observer     = nil,
+		_limbObserver = nil,
+		_ready        = false,
+		_eligible     = false,
+		_tracked      = false,
+	}, NPCData)
+
+	self:_setupObserver()
+	self:EvaluateFilter()
+
+	return self
+end
+
+function NPCData:_setupObserver()
+	local manager = self._manager
+	local model = self.model
+	local requireAnchor = manager._settings.REQUIRE_ANCHOR
+
+	local function onReady()
+		if self._destroyed then return end
+		self._ready = true
+		self:_updateTrackedState()
+	end
+
+	local function onUnready()
+		if self._destroyed then return end
+		self._ready = false
+		self:_updateTrackedState()
+	end
+
+	local ok, observerOrErr = pcall(StreamObserver.new, model, onReady, onUnready, requireAnchor)
+	if ok then
+		self._observer = observerOrErr
+	else
+		warn(("[NPCTracker] Failed to create StreamObserver for NPC %s: %s"):format(model.Name, tostring(observerOrErr)))
+		task_defer(function()
+			if self._destroyed then return end
+			local ok2, observerOrErr2 = pcall(StreamObserver.new, model, onReady, onUnready, requireAnchor)
+			if ok2 then
+				self._observer = observerOrErr2
+			else
+				warn(("[NPCTracker] Retry failed to create StreamObserver for NPC %s: %s"):format(model.Name, tostring(observerOrErr2)))
+			end
+		end)
+	end
+end
+
+function NPCData:EvaluateFilter()
+	if self._destroyed then return end
+	local manager = self._manager
+	local filter = manager._settings.NPC_FILTER
+	if type(filter) == "function" then
+		local ok, result = pcall(filter, self.model)
+		self._eligible = (ok and result) and true or false
+	else
+		self._eligible = true
+	end
+	self:_updateTrackedState()
+end
+
+function NPCData:_updateTrackedState()
+	if self._destroyed then return end
+	local manager = self._manager
+	local shouldTrack = self._ready and self._eligible
+
+	if shouldTrack and not self._tracked then
+		self._tracked = true
+		manager:_fireCallback("ON_NPC_ADDED", manager._settings.ON_NPC_ADDED, self.model)
+		if manager._settings.TARGET_LIMB then
+			self:_setupLimbTracking()
+		end
+	elseif not shouldTrack and self._tracked then
+		self._tracked = false
+		manager:_fireCallback("ON_NPC_REMOVING", manager._settings.ON_NPC_REMOVING, self.model)
+		self:_teardownLimbTracking()
+	end
+end
+
+function NPCData:_setupLimbTracking()
+	if self._destroyed or not isLiveInstance(self.model) then return end
+	self:_teardownLimbTracking()
+	self._limbObserver = LimbObserver.new(self._manager, self.model, nil)
+end
+
+function NPCData:_teardownLimbTracking()
+	if self._limbObserver then
+		self._limbObserver:Destroy()
+		self._limbObserver = nil
+	end
+end
+
+function NPCData:IsStructurallyValid()
+	local manager = self._manager
+	local model = self.model
+	if not isLiveInstance(model) or not model:IsA("Model") then return false end
+	if not model:FindFirstChildOfClass("Humanoid") then return false end
+	if getPlayerFromCharacter(manager._settings, model) then return false end
+	return true
+end
+
+function NPCData:Destroy()
+	if self._destroyed then return end
+	self._destroyed = true
+	if self._observer then
+		self._observer:Destroy()
+		self._observer = nil
+	end
+	self:_teardownLimbTracking()
+end
+
 local Manager = {}
 Manager.__index = Manager
 
@@ -915,7 +1034,6 @@ function Manager.new(userSettings)
 
 		_playerTable       = {},
 		_npcSet            = {},
-		_npcLimbObservers  = {},
 		_pendingNPCWatchers = {},
 
 		_connections    = nil,
@@ -950,29 +1068,10 @@ function Manager:_onLimbLost(player, model, limb)
 	self:_fireCallback("ON_LIMB_LOST", cb, player, model, limb)
 end
 
-function Manager:_isValidNPC(model)
-	if not model or not model:IsA("Model") then return false end
-	if not model:FindFirstChildOfClass("Humanoid") then return false end
-	if getPlayerFromCharacter(self._settings, model) then return false end
-
-	local filter = self._settings.NPC_FILTER
-	if type(filter) == "function" then
-		local ok, result = pcall(filter, model)
-		if not ok or not result then return false end
-	end
-	return true
-end
-
-function Manager:_checkNPCValidity(model)
+function Manager:_checkNPCStructural(model)
 	if not model or not model:IsA("Model") then return false, false end
 	if not model:FindFirstChildOfClass("Humanoid") then return false, true end
 	if getPlayerFromCharacter(self._settings, model) then return false, false end
-
-	local filter = self._settings.NPC_FILTER
-	if type(filter) == "function" then
-		local ok, result = pcall(filter, model)
-		if not ok or not result then return false, false end
-	end
 	return true, false
 end
 
@@ -983,7 +1082,7 @@ function Manager:_registerNPC(model, dir)
 	if self._npcSet[model] then return end
 	if self._pendingNPCWatchers[model] then return end
 
-	local valid, missingHumanoid = self:_checkNPCValidity(model)
+	local valid, missingHumanoid = self:_checkNPCStructural(model)
 	if not valid then
 		if missingHumanoid then
 			self:_watchForHumanoid(model, dir)
@@ -998,46 +1097,10 @@ function Manager:_finishRegisterNPC(model, dir)
 	if self._destroyed or not isLiveInstance(model) then return end
 	if self._npcSet[model] then return end
 
-	local requireAnchor = self._settings.REQUIRE_ANCHOR
-
-	local function onAvailable(npcModel)
-		if self._destroyed then return end
-		self:_fireCallback("ON_NPC_ADDED", self._settings.ON_NPC_ADDED, npcModel)
-		if self._settings.TARGET_LIMB and not self._npcLimbObservers[npcModel] then
-			self._npcLimbObservers[npcModel] = LimbObserver.new(self, npcModel, nil)
-		end
-	end
-
-	local function onUnavailable(npcModel)
-		if self._destroyed then return end
-		self:_fireCallback("ON_NPC_REMOVING", self._settings.ON_NPC_REMOVING, npcModel)
-		local limbObs = self._npcLimbObservers[npcModel]
-		if limbObs then
-			limbObs:Destroy()
-			self._npcLimbObservers[npcModel] = nil
-		end
-	end
-
-	local ok, observerOrErr = pcall(StreamObserver.new, model, onAvailable, onUnavailable, requireAnchor)
-	if ok then
-		self._npcSet[model] = observerOrErr
-		if dir then
-			self._npcDirOwners[model] = dir
-		end
-	else
-		warn(("[NPCTracker] Failed to create StreamObserver for NPC %s: %s"):format(model.Name, tostring(observerOrErr)))
-		task_defer(function()
-			if self._destroyed or self._npcSet[model] or not isLiveInstance(model) then return end
-			local ok2, observerOrErr2 = pcall(StreamObserver.new, model, onAvailable, onUnavailable, requireAnchor)
-			if ok2 then
-				self._npcSet[model] = observerOrErr2
-				if dir then
-					self._npcDirOwners[model] = dir
-				end
-			else
-				warn(("[NPCTracker] Retry failed to create StreamObserver for NPC %s: %s"):format(model.Name, tostring(observerOrErr2)))
-			end
-		end)
+	local data = NPCData.new(self, model, dir)
+	self._npcSet[model] = data
+	if dir then
+		self._npcDirOwners[model] = dir
 	end
 end
 
@@ -1108,15 +1171,10 @@ end
 function Manager:_unregisterNPC(model)
 	self:_cancelPendingNPCWatch(model)
 
-	local observer = self._npcSet[model]
-	if observer then
-		observer:Destroy()
+	local data = self._npcSet[model]
+	if data then
+		data:Destroy()
 		self._npcSet[model] = nil
-	end
-	local limbObs = self._npcLimbObservers[model]
-	if limbObs then
-		limbObs:Destroy()
-		self._npcLimbObservers[model] = nil
 	end
 	self._npcDirOwners[model] = nil
 end
@@ -1193,7 +1251,9 @@ function Manager:_refreshAllLimbObservers()
 	for _, pd in pairs(self._playerTable) do
 		if pd._tracked then
 			if hasTarget then
-				if pd._character then
+				if pd._limbObserver then
+					pd._limbObserver:Refresh()
+				elseif pd._character then
 					pd:_setupLimbTracking(pd._character)
 				end
 			else
@@ -1202,19 +1262,16 @@ function Manager:_refreshAllLimbObservers()
 		end
 	end
 
-	for model, streamObs in pairs(self._npcSet) do
-		if hasTarget then
-			local limbObs = self._npcLimbObservers[model]
-			if limbObs then
-				limbObs:Refresh()
-			elseif streamObs:IsActive() then
-				self._npcLimbObservers[model] = LimbObserver.new(self, model, nil)
-			end
-		else
-			local limbObs = self._npcLimbObservers[model]
-			if limbObs then
-				limbObs:Destroy()
-				self._npcLimbObservers[model] = nil
+	for _, data in pairs(self._npcSet) do
+		if data._tracked then
+			if hasTarget then
+				if data._limbObserver then
+					data._limbObserver:Refresh()
+				else
+					data:_setupLimbTracking()
+				end
+			else
+				data:_teardownLimbTracking()
 			end
 		end
 	end
@@ -1226,9 +1283,9 @@ function Manager:_rescanNPCFilter()
 	local gen = self._generation
 	task_spawn(function()
 		local toRemove = {}
-		for model in pairs(self._npcSet) do
+		for model, data in pairs(self._npcSet) do
 			if not self._running or self._destroyed or self._generation ~= gen then return end
-			if not self:_isValidNPC(model) then
+			if not data:IsStructurallyValid() then
 				toRemove[#toRemove + 1] = model
 			end
 		end
@@ -1243,32 +1300,9 @@ function Manager:_rescanNPCFilter()
 			task.wait()
 		end
 
-		local dirs = self._settings.NPC_DIRECTORIES
-		local hasUserDirs = type(dirs) == "table" and #dirs > 0
-		local entries = hasUserDirs and dirs or { Workspace }
-		local useDescendants = not hasUserDirs
-
-		for _, entry in ipairs(entries) do
+		for _, data in pairs(self._npcSet) do
 			if not self._running or self._destroyed or self._generation ~= gen then return end
-			local instance = isLiveInstance(entry) and entry or self._stringDirMap[entry]
-			if instance and isLiveInstance(instance) then
-				local raw = useDescendants and instance:GetDescendants() or instance:GetChildren()
-				local candidates = {}
-				for _, desc in ipairs(raw) do
-					if isNPCCandidate(desc) then
-						candidates[#candidates + 1] = desc
-					end
-				end
-				for i = 1, #candidates, BATCH do
-					if not self._running or self._destroyed or self._generation ~= gen then return end
-					local last = math_min(i + BATCH - 1, #candidates)
-					for j = i, last do
-						self:_registerNPC(candidates[j], instance)
-					end
-					task.wait()
-				end
-			end
-			task.wait()
+			data:EvaluateFilter()
 		end
 	end)
 end
@@ -1301,8 +1335,9 @@ function Manager:_rescanCustomPlayers()
 end
 
 function Manager:_rescanPlayers()
-	if self._destroyed or not self._running or not self._playerConnsStarted then return end
+	if self._destroyed or not self._running or not self._playerConnsStarted then return false end
 
+	local changed = false
 	local snapshot = Players:GetPlayers()
 	for _, p in ipairs(snapshot) do
 		if p ~= localPlayer then
@@ -1310,15 +1345,21 @@ function Manager:_rescanPlayers()
 			if not pd and isLiveInstance(p) then
 				pd = PlayerData.new(self, p)
 				self._playerTable[p] = pd
+				changed = true
 			end
 			if pd then
+				local wasTracked = pd._tracked
 				if p.Character then
 					pd:_onCharacterAdded(p.Character)
 				end
 				pd:EvaluateFilter()
+				if pd._tracked ~= wasTracked then
+					changed = true
+				end
 			end
 		end
 	end
+	return changed
 end
 
 function Manager:_startPlayerTracking()
@@ -1376,13 +1417,21 @@ function Manager:_startPlayerTracking()
 	end
 
 	task_spawn(function()
+		local stableCount = 0
 		for _attempt = 1, 5 do
 			task.wait(2)
 			if self._destroyed or not self._running or not self._playerConnsStarted
 				or self._playerGeneration ~= pgen then
 				return
 			end
-			self:_rescanPlayers()
+			if self:_rescanPlayers() then
+				stableCount = 0
+			else
+				stableCount = stableCount + 1
+				if stableCount >= 2 then
+					return
+				end
+			end
 		end
 	end)
 end
@@ -1412,18 +1461,6 @@ function Manager:_startNPCTracking()
 		end
 		task.wait()
 	end
-
-	task_spawn(function()
-		local gen = self._generation
-		for _attempt = 1, 5 do
-			task.wait(2)
-			if self._destroyed or not self._running or not self._npcConnsStarted
-				or self._generation ~= gen then
-				return
-			end
-			self:_rescanNPCFilter()
-		end
-	end)
 end
 
 function Manager:_stopPlayerTracking()
@@ -1468,17 +1505,11 @@ function Manager:_stopNPCTracking()
 
 	local BATCH = 60
 
-	local npcObservers = {}
-	for _, observer in pairs(self._npcSet) do
-		if observer then npcObservers[#npcObservers + 1] = observer end
+	local npcDataList = {}
+	for _, data in pairs(self._npcSet) do
+		if data then npcDataList[#npcDataList + 1] = data end
 	end
 	table_clear(self._npcSet)
-
-	local limbObservers = {}
-	for _, limbObs in pairs(self._npcLimbObservers) do
-		if limbObs then limbObservers[#limbObservers + 1] = limbObs end
-	end
-	table_clear(self._npcLimbObservers)
 
 	for model in pairs(self._pendingNPCWatchers) do
 		self:_cancelPendingNPCWatch(model)
@@ -1491,19 +1522,11 @@ function Manager:_stopNPCTracking()
 
 	local gen = self._generation
 
-	for i = 1, #npcObservers, BATCH do
+	for i = 1, #npcDataList, BATCH do
 		if self._destroyed or self._generation ~= gen then return end
-		local last = math_min(i + BATCH - 1, #npcObservers)
+		local last = math_min(i + BATCH - 1, #npcDataList)
 		for j = i, last do
-			npcObservers[j]:Destroy()
-		end
-		task.wait()
-	end
-	for i = 1, #limbObservers, BATCH do
-		if self._destroyed or self._generation ~= gen then return end
-		local last = math_min(i + BATCH - 1, #limbObservers)
-		for j = i, last do
-			limbObservers[j]:Destroy()
+			npcDataList[j]:Destroy()
 		end
 		task.wait()
 	end
