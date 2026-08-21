@@ -264,11 +264,10 @@ if not limbData._hooksInstalled then
 	local function hookedNamecall(...)
 		local self, prop = ...
 		if not checkcaller() and limbBlocked[self] then
-			local method = getnamecallmethod()
-			if method == "GetPropertyChangedSignal" then
-				local cached = instanceLookup[self]
-				local data = cached and cached.data
-				if data and ORIGINAL_FIELDS[prop] then
+			local cached = instanceLookup[self]
+			local data = cached and cached.data
+			if data and ORIGINAL_FIELDS[prop] then
+				if getnamecallmethod() == "GetPropertyChangedSignal" then
 					local custom = data._customSignals
 					if custom and custom[prop] then
 						return custom[prop]
