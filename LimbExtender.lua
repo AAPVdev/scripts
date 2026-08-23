@@ -536,15 +536,33 @@ local function mergeSettings(user)
 end
 
 local function sharedSaveData(parent, cacheKey, char, limb)
-	local cache = parent._playerCache
-	local entry = cache[cacheKey]
-	if entry then
-		if entry.Limb      and entry.Limb      ~= limb then limbData.instanceLookup[entry.Limb]      = nil end
-		if entry.Character and entry.Character ~= char then limbData.instanceLookup[entry.Character] = nil end
-	else
-		entry = {}
-		cache[cacheKey] = entry
-	end
+    local cache = parent._playerCache
+    local entry = cache[cacheKey]
+    if entry then
+        if entry.Limb and entry.Limb ~= limb then
+            limbData.instanceLookup[entry.Limb] = nil
+            limbData.limbBlocked[entry.Limb] = nil      
+            if entry._watchConns then                 
+                for _, c in ipairs(entry._watchConns) do c:Disconnect() end
+                entry._watchConns = nil
+            end
+            if entry._realSignals then                 
+                for _, be in pairs(entry._realSignals) do be:Destroy() end
+                entry._realSignals = nil
+            end
+            if entry._disabledConns then                  
+                for _, c in ipairs(entry._disabledConns) do pcall(c.Disconnect, c) end
+                entry._disabledConns = nil
+            end
+            entry._customSignals = nil              
+        end
+        if entry.Character and entry.Character ~= char then
+            limbData.instanceLookup[entry.Character] = nil
+        end
+    else
+        entry = {}
+        cache[cacheKey] = entry
+    end
 	entry.Character            = char
 	entry.Limb                 = limb
 	entry.OriginalSize         = limb.Size
@@ -639,12 +657,13 @@ local function sharedRestoreLimb(parent, cacheKey, activeLimb)
 		activeLimb.RootPriority = entry.OriginalRootPriority
 	end
 
-	if entry._realSignals then
-		for _, be in pairs(entry._realSignals) do
-			be:Destroy()
-		end
-		entry._realSignals = nil
-	end
+    if entry._realSignals then
+        for _, be in pairs(entry._realSignals) do
+            be:Destroy()
+        end
+        entry._realSignals = nil
+    end
+    entry._customSignals = nil
 
 	if entry._disabledConns then
 		for _, conn in ipairs(entry._disabledConns) do
@@ -818,6 +837,13 @@ end
 
 function LimbExtender:_doRestartBatched()
 	if not self._running then return end
+
+    local wasDynamic = self._dynamicScaleConn ~= nil
+    if wasDynamic then
+        self._dynamicScaleConn:Disconnect()
+        self._dynamicScaleConn = nil
+    end
+	
 	self._suppressOnLimbLost = true
 	self._manager:Stop()
 
@@ -853,13 +879,12 @@ function LimbExtender:_doRestartBatched()
 		task_wait()
 	end
 
-	self._suppressOnLimbLost = false
+    self._suppressOnLimbLost = false
+    table_clear(self._npcIdMap)
+    table_clear(cache)
 
-	table_clear(self._npcIdMap)
-	table_clear(cache)
-
-	if self._ESP then self._ESP:Stop() end
-	if not self._running then return end
+    if self._ESP then self._ESP:Stop() end
+    if not self._running then return end
 
 	local s = self._settings
 	for key in pairs(RESTART_KEYS) do
@@ -869,8 +894,13 @@ function LimbExtender:_doRestartBatched()
 	end
 
 	self._manager:Start()
-	if self._ESP then self._ESP:Start() end
-	self:_runGameScriptIfNeeded()
+    if self._ESP then self._ESP:Start() end
+
+    if wasDynamic and self._running then
+        self:SetDynamicScale(true)
+    end
+
+    self:_runGameScriptIfNeeded()
 end
 
 function LimbExtender:_doCosmeticUpdateBatched()
@@ -933,44 +963,47 @@ local function recalcEntryDistFields(entry, rangeMult)
 end
 
 function LimbExtender:SetDynamicScale(enabled, rangeMult)
-	local s = self._settings
-	s.DYNAMIC_SCALE_ENABLED = enabled
-	if rangeMult ~= nil then
-		s.DYNAMIC_SCALE_RANGE_MULT = rangeMult
-	end
+    local s = self._settings
+    local prevEnabled = s.DYNAMIC_SCALE_ENABLED    -- ADD
+    s.DYNAMIC_SCALE_ENABLED = enabled
+    if rangeMult ~= nil then
+        s.DYNAMIC_SCALE_RANGE_MULT = rangeMult
+    end
 
-	if self._dynamicScaleConn then
-		self._dynamicScaleConn:Disconnect()
-		self._dynamicScaleConn = nil
-	end
+    if self._dynamicScaleConn then
+        self._dynamicScaleConn:Disconnect()
+        self._dynamicScaleConn = nil
+    end
 
-	if enabled then
-		self._nextDynamicUpdate = 0
-		local interval = 1 / (s.DYNAMIC_SCALE_UPDATE_RATE or 8)
-		self._dynamicScaleConn = game:GetService("RunService").Heartbeat:Connect(function(deltaTime)
-			self._nextDynamicUpdate = self._nextDynamicUpdate + deltaTime
-			if self._nextDynamicUpdate >= interval then
-				self._nextDynamicUpdate = self._nextDynamicUpdate - interval
-				self:_updateDynamicScales()
-			end
-		end)
-		local currentRangeMult = s.DYNAMIC_SCALE_RANGE_MULT or 1.0
-		for _, entry in pairs(self._playerCache) do
-			recalcEntryDistFields(entry, currentRangeMult)
-		end
-	else
-		for _, entry in pairs(self._playerCache) do
-			if entry.Limb and entry.BaseTargetSize then
-				entry.TargetSize = entry.BaseTargetSize
-				entry.Limb.Size = entry.BaseTargetSize
-			end
-			entry._maxDistSq = nil
-			entry._minDistSq = nil
-			entry._rangeInvSq = nil
-		end
-	end
+    if enabled then
+        self._nextDynamicUpdate = 0
+        local interval = 1 / (s.DYNAMIC_SCALE_UPDATE_RATE or 8)
+        self._dynamicScaleConn = game:GetService("RunService").Heartbeat:Connect(function(dt)
+            self._nextDynamicUpdate = self._nextDynamicUpdate + dt
+            if self._nextDynamicUpdate >= interval then
+                self._nextDynamicUpdate = self._nextDynamicUpdate - interval
+                self:_updateDynamicScales()
+            end
+        end)
+        local rangeMult_ = s.DYNAMIC_SCALE_RANGE_MULT or 1.0
+        for _, entry in pairs(self._playerCache) do
+            recalcEntryDistFields(entry, rangeMult_)
+        end
+    else
+        for _, entry in pairs(self._playerCache) do
+            if entry.Limb and entry.BaseTargetSize then
+                entry.TargetSize = entry.BaseTargetSize
+                entry.Limb.Size  = entry.BaseTargetSize
+            end
+            entry._maxDistSq  = nil
+            entry._minDistSq  = nil
+            entry._rangeInvSq = nil
+        end
+    end
 
-	self:_reapplyWatchdogs()
+    if enabled ~= prevEnabled then
+        self:_reapplyWatchdogs()
+    end
 end
 
 local SIZE_CHANGE_THRESHOLD_SQ = 0.25
