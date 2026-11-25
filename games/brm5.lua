@@ -28,7 +28,7 @@ if setId and prevId then setId(prevId) end
 
 if not (okW and okR and WorldService and ReplicatorService) then return end
 
-local connections      = {}
+local pollConn         = nil
 local worldConns       = {}
 local registeredModels = setmetatable({}, { __mode = "k" })
 local boundWorld       = nil
@@ -53,21 +53,32 @@ local function disconnectList(list)
 	table.clear(list)
 end
 
-local function registerIfPlayer(model)
-	if not model or not model:IsA("Model") then return end
+local function applyModelOwner(model, player)
 	local lp = localplayer or Players.LocalPlayer
+	registeredModels[model] = player
+
+	if player == lp then
+		extender:SetLocalCharacter(model)
+	else
+		extender:SetSampleCharacter(model)
+		if extender:IsRunning() and extender:Get("PLAYER_ENABLED") then
+			extender:RegisterPlayerCharacter(player, model)
+		end
+	end
+end
+
+local function handleModelAdded(model)
+	if not model or not model:IsA("Model") then return end
 
 	local player = customGetPlayer(model)
-	if player and player ~= lp then
-		registeredModels[model] = player
-		extender:RegisterPlayerCharacter(player, model)
+	if player then
+		applyModelOwner(model, player)
 	else
 		task.defer(function()
-			if not model.Parent or not extender._running or extender._destroyed then return end
+			if not model.Parent or extender._destroyed then return end
 			local retryPlayer = customGetPlayer(model)
-			if retryPlayer and retryPlayer ~= (localplayer or Players.LocalPlayer) then
-				registeredModels[model] = retryPlayer
-				extender:RegisterPlayerCharacter(retryPlayer, model)
+			if retryPlayer then
+				applyModelOwner(model, retryPlayer)
 			end
 		end)
 	end
@@ -77,51 +88,73 @@ local function bindActiveWorld(world)
 	if world == boundWorld then return end
 	disconnectList(worldConns)
 	boundWorld = world
-	if not world then return end
-
-	for _, model in ipairs(world:GetChildren()) do
-		registerIfPlayer(model)
+	if not world then
+		extender:SetLocalCharacter(nil)
+		return
 	end
 
-	worldConns[#worldConns + 1] = world.ChildAdded:Connect(registerIfPlayer)
+	for _, model in ipairs(world:GetChildren()) do
+		handleModelAdded(model)
+	end
+
+	worldConns[#worldConns + 1] = world.ChildAdded:Connect(handleModelAdded)
 	worldConns[#worldConns + 1] = world.ChildRemoved:Connect(function(child)
 		if not child:IsA("Model") then return end
+		local lp     = localplayer or Players.LocalPlayer
 		local player = registeredModels[child] or customGetPlayer(child)
 		registeredModels[child] = nil
-		if player then
+
+		if player == lp then
+			if extender:GetLocalCharacter() == child then
+				extender:SetLocalCharacter(nil)
+			end
+		elseif player and extender:IsRunning() then
 			extender:UnregisterPlayerCharacter(player, child)
 		end
 	end)
 end
 
-local function cleanup()
+local function setup()
+	extender:Set("CUSTOM_CHARACTER_SYSTEM", true)
+	extender:Set("GET_PLAYER_FROM_CHARACTER", customGetPlayer)
+
+	local world = WorldService.ActiveWorld
+	if world ~= boundWorld then
+		bindActiveWorld(world)
+	elseif world then
+		for _, model in ipairs(world:GetChildren()) do
+			handleModelAdded(model)
+		end
+	end
+end
+
+local function destroy()
+	if pollConn then
+		pollConn:Disconnect()
+		pollConn = nil
+	end
 	disconnectList(worldConns)
-	disconnectList(connections)
 	table.clear(registeredModels)
 	boundWorld = nil
 end
 
-local function setup()
-	cleanup()
-
-	extender:Set("CUSTOM_CHARACTER_SYSTEM", true)
-	extender:Set("GET_PLAYER_FROM_CHARACTER", customGetPlayer)
-
-	if not extender:Get("PLAYER_ENABLED") then return end
-
-	bindActiveWorld(WorldService.ActiveWorld)
-
-	local elapsed = 0
-	connections[#connections + 1] = RunService.Heartbeat:Connect(function(dt)
-		elapsed = elapsed + dt
-		if elapsed < 0.5 then return end
-		elapsed = 0
-		if WorldService.ActiveWorld ~= boundWorld then
-			bindActiveWorld(WorldService.ActiveWorld)
-		end
-	end)
-end
-
+extender:Set("CUSTOM_CHARACTER_SYSTEM", true)
+extender:Set("GET_PLAYER_FROM_CHARACTER", customGetPlayer)
 extender._customSetup   = setup
-extender._customCleanup = cleanup
-setup()
+extender._customDestroy = destroy
+
+bindActiveWorld(WorldService.ActiveWorld)
+
+local elapsed = 0
+pollConn = RunService.Heartbeat:Connect(function(dt)
+	elapsed = elapsed + dt
+	if elapsed < 0.5 then return end
+	elapsed = 0
+	if WorldService.ActiveWorld ~= boundWorld then
+		bindActiveWorld(WorldService.ActiveWorld)
+	end
+end)
+
+if extender:IsRunning() then
+	setup()
+end
