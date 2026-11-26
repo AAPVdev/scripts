@@ -1015,8 +1015,8 @@ if hasCheckcaller and not limbData._hooksV2Installed then
 		return originalNewIndex(self, key, value)
 	end
 
-	local idxClosure     = wrapC(rawIndexHook)
-	local newIdxClosure  = wrapC(rawNewIndexHook)
+	local idxClosure     = rawIndexHook
+	local newIdxClosure  = rawNewIndexHook
 	local indexHooked    = false
 	local newIndexHooked = false
 
